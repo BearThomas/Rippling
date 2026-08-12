@@ -1,0 +1,93 @@
+/* ===== 全局重置 ===== */
+
+/* @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital@0;1&display=swap'); */
+/* @font-face {
+    font-family: 'Playfair Display';
+    font-style: italic;
+    font-weight: 400;
+    font-display: swap;
+    src: url(https://fonts.gstatic.com/s/playfairdisplay/v40/nuFRD-vYSZviVYUb_rj3ij__anPXDTnCjmHKM4nYO7KN_qiTXtXA-W2r.woff2) format('woff2');
+    unicode-range: U +0301, U +0400 -045F, U +0490 -0491, U +04B0 -04B1, U +2116;
+} */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: serif, 'Microsoft YaHei UI';
+}
+
+
+body {
+    padding-top: 70px;          /* 给固定导航栏留空间 */
+    /* font-family: 'Playfair Display', Georgia, serif; */
+}
+
+/* ===== 顶部固定导航栏 ===== */
+.top-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 60px;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 0 40px;
+    z-index: 999;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+/* Logo / 站点标题 */
+.title {
+    color: #000000;
+    font-size: 22px;
+    font-weight: bold;
+    text-decoration: none;
+    padding-right: 20px;
+}
+
+/* 导航列表 */
+.nav-ul {
+    list-style: none;
+    display: flex;
+    gap: 30px;
+    margin: 0;
+    padding: 0;
+}
+
+/* 每个导航项 */
+.nav-li a {
+    color: #000;
+    text-decoration: none;
+    font-size: 16px;
+    padding: 6px 0;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s ease;
+    font-family: serif, 'Microsoft YaHei UI';
+}
+
+/* 悬停效果 */
+.nav-li a:hover {
+    border-bottom-color: #db45e9;
+}
+
+/* 当前页面高亮（需要手动加 active 类） */
+.nav-li a.active {
+    border-bottom-color: #c627db;
+    color: #c627db;
+}
+
+/* ===== 移动端适配 ===== */
+@media (max-width: 768px) {
+    .top-nav {
+        padding: 0 20px;
+    }
+    .nav-ul {
+        gap: 15px;
+    }
+    .nav-li a {
+        font-size: 14px;
+    }
+}
