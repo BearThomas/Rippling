@@ -7,9 +7,12 @@
  *   3. authMiddleware     — 认证（仅受保护路由）
  *   4. deviceMiddleware   — 设备识别（仅受保护路由）
  *
- * 后续 Task 会在此挂载路由模块：
- *   - /api/posts        帖子 CRUD
- *   - /api/blocks       板块管理
+ * 已挂载路由：
+ *   - /api/post         帖子 / 评论 CRUD
+ *   - /api/like         点赞
+ *
+ * 待挂载路由：
+ *   - /api/block        板块管理
  *   - /api/timeline     大事记
  *   - /api/confession   表白墙
  *   - ...
@@ -20,6 +23,7 @@ import { loggerMiddleware } from "../../middleware/logger";
 import { errorHandler } from "../../middleware/error";
 import { authMiddleware } from "../../middleware/auth";
 import { deviceMiddleware } from "../../middleware/device";
+import { postRoutes, likeRoutes } from "../../routes";
 import { nowISO } from "../../utils/time";
 import { NOT_FOUND } from "../../utils/errors";
 import siteConfig from "../../../config/site.config.json";
@@ -56,16 +60,22 @@ app.get("/api/config", (c) => {
 // ============================================================
 //  受保护路由（需要认证 + 设备识别）
 //
-//  后续 Task 的所有业务路由（帖子、评论、板块等）
-//  都注册在这个分组之后。
+//  业务路由模块在此分组后挂载。
 // ============================================================
 
 app.use("/api/*", authMiddleware);
 app.use("/api/*", deviceMiddleware);
 
-// TODO: 后续 Task 在此挂载业务路由
-// app.route("/api/posts", postRoutes);
-// app.route("/api/blocks", blockRoutes);
+// 帖子 / 评论
+app.route("/api/post", postRoutes);
+
+// 点赞
+app.route("/api/like", likeRoutes);
+
+// TODO: 后续 Task 继续挂载
+// app.route("/api/block", blockRoutes);
+// app.route("/api/confession", confessionRoutes);
+// app.route("/api/timeline", timelineRoutes);
 
 // ============================================================
 //  404 兜底
