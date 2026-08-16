@@ -15,6 +15,7 @@
  *   - /api/vote         投票
  *   - /api/recommend    推荐流 / 置顶
  *   - /api/search       搜索
+ *   - /api/follow       关注
  *
  * 待挂载路由：
  *   - /api/block        板块管理
@@ -26,7 +27,7 @@ import { loggerMiddleware } from "../../middleware/logger";
 import { errorHandler } from "../../middleware/error";
 import { authMiddleware } from "../../middleware/auth";
 import { deviceMiddleware } from "../../middleware/device";
-import { postRoutes, likeRoutes, confessionRoutes, timelineRoutes, voteRoutes, recommendRoutes, searchRoutes } from "../../routes";
+import { postRoutes, likeRoutes, confessionRoutes, timelineRoutes, voteRoutes, recommendRoutes, searchRoutes, followRoutes } from "../../routes";
 import { nowISO } from "../../utils/time";
 import { NOT_FOUND } from "../../utils/errors";
 import siteConfig from "../../../config/site.config.json";
@@ -89,6 +90,9 @@ app.route("/api/recommend", recommendRoutes);
 
 // 搜索
 app.route("/api/search", searchRoutes);
+
+// 关注
+app.route("/api/follow", followRoutes);
 
 // TODO: 后续 Task 继续挂载
 // app.route("/api/block", blockRoutes);
