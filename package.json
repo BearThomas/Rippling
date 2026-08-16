@@ -1,0 +1,22 @@
+{
+  "name": "rippling",
+  "version": "0.1.0",
+  "private": true,
+  "description": "可部署的校园社区论坛系统",
+  "license": "MIT",
+  "scripts": {
+    "dev": "wrangler pages dev",
+    "deploy": "wrangler pages deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.0.0",
+    "better-auth": "^1.0.0",
+    "better-auth-cloudflare": "^0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@cloudflare/workers-types": "^4.0.0",
+    "wrangler": "^3.0.0"
+  }
+}

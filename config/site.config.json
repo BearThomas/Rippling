@@ -1,0 +1,23 @@
+{
+  "siteName": "Rippling",
+  "authMethod": "student_id",
+  "studentIdPattern": "^20\\d{2}0\\d{3}$",
+  "studentIdHint": "格式：20xx0xxx",
+  "defaultPermissions": 0,
+  "archiveDays": 30,
+  "theme": {
+    "preset": "light",
+    "primaryColor": "#3B82F6",
+    "backgroundColor": "#FFFFFF",
+    "textColor": "#1F2937",
+    "accentColor": "#10B981"
+  },
+  "recommendWeights": {
+    "like": 1.0,
+    "comment": 1.5,
+    "follow": 3.0,
+    "block": 2.0,
+    "time": 2.0,
+    "random": 0.5
+  }
+}

@@ -1,5 +1,18 @@
-# ./.gitignore
-# Create at 2026/8/12
-# Create by bearThomas
+# Dependencies
+node_modules/
 
-dist/*
+# Wrangler
+.wrangler/
+
+# Build output
+dist/
+
+# Environment & secrets
+.env
+.dev.vars
+
+# Local files
+*.local
+
+# OS files
+.DS_Store
