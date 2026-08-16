@@ -6,3 +6,4 @@
 
 export { default as postRoutes } from "./post";
 export { default as likeRoutes } from "./likes";
+export { default as confessionRoutes } from "./confession";

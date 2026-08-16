@@ -10,11 +10,11 @@
  * 已挂载路由：
  *   - /api/post         帖子 / 评论 CRUD
  *   - /api/like         点赞
+ *   - /api/confession   表白墙
  *
  * 待挂载路由：
  *   - /api/block        板块管理
  *   - /api/timeline     大事记
- *   - /api/confession   表白墙
  *   - ...
  */
 
@@ -23,7 +23,7 @@ import { loggerMiddleware } from "../../middleware/logger";
 import { errorHandler } from "../../middleware/error";
 import { authMiddleware } from "../../middleware/auth";
 import { deviceMiddleware } from "../../middleware/device";
-import { postRoutes, likeRoutes } from "../../routes";
+import { postRoutes, likeRoutes, confessionRoutes } from "../../routes";
 import { nowISO } from "../../utils/time";
 import { NOT_FOUND } from "../../utils/errors";
 import siteConfig from "../../../config/site.config.json";
@@ -72,9 +72,11 @@ app.route("/api/post", postRoutes);
 // 点赞
 app.route("/api/like", likeRoutes);
 
+// 表白墙
+app.route("/api/confession", confessionRoutes);
+
 // TODO: 后续 Task 继续挂载
 // app.route("/api/block", blockRoutes);
-// app.route("/api/confession", confessionRoutes);
 // app.route("/api/timeline", timelineRoutes);
 
 // ============================================================
