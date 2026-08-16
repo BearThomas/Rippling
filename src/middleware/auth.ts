@@ -1,25 +1,22 @@
 /**
- * 认证中间件（占位）
+ * 认证中间件
  *
  * 职责：
- *   1. 从请求 Cookie 中读取 session token
- *   2. 验证 session 并设置 context.user
- *
- * 当前状态：占位实现
- *   - token 不存在 → user = null
- *   - token 存在 → user = null（占位）
- *
- * TODO: Task 4 会接入 Better Auth，根据 token 查询 session 并填充 user 信息。
+ *   1. 调用 Better Auth 的 getSession 验证请求 Cookie
+ *   2. 验证成功后从 user_profile 表读取权限掩码
+ *   3. 将 user 信息（id, permissions）设置到 context
+ *   4. 验证失败或未登录，设置 user = null
  */
 
 import { createMiddleware } from "hono/factory";
-import { getCookie } from "hono/cookie";
+import type { CloudflareEnv } from "../auth";
+import { createAuth } from "../auth";
 
 /** 认证用户信息（挂载到 context 上） */
 export interface AuthUser {
-  /** 用户 ID */
+  /** 用户 ID（Better Auth user.id） */
   id: string;
-  /** 权限掩码（BigInt 存储为 string，从数据库读取后转换） */
+  /** 权限掩码（从 user_profile.permissions 读取） */
   permissions: bigint;
 }
 
@@ -29,37 +26,49 @@ export interface AppContextVars {
   deviceId: string | null;
 }
 
-/** Cookie 中 session token 的 key 名称 */
-const SESSION_COOKIE = "session_token";
-
 /**
  * 认证中间件
  *
- * 从 Cookie 读取 session token，后续 Task 4 会调用 Better Auth 验证。
+ * 调用 Better Auth getSession 验证 Cookie，
+ * 然后从 D1 读取 user_profile.permissions。
  */
 export const authMiddleware = createMiddleware<{
   Variables: AppContextVars;
+  Bindings: CloudflareEnv;
 }>(async (c, next) => {
-  // 从 Cookie 中读取 session token
-  const token = getCookie(c, SESSION_COOKIE) ?? null;
+  const auth = createAuth(c.env);
 
-  if (!token) {
-    // 未携带 token，视为游客
+  // 调用 Better Auth 验证 session（自动从 Cookie 读取 token）
+  const sessionData = await auth.api.getSession({
+    headers: c.req.raw.headers,
+  });
+
+  if (!sessionData?.user?.id) {
     c.set("user", null);
     await next();
     return;
   }
 
-  // TODO: Task 4 — 调用 Better Auth 验证 session token
-  // const session = await betterAuth.api.getSession({ headers: c.req.raw.headers });
-  // if (session?.user) {
-  //   c.set("user", { id: session.user.id, permissions: BigInt(session.user.permissions) });
-  // } else {
-  //   c.set("user", null);
-  // }
+  // 从 user_profile 表读取权限掩码
+  const profile = await c.env.DB
+    .prepare("SELECT permissions FROM user_profile WHERE userId = ?")
+    .bind(sessionData.user.id)
+    .first<{ permissions: number }>();
 
-  // 占位：token 存在但尚未验证，暂时设为 null
-  c.set("user", null);
+  if (!profile) {
+    // 理论上不应发生（注册时已创建 profile），安全降级
+    console.warn(
+      `[Auth] user_profile not found for userId=${sessionData.user.id}, falling back to null`
+    );
+    c.set("user", null);
+    await next();
+    return;
+  }
+
+  c.set("user", {
+    id: sessionData.user.id,
+    permissions: BigInt(profile.permissions),
+  });
 
   await next();
 });
