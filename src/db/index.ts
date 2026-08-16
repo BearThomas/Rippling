@@ -48,6 +48,7 @@ export {
 
 // 投票
 export {
+  listVotes,
   createVote,
   getVoteById,
   castVote,

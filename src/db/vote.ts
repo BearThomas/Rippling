@@ -15,11 +15,11 @@ import { nowISO } from "../utils/time";
 //  返回类型
 // ============================================================
 
-/** 投票选项（含当前票数） */
+/** 投票选项（含当前票数，不可见时为 null） */
 export interface VoteOptionInfo {
   id: string;
   content: string;
-  voteCount: number;
+  voteCount: number | null;
 }
 
 /** 投票详情 */
@@ -36,6 +36,19 @@ export interface VoteInfo {
   options: VoteOptionInfo[];
   /** 是否已显示结果（realTimeVisible 或已结束） */
   resultsVisible: boolean;
+  /** 当前用户已投的选项 ID 列表（未投票或无用户时为 null） */
+  myVote: string[] | null;
+}
+
+/** 投票列表条目 */
+export interface VoteListItem {
+  id: string;
+  title: string;
+  description: string | null;
+  endAt: string;
+  isClosed: boolean;
+  createdAt: string;
+  totalVotes: number | null;
 }
 
 /** 创建投票的输入参数 */
@@ -51,6 +64,61 @@ export interface CreateVoteData {
 // ============================================================
 //  查询函数
 // ============================================================
+
+/**
+ * 列出所有投票（按创建时间倒序）
+ *
+ * 统计总票数。如果 isRealTimeVisible=0 且未结束，totalVotes 返回 null。
+ */
+export async function listVotes(
+  db: D1Database,
+  limit: number,
+  offset: number
+): Promise<VoteListItem[]> {
+  const rows = await db
+    .prepare(
+      `SELECT id, title, description, endAt, isClosed, createdAt, isRealTimeVisible
+       FROM vote ORDER BY createdAt DESC LIMIT ? OFFSET ?`
+    )
+    .bind(limit, offset)
+    .all<{
+      id: string;
+      title: string;
+      description: string | null;
+      endAt: string;
+      isClosed: number;
+      createdAt: string;
+      isRealTimeVisible: number;
+    }>();
+
+  const results: VoteListItem[] = [];
+  for (const row of rows.results) {
+    const isClosed = !!row.isClosed;
+    const isExpired = new Date(row.endAt) <= new Date();
+    const resultsVisible = !!row.isRealTimeVisible || isClosed || isExpired;
+
+    let totalVotes: number | null = null;
+    if (resultsVisible) {
+      const countRow = await db
+        .prepare("SELECT COUNT(*) as count FROM vote_record WHERE voteId = ?")
+        .bind(row.id)
+        .first<{ count: number }>();
+      totalVotes = countRow?.count ?? 0;
+    }
+
+    results.push({
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      endAt: row.endAt,
+      isClosed,
+      createdAt: row.createdAt,
+      totalVotes,
+    });
+  }
+
+  return results;
+}
 
 /**
  * 创建投票（含选项）
@@ -149,8 +217,21 @@ export async function getVoteById(
     optionInfos.push({
       id: opt.id,
       content: opt.content,
-      voteCount: resultsVisible ? (countRow?.count ?? 0) : 0,
+      // 结果不可见时返回 null
+      voteCount: resultsVisible ? (countRow?.count ?? 0) : null,
     });
+  }
+
+  // 查询当前用户已投的选项
+  let myVote: string[] | null = null;
+  if (_user) {
+    const myRecords = await db
+      .prepare("SELECT optionId FROM vote_record WHERE voteId = ? AND userId = ?")
+      .bind(id, _user.id)
+      .all<{ optionId: string }>();
+    if (myRecords.results.length > 0) {
+      myVote = myRecords.results.map((r) => r.optionId);
+    }
   }
 
   return {
@@ -165,47 +246,58 @@ export async function getVoteById(
     createdAt: vote.createdAt,
     options: optionInfos,
     resultsVisible,
+    myVote,
   };
 }
 
 /**
- * 投票
+ * 投票（支持单选 / 多选）
  *
- * 检查是否已投（UNIQUE voteId+userId）和截止时间。
+ * 检查已投（UNIQUE voteId+userId+optionId）和截止时间。
+ * 多选时 isMultiple 必须为 1，且 optionIds 长度 ≥ 2。
  *
- * @returns false 表示已投过或已截止
+ * @returns false 表示已投过、已截止或参数不合法
  */
 export async function castVote(
   db: D1Database,
   voteId: string,
-  optionId: string,
+  optionIds: string[],
   userId: string
 ): Promise<boolean> {
+  if (!optionIds.length) return false;
+
   // 检查投票是否存在及截止状态
   const vote = await db
-    .prepare("SELECT endAt, isClosed FROM vote WHERE id = ?")
+    .prepare("SELECT endAt, isClosed, isMultiple FROM vote WHERE id = ?")
     .bind(voteId)
-    .first<{ endAt: string; isClosed: number }>();
+    .first<{ endAt: string; isClosed: number; isMultiple: number }>();
 
   if (!vote) return false;
   if (vote.isClosed) return false;
   if (new Date(vote.endAt) <= new Date()) return false;
 
-  // 检查是否已投
-  const existing = await db
-    .prepare("SELECT id FROM vote_record WHERE voteId = ? AND userId = ?")
-    .bind(voteId, userId)
-    .first();
+  // 单选模式只允许投一个选项
+  if (!vote.isMultiple && optionIds.length > 1) return false;
 
-  if (existing) return false;
+  // 检查是否已投（任一选项）
+  for (const optId of optionIds) {
+    const existing = await db
+      .prepare("SELECT id FROM vote_record WHERE voteId = ? AND userId = ? AND optionId = ?")
+      .bind(voteId, userId, optId)
+      .first();
+    if (existing) return false;
+  }
 
   // 写入投票记录
-  await db
-    .prepare(
-      "INSERT INTO vote_record (id, voteId, optionId, userId, createdAt) VALUES (?, ?, ?, ?, ?)"
-    )
-    .bind(generateUUID(), voteId, optionId, userId, nowISO())
-    .run();
+  const now = nowISO();
+  for (const optId of optionIds) {
+    await db
+      .prepare(
+        "INSERT INTO vote_record (id, voteId, optionId, userId, createdAt) VALUES (?, ?, ?, ?, ?)"
+      )
+      .bind(generateUUID(), voteId, optId, userId, now)
+      .run();
+  }
 
   return true;
 }

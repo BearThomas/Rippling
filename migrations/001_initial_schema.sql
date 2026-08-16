@@ -200,7 +200,7 @@ CREATE TABLE vote_record (
     optionId  TEXT NOT NULL REFERENCES vote_option(id),
     userId    TEXT NOT NULL REFERENCES user(id),
     createdAt TEXT NOT NULL,
-    UNIQUE(voteId, userId)
+    UNIQUE(voteId, userId, optionId)
 );
 
 -- ============================================================

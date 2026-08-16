@@ -12,6 +12,7 @@
  *   - /api/like         点赞
  *   - /api/confession   表白墙
  *   - /api/timeline     大事记
+ *   - /api/vote         投票
  *
  * 待挂载路由：
  *   - /api/block        板块管理
@@ -23,7 +24,7 @@ import { loggerMiddleware } from "../../middleware/logger";
 import { errorHandler } from "../../middleware/error";
 import { authMiddleware } from "../../middleware/auth";
 import { deviceMiddleware } from "../../middleware/device";
-import { postRoutes, likeRoutes, confessionRoutes, timelineRoutes } from "../../routes";
+import { postRoutes, likeRoutes, confessionRoutes, timelineRoutes, voteRoutes } from "../../routes";
 import { nowISO } from "../../utils/time";
 import { NOT_FOUND } from "../../utils/errors";
 import siteConfig from "../../../config/site.config.json";
@@ -77,6 +78,9 @@ app.route("/api/confession", confessionRoutes);
 
 // 大事记
 app.route("/api/timeline", timelineRoutes);
+
+// 投票
+app.route("/api/vote", voteRoutes);
 
 // TODO: 后续 Task 继续挂载
 // app.route("/api/block", blockRoutes);
