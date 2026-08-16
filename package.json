@@ -10,13 +10,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "hono": "^4.0.0",
     "better-auth": "^1.0.0",
-    "better-auth-cloudflare": "^0.1.0"
+    "better-auth-cloudflare": "^0.3.1",
+    "hono": "^4.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.5.0",
     "@cloudflare/workers-types": "^4.0.0",
+    "typescript": "^5.5.0",
     "wrangler": "^3.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.17.19": true,
+    "sharp@0.33.5": true,
+    "workerd@1.20250718.0": true
   }
 }
