@@ -9,3 +9,4 @@ export { default as likeRoutes } from "./likes";
 export { default as confessionRoutes } from "./confession";
 export { default as timelineRoutes } from "./timeline";
 export { default as voteRoutes } from "./vote";
+export { default as recommendRoutes } from "./recommend";

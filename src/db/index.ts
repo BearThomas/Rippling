@@ -92,3 +92,9 @@ export {
   lockBlock,
   deleteBlock,
 } from "./block";
+
+// 推荐流
+export { listRecommendations } from "./recommend";
+
+// 置顶
+export { pinItem, unpinItem, listActivePinned } from "./pinned";

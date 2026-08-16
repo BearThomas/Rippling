@@ -337,3 +337,21 @@ CREATE TABLE admin_log (
     detail     TEXT,
     createdAt  TEXT NOT NULL
 );
+
+-- ============================================================
+--  七、置顶表
+-- ============================================================
+
+-- 推荐流置顶项
+CREATE TABLE pinned_item (
+    id          TEXT PRIMARY KEY,
+    targetType  TEXT NOT NULL,
+    targetId    TEXT NOT NULL,
+    createdBy   TEXT NOT NULL REFERENCES user(id),
+    expiresAt   TEXT,
+    createdAt   TEXT NOT NULL,
+    UNIQUE(targetType, targetId)
+);
+
+CREATE INDEX idx_pinned_item_type ON pinned_item(targetType);
+CREATE INDEX idx_pinned_item_created ON pinned_item(createdAt DESC);
