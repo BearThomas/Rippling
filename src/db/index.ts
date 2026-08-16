@@ -98,3 +98,14 @@ export { listRecommendations } from "./recommend";
 
 // 置顶
 export { pinItem, unpinItem, listActivePinned } from "./pinned";
+
+// 搜索
+export {
+  searchPosts,
+  searchComments,
+  searchUsers,
+  searchBlocks,
+  searchTimeline,
+  searchConfessions,
+  searchAll,
+} from "./search";
