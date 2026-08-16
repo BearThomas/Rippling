@@ -5,6 +5,12 @@
  * 所有查询函数内部完成字段过滤和权限检查：无权限 = 返回 null。
  *
  * 底层表：post, post_visibility, archive_operation
+ *
+ * 事件溯源设计（方案 B）：
+ *   - post 表的内容字段存储当前最终状态，读取时直接读，不实时重放
+ *   - archive_operation 表存储完整操作链（edit / delete），用于归档和追责
+ *   - 删除操作加 isDeleted 标记，不物理删除
+ *   - 归档时最终状态作为结果文件
  */
 
 import type { CurrentUser } from "../utils/permission";
@@ -162,7 +168,7 @@ export async function getPostById(
   user: CurrentUser | null
 ): Promise<PostInfo | null> {
   const row = await db
-    .prepare("SELECT * FROM post WHERE id = ?")
+    .prepare("SELECT * FROM post WHERE id = ? AND isDeleted = 0")
     .bind(id)
     .first<{
       id: string;
@@ -208,7 +214,7 @@ export async function listPostsByParent(
 ): Promise<PostInfo[]> {
   const rows = await db
     .prepare(
-      "SELECT * FROM post WHERE parentId = ? ORDER BY createdAt ASC LIMIT ? OFFSET ?"
+      "SELECT * FROM post WHERE parentId = ? AND isDeleted = 0 ORDER BY createdAt ASC LIMIT ? OFFSET ?"
     )
     .bind(parentId, limit, offset)
     .all<{
@@ -253,7 +259,7 @@ export async function listUserPosts(
 ): Promise<PostInfo[]> {
   const rows = await db
     .prepare(
-      "SELECT * FROM post WHERE authorId = ? AND parentId IS NULL ORDER BY createdAt DESC LIMIT ? OFFSET ?"
+      "SELECT * FROM post WHERE authorId = ? AND parentId IS NULL AND isDeleted = 0 ORDER BY createdAt DESC LIMIT ? OFFSET ?"
     )
     .bind(userId, limit, offset)
     .all<{
@@ -361,9 +367,10 @@ export async function createPostWithVisibility(
 }
 
 /**
- * 编辑帖子内容（事件溯源）
+ * 编辑帖子内容（事件溯源 — 双写）
  *
- * 不直接修改原数据，而是在 archive_operation 表记录 edit 操作。
+ * 同时更新当前内容（post.content）和记录操作链（archive_operation）。
+ * 读取时直接读 post.content，不重放操作链。
  * 权限：作者本人（且未归档）或 edit_others_post 权限。
  *
  * @returns false 表示无权限或帖子不存在
@@ -394,23 +401,31 @@ export async function updatePostContent(
     return false;
   }
 
-  // 事件溯源：记录编辑操作
+  const now = nowISO();
+
+  // 事件溯源：记录编辑操作到操作链
   await db
     .prepare(
       `INSERT INTO archive_operation (id, targetType, targetId, operation, operationData, operatedBy, createdAt)
        VALUES (?, 'post', ?, 'edit', ?, ?, ?)`
     )
-    .bind(generateUUID(), id, content, user.id, nowISO())
+    .bind(generateUUID(), id, content, user.id, now)
+    .run();
+
+  // 同时更新当前内容为最终状态（方案 B：读取时直接读）
+  await db
+    .prepare("UPDATE post SET content = ?, updatedAt = ? WHERE id = ?")
+    .bind(content, now, id)
     .run();
 
   return true;
 }
 
 /**
- * 软删除帖子（事件溯源）
+ * 软删除帖子（事件溯源 — 双写）
  *
+ * 同时标记 isDeleted=1 和记录操作链（archive_operation）。
  * 权限：作者本人（需 delete_own_post）或 delete_others_post 权限。
- * 在 archive_operation 表记录 delete 操作。
  *
  * @returns false 表示无权限或帖子不存在
  */
@@ -422,11 +437,11 @@ export async function softDeletePost(
   if (!user) return false;
 
   const post = await db
-    .prepare("SELECT authorId FROM post WHERE id = ?")
+    .prepare("SELECT authorId, isDeleted FROM post WHERE id = ?")
     .bind(id)
-    .first<{ authorId: string }>();
+    .first<{ authorId: string; isDeleted: number }>();
 
-  if (!post) return false;
+  if (!post || post.isDeleted) return false;
 
   const isAuthor = post.authorId === user.id;
   const canDeleteOthers = can(user, PERM_DELETE_OTHERS_POST);
@@ -438,13 +453,21 @@ export async function softDeletePost(
     return false;
   }
 
-  // 事件溯源：记录删除操作
+  const now = nowISO();
+
+  // 事件溯源：记录删除操作到操作链
   await db
     .prepare(
       `INSERT INTO archive_operation (id, targetType, targetId, operation, operatedBy, createdAt)
        VALUES (?, 'post', ?, 'delete', ?, ?)`
     )
-    .bind(generateUUID(), id, user.id, nowISO())
+    .bind(generateUUID(), id, user.id, now)
+    .run();
+
+  // 同时标记删除（不物理删除）
+  await db
+    .prepare("UPDATE post SET isDeleted = 1, updatedAt = ? WHERE id = ?")
+    .bind(now, id)
     .run();
 
   return true;
@@ -465,7 +488,7 @@ export async function pinPost(
   if (!can(user, PERM_PIN_POST)) return false;
 
   const post = await db
-    .prepare("SELECT id, isPinned FROM post WHERE id = ?")
+    .prepare("SELECT id, isPinned FROM post WHERE id = ? AND isDeleted = 0")
     .bind(id)
     .first<{ id: string; isPinned: number }>();
 

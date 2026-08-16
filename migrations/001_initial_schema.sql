@@ -118,6 +118,7 @@ CREATE TABLE post (
     blockId       TEXT,
     isPinned      INTEGER DEFAULT 0,
     isArchived    INTEGER DEFAULT 0,
+    isDeleted     INTEGER DEFAULT 0,
     createdAt     TEXT NOT NULL,
     updatedAt     TEXT NOT NULL
 );
@@ -146,6 +147,7 @@ CREATE TABLE confession (
     id        TEXT PRIMARY KEY,
     authorId  TEXT NOT NULL REFERENCES user(id),
     content   TEXT NOT NULL,
+    isDeleted INTEGER DEFAULT 0,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL
 );

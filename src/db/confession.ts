@@ -3,6 +3,10 @@
  *
  * 底层表：confession, archive_operation
  * 安全规则：authorId 永远不直接返回，仅 view_anonymous_identity 权限可单独查身份。
+ *
+ * 事件溯源设计（方案 B）：
+ *   - 删除操作加 isDeleted 标记，不物理删除
+ *   - archive_operation 表存储完整操作链，用于归档和追责
  */
 
 import type { CurrentUser } from "../utils/permission";
@@ -44,7 +48,7 @@ export async function getConfessionById(
   user: CurrentUser | null
 ): Promise<ConfessionInfo | ConfessionInfoWithAuthor | null> {
   const row = await db
-    .prepare("SELECT id, authorId, content, createdAt, updatedAt FROM confession WHERE id = ?")
+    .prepare("SELECT id, authorId, content, createdAt, updatedAt FROM confession WHERE id = ? AND isDeleted = 0")
     .bind(id)
     .first<{
       id: string;
@@ -84,7 +88,7 @@ export async function listConfessions(
 ): Promise<ConfessionInfo[]> {
   const rows = await db
     .prepare(
-      "SELECT id, content, createdAt, updatedAt FROM confession ORDER BY createdAt DESC LIMIT ? OFFSET ?"
+      "SELECT id, content, createdAt, updatedAt FROM confession WHERE isDeleted = 0 ORDER BY createdAt DESC LIMIT ? OFFSET ?"
     )
     .bind(limit, offset)
     .all<{
@@ -132,19 +136,27 @@ export async function softDeleteConfession(
   if (!user) return false;
 
   const exists = await db
-    .prepare("SELECT id FROM confession WHERE id = ?")
+    .prepare("SELECT id, isDeleted FROM confession WHERE id = ?")
     .bind(id)
-    .first();
+    .first<{ id: string; isDeleted: number }>();
 
-  if (!exists) return false;
+  if (!exists || exists.isDeleted) return false;
 
-  // 记录到 archive_operation
+  const now = nowISO();
+
+  // 事件溯源：记录删除操作到操作链
   await db
     .prepare(
       `INSERT INTO archive_operation (id, targetType, targetId, operation, operatedBy, createdAt)
        VALUES (?, 'confession', ?, 'delete', ?, ?)`
     )
-    .bind(generateUUID(), id, user.id, nowISO())
+    .bind(generateUUID(), id, user.id, now)
+    .run();
+
+  // 同时标记删除（不物理删除）
+  await db
+    .prepare("UPDATE confession SET isDeleted = 1, updatedAt = ? WHERE id = ?")
+    .bind(now, id)
     .run();
 
   return true;
