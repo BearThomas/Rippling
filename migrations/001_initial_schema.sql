@@ -148,6 +148,7 @@ CREATE TABLE confession (
     authorId  TEXT NOT NULL REFERENCES user(id),
     content   TEXT NOT NULL,
     isDeleted INTEGER DEFAULT 0,
+    isArchived INTEGER DEFAULT 0,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL
 );
@@ -161,7 +162,9 @@ CREATE TABLE timeline_event (
     status      TEXT NOT NULL DEFAULT 'pending',
     submittedBy TEXT NOT NULL REFERENCES user(id),
     reviewedBy  TEXT,
+    isArchived  INTEGER DEFAULT 0,
     createdAt   TEXT NOT NULL,
+    updatedAt   TEXT NOT NULL DEFAULT '',
     reviewedAt  TEXT
 );
 
@@ -264,6 +267,7 @@ CREATE TABLE block (
     ownerId     TEXT NOT NULL REFERENCES user(id),
     isLocked    INTEGER DEFAULT 0,
     isDeleted   INTEGER DEFAULT 0,
+    isArchived  INTEGER DEFAULT 0,
     createdAt   TEXT NOT NULL
 );
 

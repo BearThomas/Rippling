@@ -3,10 +3,18 @@
  *
  * 底层表：block, block_member, block_join_request, block_blacklist, archive_operation
  * 规则：已删除板块 → 404；锁定板块非成员不可见。
+ *
+ * 归档回退：
+ *   - getBlockById 支持从加密归档文件读取（需传入 ArchiveEnv）
+ *   - 优先级较低，仅在 D1 中不存在时回退
  */
 
 import type { CurrentUser } from "../utils/permission";
 import { can } from "../utils/permission";
+import type { ArchiveEnv } from "../utils/archive";
+import type { ArchiveFileContent } from "../utils/archive";
+import { getArchivePath } from "../utils/archive";
+import { decryptData } from "../utils/crypto";
 import {
   PERM_MANAGE_BLOCK,
 } from "../shared/permissions";
@@ -17,6 +25,84 @@ import {
 } from "../shared/permissions";
 import { generateUUID } from "../utils/uuid";
 import { nowISO } from "../utils/time";
+
+// ============================================================
+//  归档回退辅助函数
+// ============================================================
+
+/** 归档加载结果（含归档时间戳，用于热操作重放） */
+interface ArchiveLoaderResult {
+  result: Record<string, unknown>;
+  archivedAt: string;
+}
+
+/**
+ * 从加密归档文件加载板块数据
+ *
+ * 遍历最近 30 天的归档目录，找到匹配 ID 的归档文件后解密返回。
+ * 使用 AbortController 设置 5 秒超时。
+ */
+async function loadBlockFromArchive(
+  id: string,
+  archiveEnv: ArchiveEnv
+): Promise<ArchiveLoaderResult | null> {
+  for (let daysAgo = 0; daysAgo <= 30; daysAgo++) {
+    const d = new Date();
+    d.setDate(d.getDate() - daysAgo);
+    const dateStr = d.toISOString().slice(0, 10);
+    const archivePath = getArchivePath("block", id, dateStr);
+    const url = `${archiveEnv.SITE_URL}/${archivePath}`;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const resp = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!resp.ok) continue;
+
+      const encrypted = await resp.text();
+      const archive = (await decryptData(
+        encrypted,
+        archiveEnv.ENCRYPTION_KEY
+      )) as ArchiveFileContent;
+
+      return { result: archive.result, archivedAt: archive.archivedAt };
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 重放归档之后的热操作（板块仅支持 delete）
+ *
+ * @returns null 表示归档后已被删除
+ */
+async function applyHotOperations(
+  db: D1Database,
+  targetType: string,
+  targetId: string,
+  baseData: Record<string, unknown>,
+  archivedAt: string
+): Promise<Record<string, unknown> | null> {
+  const ops = await db
+    .prepare(
+      `SELECT operation, createdAt
+       FROM archive_operation
+       WHERE targetType = ? AND targetId = ? AND createdAt > ?
+       ORDER BY createdAt ASC`
+    )
+    .bind(targetType, targetId, archivedAt)
+    .all<{ operation: string; createdAt: string }>();
+
+  for (const op of ops.results) {
+    if (op.operation === "delete") return null;
+  }
+
+  return baseData;
+}
 
 // ============================================================
 //  返回类型
@@ -134,18 +220,20 @@ export async function createBlock(
 }
 
 /**
- * 获取板块信息
+ * 获取板块信息（带归档回退）
  *
  * - isDeleted = 1 → null
  * - isLocked = 1 且非成员且无 manage_block → null
+ * - D1 中不存在 → 尝试从归档文件加载
  */
 export async function getBlockById(
   db: D1Database,
   id: string,
-  user: CurrentUser | null
+  user: CurrentUser | null,
+  archiveEnv?: ArchiveEnv
 ): Promise<BlockInfo | null> {
   const row = await db
-    .prepare("SELECT id, name, description, ownerId, isLocked, isDeleted, createdAt FROM block WHERE id = ?")
+    .prepare("SELECT id, name, description, ownerId, isLocked, isDeleted, isArchived, createdAt FROM block WHERE id = ?")
     .bind(id)
     .first<{
       id: string;
@@ -154,32 +242,77 @@ export async function getBlockById(
       ownerId: string;
       isLocked: number;
       isDeleted: number;
+      isArchived: number;
       createdAt: string;
     }>();
 
-  if (!row) return null;
-
-  // 已删除 → 404
-  if (row.isDeleted) return null;
-
-  // 锁定板块：非成员且无全站管理权限 → 404
-  if (row.isLocked) {
-    if (can(user, PERM_MANAGE_BLOCK)) {
-      // 有全站权限，放行
-    } else if (user && (await isBlockMember(db, id, user.id))) {
-      // 是成员，放行
-    } else {
-      return null;
+  // D1 中存在且未归档且未删除 → 正常路径
+  if (row && !row.isArchived && !row.isDeleted) {
+    // 锁定板块：非成员且无全站管理权限 → 404
+    if (row.isLocked) {
+      if (can(user, PERM_MANAGE_BLOCK)) {
+        // 有全站权限，放行
+      } else if (user && (await isBlockMember(db, id, user.id))) {
+        // 是成员，放行
+      } else {
+        return null;
+      }
     }
+
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      ownerId: row.ownerId,
+      isLocked: !!row.isLocked,
+      createdAt: row.createdAt,
+    };
   }
 
+  // D1 已归档 / 已删除 / 不存在 → 尝试从归档文件加载 + 热操作重放
+  if (!archiveEnv) return null;
+
+  const archiveData = await loadBlockFromArchive(id, archiveEnv);
+
+  let finalRow: Record<string, unknown> | null = null;
+  let archiveTimestamp: string | null = null;
+
+  if (archiveData) {
+    archiveTimestamp = archiveData.archivedAt;
+    finalRow = archiveData.result;
+  } else if (row) {
+    // 归档文件加载失败 → 降级使用 D1 数据
+    finalRow = row as unknown as Record<string, unknown>;
+  }
+
+  if (!finalRow) return null;
+
+  // 重放归档之后的热操作
+  if (archiveTimestamp) {
+    finalRow = await applyHotOperations(db, "block", id, finalRow, archiveTimestamp);
+    if (!finalRow) return null;
+  }
+
+  const aRow = finalRow as unknown as {
+    id: string;
+    name: string;
+    description: string | null;
+    ownerId: string;
+    isLocked: number;
+    isDeleted: number;
+    createdAt: string;
+  };
+
+  // 归档数据同样检查删除状态
+  if (aRow.isDeleted) return null;
+
   return {
-    id: row.id,
-    name: row.name,
-    description: row.description,
-    ownerId: row.ownerId,
-    isLocked: !!row.isLocked,
-    createdAt: row.createdAt,
+    id: aRow.id,
+    name: aRow.name,
+    description: aRow.description,
+    ownerId: aRow.ownerId,
+    isLocked: !!aRow.isLocked,
+    createdAt: aRow.createdAt,
   };
 }
 

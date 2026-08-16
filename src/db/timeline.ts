@@ -3,13 +3,96 @@
  *
  * 底层表：timeline_event
  * 规则：只返回 status = 'approved' 的条目（未审核/被拒绝 → 404）。
+ *
+ * 归档回退：
+ *   - getTimelineEventById 支持从加密归档文件读取（需传入 ArchiveEnv）
  */
 
 import type { CurrentUser } from "../utils/permission";
 import { can } from "../utils/permission";
+import type { ArchiveEnv } from "../utils/archive";
+import type { ArchiveFileContent } from "../utils/archive";
+import { getArchivePath } from "../utils/archive";
+import { decryptData } from "../utils/crypto";
 import { PERM_SUBMIT_TIMELINE, PERM_REVIEW_TIMELINE } from "../shared/permissions";
 import { generateUUID } from "../utils/uuid";
 import { nowISO } from "../utils/time";
+
+// ============================================================
+//  归档回退辅助函数
+// ============================================================
+
+/** 归档加载结果（含归档时间戳，用于热操作重放） */
+interface ArchiveLoaderResult {
+  result: Record<string, unknown>;
+  archivedAt: string;
+}
+
+/**
+ * 从加密归档文件加载大事记数据
+ *
+ * 遍历最近 30 天的归档目录，找到匹配 ID 的归档文件后解密返回。
+ * 使用 AbortController 设置 5 秒超时。
+ */
+async function loadTimelineFromArchive(
+  id: string,
+  archiveEnv: ArchiveEnv
+): Promise<ArchiveLoaderResult | null> {
+  for (let daysAgo = 0; daysAgo <= 30; daysAgo++) {
+    const d = new Date();
+    d.setDate(d.getDate() - daysAgo);
+    const dateStr = d.toISOString().slice(0, 10);
+    const archivePath = getArchivePath("timeline", id, dateStr);
+    const url = `${archiveEnv.SITE_URL}/${archivePath}`;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const resp = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!resp.ok) continue;
+
+      const encrypted = await resp.text();
+      const archive = (await decryptData(
+        encrypted,
+        archiveEnv.ENCRYPTION_KEY
+      )) as ArchiveFileContent;
+
+      return { result: archive.result, archivedAt: archive.archivedAt };
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 重放归档之后的热操作（大事记无 edit/delete 操作，直接返回原数据）
+ */
+async function applyHotOperations(
+  db: D1Database,
+  targetType: string,
+  targetId: string,
+  baseData: Record<string, unknown>,
+  archivedAt: string
+): Promise<Record<string, unknown> | null> {
+  const ops = await db
+    .prepare(
+      `SELECT operation, createdAt
+       FROM archive_operation
+       WHERE targetType = ? AND targetId = ? AND createdAt > ?
+       ORDER BY createdAt ASC`
+    )
+    .bind(targetType, targetId, archivedAt)
+    .all<{ operation: string; createdAt: string }>();
+
+  for (const op of ops.results) {
+    if (op.operation === "delete") return null;
+  }
+
+  return baseData;
+}
 
 // ============================================================
 //  返回类型
@@ -78,18 +161,20 @@ export async function listTimelineEvents(
 }
 
 /**
- * 获取单条大事记
+ * 获取单条大事记（带归档回退）
  *
  * status 必须为 'approved'，否则返回 null（404）。
+ * D1 中不存在时，尝试从归档文件加载。
  */
 export async function getTimelineEventById(
   db: D1Database,
   id: string,
-  _user: CurrentUser | null
+  _user: CurrentUser | null,
+  archiveEnv?: ArchiveEnv
 ): Promise<TimelineEventInfo | null> {
   const row = await db
     .prepare(
-      `SELECT id, title, description, eventDate, submittedBy, createdAt
+      `SELECT id, title, description, eventDate, submittedBy, isArchived, createdAt
        FROM timeline_event WHERE id = ? AND status = 'approved'`
     )
     .bind(id)
@@ -99,18 +184,62 @@ export async function getTimelineEventById(
       description: string;
       eventDate: string;
       submittedBy: string;
+      isArchived: number;
       createdAt: string;
     }>();
 
-  if (!row) return null;
+  // D1 中存在且未归档 → 正常路径
+  if (row && !row.isArchived) {
+    return {
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      eventDate: row.eventDate,
+      submittedBy: row.submittedBy,
+      createdAt: row.createdAt,
+    };
+  }
+
+  // D1 已归档或不存在 → 尝试从归档文件加载 + 热操作重放
+  if (!archiveEnv) return null;
+
+  const archiveData = await loadTimelineFromArchive(id, archiveEnv);
+
+  let finalRow: Record<string, unknown> | null = null;
+  let archiveTimestamp: string | null = null;
+
+  if (archiveData) {
+    archiveTimestamp = archiveData.archivedAt;
+    finalRow = archiveData.result;
+  } else if (row) {
+    // 归档文件加载失败 → 降级使用 D1 数据
+    finalRow = row as unknown as Record<string, unknown>;
+  }
+
+  if (!finalRow) return null;
+
+  // 重放归档之后的热操作
+  if (archiveTimestamp) {
+    finalRow = await applyHotOperations(db, "timeline", id, finalRow, archiveTimestamp);
+    if (!finalRow) return null;
+  }
+
+  const aRow = finalRow as unknown as {
+    id: string;
+    title: string;
+    description: string;
+    eventDate: string;
+    submittedBy: string;
+    createdAt: string;
+  };
 
   return {
-    id: row.id,
-    title: row.title,
-    description: row.description,
-    eventDate: row.eventDate,
-    submittedBy: row.submittedBy,
-    createdAt: row.createdAt,
+    id: aRow.id,
+    title: aRow.title,
+    description: aRow.description,
+    eventDate: aRow.eventDate,
+    submittedBy: aRow.submittedBy,
+    createdAt: aRow.createdAt,
   };
 }
 
@@ -134,10 +263,10 @@ export async function submitTimeline(
 
   await db
     .prepare(
-      `INSERT INTO timeline_event (id, title, description, eventDate, status, submittedBy, createdAt)
-       VALUES (?, ?, ?, ?, 'pending', ?, ?)`
+      `INSERT INTO timeline_event (id, title, description, eventDate, status, submittedBy, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, 'pending', ?, ?, ?)`
     )
-    .bind(id, data.title, data.description, data.eventDate, user.id, now)
+    .bind(id, data.title, data.description, data.eventDate, user.id, now, now)
     .run();
 
   return id;
@@ -171,9 +300,9 @@ export async function reviewTimeline(
 
   await db
     .prepare(
-      "UPDATE timeline_event SET status = ?, reviewedBy = ?, reviewedAt = ? WHERE id = ?"
+      "UPDATE timeline_event SET status = ?, reviewedBy = ?, reviewedAt = ?, updatedAt = ? WHERE id = ?"
     )
-    .bind(status, user.id, now, id)
+    .bind(status, user.id, now, now, id)
     .run();
 
   return true;

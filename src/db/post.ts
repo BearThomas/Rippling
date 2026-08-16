@@ -11,10 +11,18 @@
  *   - archive_operation 表存储完整操作链（edit / delete），用于归档和追责
  *   - 删除操作加 isDeleted 标记，不物理删除
  *   - 归档时最终状态作为结果文件
+ *
+ * 归档回退：
+ *   - getPostById 支持从加密归档文件读取（需传入 ArchiveEnv）
+ *   - D1 中 isArchived=1 或记录不存在时，尝试从归档文件加载
  */
 
 import type { CurrentUser } from "../utils/permission";
 import { can } from "../utils/permission";
+import type { ArchiveEnv } from "../utils/archive";
+import type { ArchiveFileContent } from "../utils/archive";
+import { getArchivePath } from "../utils/archive";
+import { decryptData } from "../utils/crypto";
 import {
   PERM_VIEW_ANONYMOUS_IDENTITY,
   PERM_MANAGE_BLOCK,
@@ -26,6 +34,104 @@ import {
 } from "../shared/permissions";
 import { generateUUID } from "../utils/uuid";
 import { nowISO } from "../utils/time";
+
+// ============================================================
+//  归档回退辅助函数
+// ============================================================
+
+/** 归档加载结果（含归档时间戳，用于热操作重放） */
+interface ArchiveLoaderResult {
+  result: Record<string, unknown>;
+  /** 归档执行时间（ISO 8601），仅重放此时间之后的操作 */
+  archivedAt: string;
+}
+
+/**
+ * 从加密归档文件加载帖子数据
+ *
+ * 归档文件存储在站点的 /archive/ 路径下（静态资源），
+ * 通过 HTTP fetch 获取后解密还原。
+ * 使用 AbortController 设置 5 秒超时，避免 fetch 挂起。
+ */
+async function loadPostFromArchive(
+  id: string,
+  archiveEnv: ArchiveEnv
+): Promise<ArchiveLoaderResult | null> {
+  // 尝试从今天和过去几天的归档目录中查找
+  // 简化处理：遍历最近 30 天的日期
+  for (let daysAgo = 0; daysAgo <= 30; daysAgo++) {
+    const d = new Date();
+    d.setDate(d.getDate() - daysAgo);
+    const dateStr = d.toISOString().slice(0, 10);
+    const archivePath = getArchivePath("post", id, dateStr);
+    const url = `${archiveEnv.SITE_URL}/${archivePath}`;
+
+    try {
+      // 5 秒超时控制，避免 fetch 挂起阻塞请求
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const resp = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!resp.ok) continue;
+
+      const encrypted = await resp.text();
+      const archive = (await decryptData(
+        encrypted,
+        archiveEnv.ENCRYPTION_KEY
+      )) as ArchiveFileContent;
+
+      return { result: archive.result, archivedAt: archive.archivedAt };
+    } catch {
+      // 文件不存在、解密失败、超时或网络错误 → 继续尝试其他日期
+      continue;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * 重放归档之后的热操作
+ *
+ * 查询 archive_operation 表中归档时间之后的操作记录，
+ * 按时间顺序应用到归档数据上：
+ *   - edit → 更新 content 和 updatedAt
+ *   - delete → 返回 null（帖子已被删除）
+ *
+ * @returns 应用操作后的数据，null 表示已被删除
+ */
+async function applyHotOperations(
+  db: D1Database,
+  targetType: string,
+  targetId: string,
+  baseData: Record<string, unknown>,
+  archivedAt: string
+): Promise<Record<string, unknown> | null> {
+  const ops = await db
+    .prepare(
+      `SELECT operation, operationData, createdAt
+       FROM archive_operation
+       WHERE targetType = ? AND targetId = ? AND createdAt > ?
+       ORDER BY createdAt ASC`
+    )
+    .bind(targetType, targetId, archivedAt)
+    .all<{ operation: string; operationData: string | null; createdAt: string }>();
+
+  const data = { ...baseData };
+
+  for (const op of ops.results) {
+    if (op.operation === "delete") {
+      return null; // 归档后被删除
+    }
+    if (op.operation === "edit" && op.operationData) {
+      data.content = op.operationData;
+      data.updatedAt = op.createdAt;
+    }
+  }
+
+  return data;
+}
 
 // ============================================================
 //  返回类型
@@ -158,17 +264,24 @@ async function checkPostVisibility(
 // ============================================================
 
 /**
- * 获取单个帖子（带完整权限检查）
+ * 获取单个帖子（带完整权限检查 + 归档回退）
  *
- * 返回 null 表示：帖子不存在 / 无可见性权限 / 无板块权限
+ * 查询优先级：
+ *   1. D1 热数据（isArchived=0）
+ *   2. D1 已归档记录（isArchived=1）→ 从归档文件读取最终状态
+ *   3. D1 不存在 → 尝试从归档文件加载
+ *
+ * 返回 null 表示：帖子不存在 / 无可见性权限 / 无板块权限 / 归档文件不存在
  */
 export async function getPostById(
   db: D1Database,
   id: string,
-  user: CurrentUser | null
+  user: CurrentUser | null,
+  archiveEnv?: ArchiveEnv
 ): Promise<PostInfo | null> {
   const row = await db
-    .prepare("SELECT * FROM post WHERE id = ? AND isDeleted = 0")
+    // 不加 isDeleted 过滤：已归档+已软删除的记录仍需从归档恢复
+    .prepare("SELECT * FROM post WHERE id = ?")
     .bind(id)
     .first<{
       id: string;
@@ -181,22 +294,73 @@ export async function getPostById(
       blockId: string | null;
       isPinned: number;
       isArchived: number;
+      isDeleted: number;
       createdAt: string;
       updatedAt: string;
     }>();
 
-  if (!row) return null;
+  // D1 中已软删除 → 直接返回 null（不走归档回退）
+  if (row?.isDeleted) return null;
 
-  // 可见性白名单检查
+  // D1 中存在且未归档 → 正常路径
+  if (row && !row.isArchived) {
+    const visible = await checkPostVisibility(
+      db, row.id, row.authorId, row.visibility, user
+    );
+    if (!visible) return null;
+    if (!(await canAccessBlock(db, row.blockId, user))) return null;
+    return filterPostFields(row, user);
+  }
+
+  // D1 已归档 / 已删除 / 不存在 → 尝试从归档文件加载 + 热操作重放
+  if (!archiveEnv) return null;
+
+  const archiveData = await loadPostFromArchive(id, archiveEnv);
+
+  // 确定最终行数据：归档文件 > D1 降级 > null
+  let finalRow: Record<string, unknown> | null = null;
+  let archiveTimestamp: string | null = null;
+
+  if (archiveData) {
+    archiveTimestamp = archiveData.archivedAt;
+    finalRow = archiveData.result;
+  } else if (row) {
+    // 归档文件加载失败 → 降级使用 D1 数据（即使 isArchived=1）
+    finalRow = row as unknown as Record<string, unknown>;
+  }
+
+  if (!finalRow) return null;
+
+  // 重放归档之后的热操作（归档后的 edit / delete）
+  if (archiveTimestamp) {
+    finalRow = await applyHotOperations(db, "post", id, finalRow, archiveTimestamp);
+    if (!finalRow) return null; // 归档后被删除
+  }
+
+  const aRow = finalRow as unknown as {
+    id: string;
+    parentId: string | null;
+    authorId: string;
+    authorVisible: number;
+    title: string | null;
+    content: string;
+    visibility: string;
+    blockId: string | null;
+    isPinned: number;
+    isArchived: number;
+    isDeleted: number;
+    createdAt: string;
+    updatedAt: string;
+  };
+
+  // 归档数据仍需检查可见性白名单和板块权限
   const visible = await checkPostVisibility(
-    db, row.id, row.authorId, row.visibility, user
+    db, aRow.id, aRow.authorId, aRow.visibility, user
   );
   if (!visible) return null;
+  if (!(await canAccessBlock(db, aRow.blockId, user))) return null;
 
-  // 板块访问检查
-  if (!(await canAccessBlock(db, row.blockId, user))) return null;
-
-  return filterPostFields(row, user);
+  return filterPostFields(aRow, user);
 }
 
 /**

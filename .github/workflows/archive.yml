@@ -1,0 +1,52 @@
+# ============================================================
+#  Rippling — 每日归档 Workflow
+#
+#  每日 UTC 00:00 执行：
+#    1. 从 D1 查询超过归档阈值的记录
+#    2. 加密后写入 archive/ 目录
+#    3. 提交并推送到仓库
+# ============================================================
+
+name: Daily Archive
+
+on:
+  schedule:
+    # 每日 UTC 00:00
+    - cron: "0 0 * * *"
+  workflow_dispatch: # 支持手动触发
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run archive script
+        env:
+          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          ARCHIVE_DAYS: "30"
+        run: npx tsx scripts/archive.ts
+
+      - name: Commit and push archive files
+        run: |
+          git config user.name "rippling-archive[bot]"
+          git config user.email "archive@rippling.local"
+          git add archive/
+          # 仅在有变更时提交
+          git diff --cached --quiet || git commit -m "archive: daily archive $(date -u +%Y-%m-%d)"
+          git push
