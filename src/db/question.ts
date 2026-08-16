@@ -25,7 +25,6 @@ export interface QuestionBoxInfo {
 /** 提问条目 */
 export interface QuestionInfo {
   id: string;
-  askerId: string;
   content: string;
   answer: string | null;
   answered: boolean;
@@ -129,8 +128,8 @@ export async function createQuestion(
 
   await db
     .prepare(
-      `INSERT INTO question (id, boxId, askerId, content, answered, createdAt)
-       VALUES (?, ?, ?, ?, 0, ?)`
+      `INSERT INTO question (id, boxId, askerId, content, answered, isDeleted, createdAt)
+       VALUES (?, ?, ?, ?, 0, 0, ?)`
     )
     .bind(id, boxId, askerId, content, now)
     .run();
@@ -191,19 +190,19 @@ export async function listQuestions(
   let params: unknown[];
 
   if (isOwner) {
-    // owner 可看到所有问题（含未回答）
-    sql = `SELECT q.id, q.askerId, q.content, q.answer, q.answered, q.createdAt, q.answeredAt
+    // owner 可看到所有未删除问题（含未回答）
+    sql = `SELECT q.id, q.content, q.answer, q.answered, q.createdAt, q.answeredAt
            FROM question q
            JOIN question_box qb ON q.boxId = qb.id
-           WHERE qb.ownerId = ?
+           WHERE qb.ownerId = ? AND q.isDeleted = 0
            ORDER BY q.createdAt DESC LIMIT ? OFFSET ?`;
     params = [ownerId, limit, offset];
   } else {
-    // 非 owner 仅看到已回答的问题
-    sql = `SELECT q.id, q.askerId, q.content, q.answer, q.answered, q.createdAt, q.answeredAt
+    // 非 owner 仅看到已回答且未删除的问题
+    sql = `SELECT q.id, q.content, q.answer, q.answered, q.createdAt, q.answeredAt
            FROM question q
            JOIN question_box qb ON q.boxId = qb.id
-           WHERE qb.ownerId = ? AND q.answered = 1
+           WHERE qb.ownerId = ? AND q.answered = 1 AND q.isDeleted = 0
            ORDER BY q.answeredAt DESC LIMIT ? OFFSET ?`;
     params = [ownerId, limit, offset];
   }
@@ -213,7 +212,6 @@ export async function listQuestions(
     .bind(...params)
     .all<{
       id: string;
-      askerId: string;
       content: string;
       answer: string | null;
       answered: number;
@@ -223,11 +221,55 @@ export async function listQuestions(
 
   return rows.results.map((r) => ({
     id: r.id,
-    askerId: r.askerId,
     content: r.content,
     answer: r.answer,
     answered: !!r.answered,
     createdAt: r.createdAt,
     answeredAt: r.answeredAt,
   }));
+}
+
+/**
+ * 软删除问题
+ *
+ * 验证问题属于 ownerId，不物理删除。
+ * 在 archive_operation 表记录操作，同时标记 isDeleted = 1。
+ *
+ * @returns false 表示问题不存在或不属于该 owner
+ */
+export async function softDeleteQuestion(
+  db: D1Database,
+  questionId: string,
+  ownerId: string
+): Promise<boolean> {
+  // 验证问题归属
+  const question = await db
+    .prepare(
+      `SELECT q.id FROM question q
+       JOIN question_box qb ON q.boxId = qb.id
+       WHERE q.id = ? AND qb.ownerId = ? AND q.isDeleted = 0`
+    )
+    .bind(questionId, ownerId)
+    .first();
+
+  if (!question) return false;
+
+  const now = nowISO();
+
+  // 标记删除
+  await db
+    .prepare("UPDATE question SET isDeleted = 1 WHERE id = ?")
+    .bind(questionId)
+    .run();
+
+  // 记录到 archive_operation
+  await db
+    .prepare(
+      `INSERT INTO archive_operation (id, targetType, targetId, operation, operatedBy, createdAt)
+       VALUES (?, 'question', ?, 'delete', ?, ?)`
+    )
+    .bind(generateUUID(), questionId, ownerId, now)
+    .run();
+
+  return true;
 }

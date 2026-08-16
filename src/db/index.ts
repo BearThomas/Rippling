@@ -71,6 +71,7 @@ export {
   createQuestion,
   answerQuestion,
   listQuestions,
+  softDeleteQuestion,
 } from "./question";
 
 // 工单

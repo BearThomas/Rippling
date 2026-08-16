@@ -233,6 +233,7 @@ CREATE TABLE question (
     content    TEXT NOT NULL,
     answer     TEXT,
     answered   INTEGER DEFAULT 0,
+    isDeleted  INTEGER DEFAULT 0,
     createdAt  TEXT NOT NULL,
     answeredAt TEXT
 );
