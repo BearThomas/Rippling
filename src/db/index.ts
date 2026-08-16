@@ -42,6 +42,8 @@ export {
   getTimelineEventById,
   submitTimeline,
   reviewTimeline,
+  listUserTimelines,
+  getTimelineReviewInfo,
 } from "./timeline";
 
 // 投票

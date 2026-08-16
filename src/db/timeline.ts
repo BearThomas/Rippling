@@ -115,6 +115,15 @@ export interface TimelineEventAdmin extends TimelineEventInfo {
   reviewedAt: string | null;
 }
 
+/** 用户提交的大事记（含审核状态，用于 /my 列表） */
+export interface UserTimelineInfo {
+  id: string;
+  title: string;
+  status: string;
+  eventDate: string;
+  createdAt: string;
+}
+
 // ============================================================
 //  提交数据
 // ============================================================
@@ -284,7 +293,8 @@ export async function reviewTimeline(
   db: D1Database,
   id: string,
   status: "approved" | "rejected",
-  user: CurrentUser | null
+  user: CurrentUser | null,
+  reason?: string
 ): Promise<boolean> {
   if (!can(user, PERM_REVIEW_TIMELINE)) return false;
   if (!user) return false;
@@ -305,5 +315,60 @@ export async function reviewTimeline(
     .bind(status, user.id, now, now, id)
     .run();
 
+  // 拒绝时记录原因到操作链
+  if (status === "rejected" && reason) {
+    await db
+      .prepare(
+        `INSERT INTO archive_operation (id, targetType, targetId, operation, operatedBy, operationData, createdAt)
+         VALUES (?, 'timeline_event', ?, 'reject', ?, ?, ?)`
+      )
+      .bind(generateUUID(), id, user.id, reason, now)
+      .run();
+  }
+
   return true;
+}
+
+/**
+ * 列出某用户提交的所有大事记（含 pending / approved / rejected）
+ *
+ * 按 createdAt 倒序。
+ */
+export async function listUserTimelines(
+  db: D1Database,
+  userId: string
+): Promise<UserTimelineInfo[]> {
+  const rows = await db
+    .prepare(
+      `SELECT id, title, status, eventDate, createdAt
+       FROM timeline_event WHERE submittedBy = ?
+       ORDER BY createdAt DESC`
+    )
+    .bind(userId)
+    .all<{
+      id: string;
+      title: string;
+      status: string;
+      eventDate: string;
+      createdAt: string;
+    }>();
+
+  return rows.results;
+}
+
+/**
+ * 获取大事记审核信息（reviewedBy / reviewedAt）
+ *
+ * 供路由层在权限检查后调用，判断是否返回审核详情。
+ */
+export async function getTimelineReviewInfo(
+  db: D1Database,
+  id: string
+): Promise<{ reviewedBy: string | null; reviewedAt: string | null } | null> {
+  const row = await db
+    .prepare("SELECT reviewedBy, reviewedAt FROM timeline_event WHERE id = ?")
+    .bind(id)
+    .first<{ reviewedBy: string | null; reviewedAt: string | null }>();
+
+  return row;
 }
