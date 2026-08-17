@@ -3,11 +3,13 @@
  */
 
 import { apiGet, apiPost } from "./client";
-import type { VoteInfo } from "../types";
+import type { VoteInfo, VoteListItem } from "../types";
 
 /** 创建投票参数 */
 export interface CreateVoteInput {
+  /** 标题（≤100 字） */
   title: string;
+  /** 描述（≤500 字，可选） */
   description?: string;
   /** 选项内容列表（至少 2 项） */
   options: string[];
@@ -19,27 +21,27 @@ export interface CreateVoteInput {
   endAt: string;
 }
 
-/** 投票列表 */
-export function listVotes(limit = 20, offset = 0): Promise<VoteInfo[]> {
-  return apiGet<VoteInfo[]>("/api/vote/list", { params: { limit, offset } });
+/** 投票列表（description 为预览，totalVotes 不可见时为 null） */
+export function getVoteList(limit = 20, offset = 0): Promise<VoteListItem[]> {
+  return apiGet<VoteListItem[]>("/api/vote/list", { params: { limit, offset } });
 }
 
-/** 投票详情（含选项与票数） */
-export function getVote(id: string): Promise<VoteInfo> {
+/** 投票详情（含选项 / 票数可见性 / 我的投票） */
+export function getVoteDetail(id: string): Promise<VoteInfo> {
   return apiGet<VoteInfo>("/api/vote", { params: { id } });
 }
 
-/** 创建投票（create_vote 权限） */
-export function createVote(input: CreateVoteInput): Promise<VoteInfo> {
-  return apiPost<VoteInfo>("/api/vote", input);
+/** 创建投票（create_vote 权限），返回新投票 ID */
+export function createVote(input: CreateVoteInput): Promise<{ id: string }> {
+  return apiPost<{ id: string }>("/api/vote", input);
 }
 
-/** 投票（可多选取决于投票设置） */
-export function castVote(voteId: string, optionIds: string[]): Promise<VoteInfo> {
-  return apiPost<VoteInfo>("/api/vote/cast", { voteId, optionIds });
+/** 投票（后端只返回 success，无 data；结果需重新拉详情） */
+export function castVote(voteId: string, optionIds: string[]): Promise<void> {
+  return apiPost<void>("/api/vote/cast", { voteId, optionIds });
 }
 
-/** 关闭投票（发起人） */
-export function closeVote(voteId: string): Promise<void> {
-  return apiPost<void>("/api/vote/close", { voteId });
+/** 关闭投票（创建者本人或管理员；body 为 { id }） */
+export function closeVote(id: string): Promise<void> {
+  return apiPost<void>("/api/vote/close", { id });
 }

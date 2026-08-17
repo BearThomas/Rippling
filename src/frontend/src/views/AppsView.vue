@@ -1,54 +1,55 @@
 <!--
   应用页 — 功能入口列表
 
-  展示站点各应用入口，带备注说明。
+  展示站点各应用入口（图标 + 名称 + 备注），全部真实可跳转；
+  友情链接暂未上线，置灰展示。
 -->
 <script setup lang="ts">
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
 
-/** 应用入口配置 */
+/** 应用入口配置（to 为 null 表示暂未上线） */
 const APPS = [
   {
     name: "大事记",
     icon: "calendar",
     to: "/timeline",
-    note: "校园大事记时间线，提交需审核",
+    note: "记录学校重要事件",
   },
   {
     name: "表白墙",
     icon: "heart",
     to: "/confession",
-    note: "匿名表白与心情分享",
+    note: "匿名表达心意",
   },
   {
     name: "投票",
     icon: "chart",
     to: "/vote",
-    note: "发起或参与校园投票",
+    note: "参与或创建投票",
   },
   {
     name: "创建板块",
     icon: "plusSquare",
-    to: "/tickets",
-    note: "提交建板申请工单，管理员审核后自动创建",
+    to: "/ticket/create?type=block_create",
+    note: "提交工单申请创建板块",
   },
   {
     name: "我的工单",
     icon: "file",
     to: "/tickets",
-    note: "权限申请 / 举报 / 申诉等工单进度",
+    note: "查看我提交的工单",
+  },
+  {
+    name: "管理日志",
+    icon: "shield",
+    to: "/admin-log",
+    note: "公开透明的管理操作记录",
   },
   {
     name: "友情链接",
     icon: "link",
     to: null,
-    note: "校园合作站点链接（待开放）",
-  },
-  {
-    name: "管理日志",
-    icon: "shield",
-    to: "/admin",
-    note: "管理操作记录完全公开可查",
+    note: "即将上线",
   },
 ] as const;
 </script>

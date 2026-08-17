@@ -1,33 +1,53 @@
 /**
  * 大事记 API（/api/timeline）
  *
- * 提交大事记走工单系统（timeline_submit 类型），
- * GET /my 返回当前用户的大事记工单（映射为 pending/approved/rejected 状态）。
+ * 注意：提交大事记已改走工单系统（POST /api/ticket，type='timeline_submit'，
+ * extraData 携带 eventDate），请使用 api/ticket.ts 的 createTicket，
+ * 本模块不再封装旧版 POST /api/timeline 提交接口。
  */
 
 import { apiGet, apiPost } from "./client";
-import type { TimelineEvent } from "../types";
+import type { TimelineEvent, TimelineSubmission, PostInfo } from "../types";
 
-/** 提交大事记（创建 timeline_submit 工单） */
-export function submitTimeline(input: {
-  title: string;
-  description: string;
-  eventDate: string;
-}): Promise<{ id: string }> {
-  return apiPost<{ id: string }>("/api/timeline", input);
-}
-
-/** 已批准的大事记列表（公开） */
-export function listTimelineEvents(limit = 50, offset = 0): Promise<TimelineEvent[]> {
+/** 已批准的大事记列表（公开，按 eventDate 倒序，description 为预览） */
+export function getTimelineList(limit = 20, offset = 0): Promise<TimelineEvent[]> {
   return apiGet<TimelineEvent[]>("/api/timeline/list", { params: { limit, offset } });
 }
 
-/** 我提交的大事记（工单状态映射） */
-export function getMyTimelineSubmissions(): Promise<TimelineEvent[]> {
-  return apiGet<TimelineEvent[]>("/api/timeline/my");
+/** 大事记详情（完整描述 + likeCount；审核信息按权限附加） */
+export function getTimelineDetail(id: string): Promise<TimelineEvent> {
+  return apiGet<TimelineEvent>("/api/timeline", { params: { id } });
 }
 
-/** 大事记详情 */
-export function getTimelineEvent(id: string): Promise<TimelineEvent> {
-  return apiGet<TimelineEvent>("/api/timeline", { params: { id } });
+/** 我提交的大事记（timeline_submit 工单状态映射，需登录） */
+export function getMyTimelineSubmissions(): Promise<TimelineSubmission[]> {
+  return apiGet<TimelineSubmission[]>("/api/timeline/my");
+}
+
+// ============================================================
+//  大事记评论（复用评论组件体系，targetType = timeline）
+// ============================================================
+
+/** 大事记顶级评论列表（后端已附加 author / likeCount / liked） */
+export function getTimelineComments(
+  timelineId: string,
+  limit = 100,
+  offset = 0
+): Promise<PostInfo[]> {
+  return apiGet<PostInfo[]>("/api/timeline/comments", {
+    params: { timelineId, limit, offset },
+  });
+}
+
+/** 发表大事记评论，返回新评论 ID（子回复仍走 api/post.ts createComment） */
+export function createTimelineComment(
+  timelineId: string,
+  content: string,
+  authorVisible = true
+): Promise<{ id: string }> {
+  return apiPost<{ id: string }>("/api/timeline/comment", {
+    timelineId,
+    content,
+    authorVisible,
+  });
 }

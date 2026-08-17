@@ -50,9 +50,9 @@ async function onToggleLike(event: Event): Promise<void> {
   }
 }
 
-/** 跳转大事记页面 */
+/** 跳转大事记详情页 */
 function openTimeline(): void {
-  router.push({ name: "timeline" });
+  router.push({ name: "timeline-detail", params: { id: props.id } });
 }
 </script>
 

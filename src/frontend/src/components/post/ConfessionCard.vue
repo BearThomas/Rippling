@@ -49,9 +49,9 @@ async function onToggleLike(event: Event): Promise<void> {
   }
 }
 
-/** 跳转表白墙页面 */
+/** 跳转表白详情页 */
 function openConfession(): void {
-  router.push({ name: "confession" });
+  router.push({ name: "confession-detail", params: { id: props.id } });
 }
 </script>
 

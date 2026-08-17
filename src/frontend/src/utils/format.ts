@@ -72,3 +72,28 @@ export function truncateText(text: string, maxLength = 120): string {
   if (!text) return "";
   return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text;
 }
+
+/**
+ * 倒计时：剩余天/小时/分钟；已截止返回「已结束」
+ *
+ * @param nowMs - 当前时间戳（传入响应式 now 可驱动定时刷新）
+ */
+export function formatCountdown(isoString: string, nowMs = Date.now()): string {
+  const target = new Date(isoString).getTime();
+  if (Number.isNaN(target)) return "";
+
+  const diff = target - nowMs;
+  if (diff <= 0) return "已结束";
+
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  const d = Math.floor(diff / day);
+  const h = Math.floor((diff % day) / hour);
+  const m = Math.floor((diff % hour) / minute);
+
+  if (d > 0) return `剩 ${d} 天 ${h} 小时`;
+  if (h > 0) return `剩 ${h} 小时 ${m} 分钟`;
+  return `剩 ${m} 分钟`;
+}

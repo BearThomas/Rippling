@@ -375,6 +375,41 @@ export async function getTimelineReviewInfo(
 }
 
 /**
+ * 创建大事记评论（复用 post 表，parentId = timelineId）
+ *
+ * 大事记不在 post 表，故不走 createPost 的父帖校验；
+ * 评论行本身仍是 post 记录，回复 / 点赞 / 删除复用既有评论体系。
+ * 权限（PERM_COMMENT）与频率限制由路由层负责。
+ *
+ * @returns 新评论 ID；大事记不存在或未通过审核返回 null
+ */
+export async function createTimelineComment(
+  db: D1Database,
+  timelineId: string,
+  data: { authorId: string; content: string; authorVisible: boolean }
+): Promise<string | null> {
+  // 大事记必须存在且已通过审核
+  const exists = await db
+    .prepare("SELECT id FROM timeline_event WHERE id = ? AND status = 'approved'")
+    .bind(timelineId)
+    .first();
+  if (!exists) return null;
+
+  const id = generateUUID();
+  const now = nowISO();
+
+  await db
+    .prepare(
+      `INSERT INTO post (id, parentId, authorId, authorVisible, title, content, visibility, blockId, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, NULL, ?, 'public', NULL, ?, ?)`
+    )
+    .bind(id, timelineId, data.authorId, data.authorVisible ? 1 : 0, data.content, now, now)
+    .run();
+
+  return id;
+}
+
+/**
  * 从工单创建大事记（工单审核通过后调用）
  *
  * 直接创建 status = 'approved' 的大事记：

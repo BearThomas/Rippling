@@ -1,0 +1,1 @@
+import{J as n,L as i}from"./index-D_XfC-AD.js";function e(s=20,o=0){return n("/api/confession/list",{params:{limit:s,offset:o}})}function t(s){return n("/api/confession",{params:{id:s}})}function r(s){return i("/api/confession",{content:s})}export{t as a,r as c,e as g};

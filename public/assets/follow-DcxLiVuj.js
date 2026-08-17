@@ -1,0 +1,1 @@
+import{J as a,K as t,L as s}from"./index-D_XfC-AD.js";function r(o){return s("/api/follow",{targetUserId:o})}function e(o){return t("/api/follow",{params:{targetUserId:o}})}function f(o){return a("/api/follow/status",{params:{targetUserId:o}})}export{r as f,f as g,e as u};

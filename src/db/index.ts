@@ -91,6 +91,7 @@ export {
   reviewTimeline,
   listUserTimelines,
   getTimelineReviewInfo,
+  createTimelineComment,
   createTimelineFromTicket,
 } from "./timeline";
 

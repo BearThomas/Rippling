@@ -19,9 +19,9 @@ export interface CreateTicketInput {
 /** 处理工单动作 */
 export type HandleAction = "approve" | "reject" | "ignore" | "warn" | "punish" | "ban";
 
-/** 创建工单 */
-export function createTicket(input: CreateTicketInput): Promise<TicketInfo> {
-  return apiPost<TicketInfo>("/api/ticket", input);
+/** 创建工单（后端只返回新工单 ID） */
+export function createTicket(input: CreateTicketInput): Promise<{ id: string }> {
+  return apiPost<{ id: string }>("/api/ticket", input);
 }
 
 /** 我的工单列表 */

@@ -2,10 +2,12 @@
  * 大事记 API 路由
  *
  * 路由表（挂载前缀 /api/timeline）：
- *   GET  /list    大事记列表（仅 approved，含 likeCount）
- *   GET  /my      当前用户提交的大事记工单（timeline_submit）
- *   GET  /        单条大事记详情（含 likeCount + 用户名）
- *   POST /        提交大事记（创建 timeline_submit 工单，审核走工单系统）
+ *   GET  /list     大事记列表（仅 approved，含 likeCount）
+ *   GET  /my       当前用户提交的大事记工单（timeline_submit）
+ *   GET  /         单条大事记详情（含 likeCount + 用户名）
+ *   POST /         提交大事记（创建 timeline_submit 工单，审核走工单系统）
+ *   GET  /comments 大事记评论列表（复用 post 表，parentId = timelineId）
+ *   POST /comment  发表大事记评论
  *
  * 所有写操作需认证 + 权限检查 + 频率限制（临时内存方案）。
  * DAL 返回 null / false → 统一 404（不暴露隐藏 ID）。
@@ -22,6 +24,10 @@ import {
   getLikeCount,
   createTicket,
   getMyTickets,
+  createTimelineComment,
+  listPostsByParent,
+  enrichPosts,
+  createNotification,
 } from "../db";
 import type { TimelineEventInfo } from "../db/timeline";
 import type { ArchiveEnv } from "../utils/archive";
@@ -30,6 +36,7 @@ import { checkRateLimit } from "../utils/rate-limit";
 import {
   PERM_SUBMIT_TIMELINE,
   PERM_REVIEW_TIMELINE,
+  PERM_COMMENT,
 } from "../shared/permissions";
 import {
   NOT_FOUND,
@@ -48,6 +55,7 @@ type E = { Bindings: CloudflareEnv; Variables: AppContextVars };
 const LIMITS = {
   TITLE: 100,
   DESCRIPTION: 1000,
+  COMMENT: 300,
 } as const;
 
 /** 列表 description 预览截断长度 */
@@ -329,6 +337,128 @@ timelineRoutes.post("/", requirePermission(PERM_SUBMIT_TIMELINE), async (c) => {
     submittedBy: user.id,
     extraData: { eventDate },
   });
+
+  return c.json({ success: true, data: { id } });
+});
+
+// ------------------------------------------------------------
+//  GET /comments  — 大事记评论列表（顶级）
+//
+//  评论存于 post 表（parentId = timelineId），子回复仍走
+//  GET /api/post/comments（父评论是 post 行）。
+// ------------------------------------------------------------
+
+timelineRoutes.get("/comments", async (c) => {
+  const timelineId = c.req.query("timelineId");
+  if (!timelineId) {
+    return c.json(
+      { success: false, error: { code: VALIDATION_ERROR.code, message: "缺少 timelineId 参数" } },
+      VALIDATION_ERROR.statusCode as any
+    );
+  }
+
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "100", 10), 100);
+  const offset = parseInt(c.req.query("offset") ?? "0", 10);
+  const user = c.get("user");
+
+  // 大事记不存在 → 404（零信任）
+  const exists = await c.env.DB
+    .prepare("SELECT id FROM timeline_event WHERE id = ? AND status = 'approved'")
+    .bind(timelineId)
+    .first();
+  if (!exists) {
+    return c.json(
+      { success: false, error: { code: NOT_FOUND.code, message: NOT_FOUND.message } },
+      NOT_FOUND.statusCode as any
+    );
+  }
+
+  const comments = await listPostsByParent(c.env.DB, timelineId, user, limit, offset);
+  const enriched = await enrichPosts(c.env.DB, comments, user);
+
+  return c.json({ success: true, data: enriched });
+});
+
+// ------------------------------------------------------------
+//  POST /comment  — 发表大事记评论
+// ------------------------------------------------------------
+
+timelineRoutes.post("/comment", requirePermission(PERM_COMMENT), async (c) => {
+  const user = c.get("user")!;
+
+  // 频率限制：与帖子评论共用 comment 桶（每小时 20 条）
+  const rate = checkRateLimit(user.id, "comment", 3600, 20);
+  if (rate.limited) {
+    return c.json(
+      { success: false, error: { code: RATE_LIMITED.code, message: RATE_LIMITED.message } },
+      RATE_LIMITED.statusCode as any
+    );
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.json() as Record<string, unknown>;
+  } catch {
+    return c.json(
+      { success: false, error: { code: VALIDATION_ERROR.code, message: "请求体格式错误" } },
+      VALIDATION_ERROR.statusCode as any
+    );
+  }
+
+  const timelineId = body.timelineId as string;
+  const content = (body.content as string) ?? "";
+
+  if (!timelineId) {
+    return c.json(
+      { success: false, error: { code: VALIDATION_ERROR.code, message: "缺少 timelineId" } },
+      VALIDATION_ERROR.statusCode as any
+    );
+  }
+  if (!content) {
+    return c.json(
+      { success: false, error: { code: VALIDATION_ERROR.code, message: "内容不能为空" } },
+      VALIDATION_ERROR.statusCode as any
+    );
+  }
+  if (content.length > LIMITS.COMMENT) {
+    return c.json(
+      { success: false, error: { code: VALIDATION_ERROR.code, message: `评论最多 ${LIMITS.COMMENT} 字` } },
+      VALIDATION_ERROR.statusCode as any
+    );
+  }
+
+  const id = await createTimelineComment(c.env.DB, timelineId, {
+    authorId: user.id,
+    content,
+    authorVisible: (body.authorVisible as boolean) ?? true,
+  });
+  if (!id) {
+    return c.json(
+      { success: false, error: { code: NOT_FOUND.code, message: NOT_FOUND.message } },
+      NOT_FOUND.statusCode as any
+    );
+  }
+
+  // 通知大事记提交者
+  const event = await c.env.DB
+    .prepare("SELECT submittedBy FROM timeline_event WHERE id = ?")
+    .bind(timelineId)
+    .first<{ submittedBy: string }>();
+
+  if (event && event.submittedBy !== user.id) {
+    const profile = await c.env.DB
+      .prepare("SELECT username FROM user_profile WHERE userId = ?")
+      .bind(user.id)
+      .first<{ username: string }>();
+
+    await createNotification(c.env.DB, {
+      userId: event.submittedBy,
+      type: "comment",
+      targetType: "timeline",
+      targetId: timelineId,
+      content: `${profile?.username ?? "用户"} 评论了你提交的大事记`,
+    });
+  }
 
   return c.json({ success: true, data: { id } });
 });

@@ -260,40 +260,54 @@ export interface SearchData {
 /** 表白墙 */
 export interface ConfessionInfo {
   id: string;
-  authorId: string;
   content: string;
-  isDeleted: boolean;
-  isArchived: boolean;
   createdAt: string;
   updatedAt: string;
-  likeCount?: number;
+  likeCount: number;
 }
 
-/** 大事记 */
+/** 表白墙列表项（preview 为 100 字截断预览；作者永远匿名） */
+export interface ConfessionListItem {
+  id: string;
+  preview: string;
+  createdAt: string;
+  likeCount: number;
+}
+
+/** 大事记（列表返回描述预览，详情返回完整描述） */
 export interface TimelineEvent {
   id: string;
   title: string;
   description: string;
   eventDate: string;
-  status: "pending" | "approved" | "rejected";
-  submittedBy: string;
-  reviewedBy: string | null;
-  reviewedAt: string | null;
+  /** 提交人用户名（账号注销等场景为 null） */
+  submittedBy: string | null;
   createdAt: string;
+  likeCount: number;
+  /** 审核信息（仅提交者本人或 review_timeline 权限者可见） */
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
 }
 
-/** 投票选项 */
+/** 我提交的大事记（timeline_submit 工单映射，/api/timeline/my） */
+export interface TimelineSubmission {
+  /** 工单 ID */
+  id: string;
+  title: string;
+  status: "pending" | "approved" | "rejected";
+  eventDate: string;
+  createdAt: string;
+  result: string | null;
+}
+
+/** 投票选项（结果不可见时 voteCount 为 null） */
 export interface VoteOption {
   id: string;
-  voteId: string;
   content: string;
-  /** 路由层附加：票数 */
-  count?: number;
-  /** 路由层附加：当前用户是否投了该选项 */
-  selected?: boolean;
+  voteCount: number | null;
 }
 
-/** 投票 */
+/** 投票详情 */
 export interface VoteInfo {
   id: string;
   title: string;
@@ -301,11 +315,27 @@ export interface VoteInfo {
   isMultiple: boolean;
   isRealTimeVisible: boolean;
   endAt: string;
+  /** 创建者 userId */
   createdBy: string;
   isClosed: boolean;
   createdAt: string;
-  options?: VoteOption[];
-  totalVotes?: number;
+  options: VoteOption[];
+  /** 结果是否可见（实时可见 / 已关闭 / 已截止） */
+  resultsVisible: boolean;
+  /** 当前用户已投的选项 ID 列表（未投 / 未登录为 null） */
+  myVote: string[] | null;
+}
+
+/** 投票列表项 */
+export interface VoteListItem {
+  id: string;
+  title: string;
+  description: string | null;
+  endAt: string;
+  isClosed: boolean;
+  createdAt: string;
+  /** 总票数（结果不可见时为 null） */
+  totalVotes: number | null;
 }
 
 // ============================================================

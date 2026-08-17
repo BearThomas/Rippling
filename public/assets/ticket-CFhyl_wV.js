@@ -1,0 +1,1 @@
+import{J as a,L as i}from"./index-D_XfC-AD.js";function c(t){return i("/api/ticket",t)}function n(t=50,e=0){return a("/api/ticket/my",{params:{limit:t,offset:e}})}function p(t){return a("/api/ticket",{params:{id:t}})}export{p as a,c,n as g};

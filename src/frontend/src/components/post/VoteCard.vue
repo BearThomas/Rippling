@@ -9,7 +9,7 @@ import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import AppSvgIcon from "../layout/AppSvgIcon.vue";
 import { formatRelativeTime, formatNumber } from "../../utils/format";
-import { getVote, castVote } from "../../api/vote";
+import { getVoteDetail, castVote } from "../../api/vote";
 import { toggleLike } from "../../api/like";
 import { showToast } from "../../utils/toast";
 import { useAuthStore } from "../../stores/auth";
@@ -51,9 +51,9 @@ const ended = computed(
   () => props.isClosed || (props.endAt && new Date(props.endAt).getTime() < Date.now())
 );
 
-/** 总票数 */
+/** 总票数（结果不可见时 voteCount 为 null，按 0 计） */
 const totalVotes = computed(() =>
-  (options.value ?? []).reduce((sum, option) => sum + (option.count ?? 0), 0)
+  (options.value ?? []).reduce((sum, option) => sum + (option.voteCount ?? 0), 0)
 );
 
 /** 拉取投票选项 */
@@ -62,14 +62,11 @@ async function loadOptions(): Promise<void> {
   optionsLoading.value = true;
   optionsError.value = false;
   try {
-    const detail: VoteInfo = await getVote(props.id);
-    options.value = detail.options ?? [];
+    const detail: VoteInfo = await getVoteDetail(props.id);
+    options.value = detail.options;
     isMultiple.value = detail.isMultiple;
-    // 已投过票（任一选项 selected）或实时可见 → 直接展示结果
-    showResult.value =
-      ended.value ||
-      detail.isRealTimeVisible ||
-      options.value.some((option) => option.selected);
+    // 结果可见（实时可见 / 已结束）或已投过票 → 直接展示结果
+    showResult.value = detail.resultsVisible || (detail.myVote?.length ?? 0) > 0;
   } catch {
     optionsError.value = true;
   } finally {
@@ -99,8 +96,10 @@ async function submitVote(): Promise<void> {
   if (selectedIds.value.size === 0 || casting.value) return;
   casting.value = true;
   try {
-    const detail = await castVote(props.id, [...selectedIds.value]);
-    options.value = detail.options ?? options.value;
+    await castVote(props.id, [...selectedIds.value]);
+    // cast 接口无返回，重新拉详情获取票数与我的投票
+    const fresh = await getVoteDetail(props.id);
+    options.value = fresh.options;
     showResult.value = true;
     showToast("投票成功", "success");
   } catch {
@@ -130,9 +129,9 @@ async function onToggleLike(event: Event): Promise<void> {
   }
 }
 
-/** 跳转投票页面 */
+/** 跳转投票详情页 */
 function openVotePage(): void {
-  router.push({ name: "vote" });
+  router.push({ name: "vote-detail", params: { id: props.id } });
 }
 </script>
 
@@ -194,13 +193,13 @@ function openVotePage(): void {
           v-if="showResult || ended"
           class="absolute inset-y-0 left-0 bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)]"
           :style="{
-            width: totalVotes > 0 ? ((option.count ?? 0) / totalVotes) * 100 + '%' : '0%',
+            width: totalVotes > 0 ? ((option.voteCount ?? 0) / totalVotes) * 100 + '%' : '0%',
           }"
         />
         <span class="relative flex items-center justify-between gap-2">
           <span>{{ option.content }}</span>
           <span v-if="showResult || ended" class="shrink-0 text-xs text-ink-soft">
-            {{ option.count ?? 0 }} 票
+            {{ option.voteCount ?? 0 }} 票
           </span>
           <AppSvgIcon v-else-if="selectedIds.has(option.id)" name="check" :size="16" class="shrink-0 text-primary" />
         </span>

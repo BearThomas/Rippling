@@ -34,11 +34,16 @@ const NotificationView = () => import("../views/NotificationView.vue");
 const SettingsView = () => import("../views/SettingsView.vue");
 const AdminView = () => import("../views/AdminView.vue");
 const TimelineView = () => import("../views/TimelineView.vue");
+const TimelineDetailView = () => import("../views/TimelineDetailView.vue");
 const ConfessionView = () => import("../views/ConfessionView.vue");
+const ConfessionDetailView = () => import("../views/ConfessionDetailView.vue");
 const VoteView = () => import("../views/VoteView.vue");
+const VoteDetailView = () => import("../views/VoteDetailView.vue");
 const BlockDetailView = () => import("../views/BlockDetailView.vue");
 const TicketListView = () => import("../views/TicketListView.vue");
 const TicketDetailView = () => import("../views/TicketDetailView.vue");
+const TicketCreateView = () => import("../views/TicketCreateView.vue");
+const AdminLogView = () => import("../views/AdminLogView.vue");
 const QuestionBoxView = () => import("../views/QuestionBoxView.vue");
 const NotFoundView = () => import("../views/NotFoundView.vue");
 
@@ -137,16 +142,34 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "大事记", showBack: true },
       },
       {
+        path: "timeline/:id",
+        name: "timeline-detail",
+        component: TimelineDetailView,
+        meta: { title: "大事记详情", showBack: true, showTabbar: false },
+      },
+      {
         path: "confession",
         name: "confession",
         component: ConfessionView,
         meta: { title: "表白墙", showBack: true },
       },
       {
+        path: "confession/:id",
+        name: "confession-detail",
+        component: ConfessionDetailView,
+        meta: { title: "表白详情", showBack: true, showTabbar: false },
+      },
+      {
         path: "vote",
         name: "vote",
         component: VoteView,
         meta: { title: "投票", showBack: true },
+      },
+      {
+        path: "vote/:id",
+        name: "vote-detail",
+        component: VoteDetailView,
+        meta: { title: "投票详情", showBack: true, showTabbar: false },
       },
       {
         path: "block/:id",
@@ -156,15 +179,30 @@ const routes: RouteRecordRaw[] = [
       },
       {
         path: "tickets",
+        // 兼容任务约定的 /ticket/my 路径
+        alias: "ticket/my",
         name: "ticket-list",
         component: TicketListView,
         meta: { title: "我的工单", showBack: true, requiresAuth: true },
+      },
+      {
+        // 静态段 "ticket/create" 由打分机制保证优先于 "ticket/:id"
+        path: "ticket/create",
+        name: "ticket-create",
+        component: TicketCreateView,
+        meta: { title: "提交工单", showBack: true, showTabbar: false, requiresAuth: true },
       },
       {
         path: "ticket/:id",
         name: "ticket-detail",
         component: TicketDetailView,
         meta: { title: "工单详情", showBack: true, showTabbar: false, requiresAuth: true },
+      },
+      {
+        path: "admin-log",
+        name: "admin-log",
+        component: AdminLogView,
+        meta: { title: "管理日志", showBack: true },
       },
       {
         path: "question-box/:userId",
