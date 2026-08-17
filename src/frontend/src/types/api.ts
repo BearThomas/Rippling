@@ -68,8 +68,20 @@ export interface UserProfile {
   updatedAt: string;
 }
 
-/** 管理面板用户信息 */
-export interface AdminUserInfo extends UserProfile {}
+/** 管理面板用户信息（GET /api/admin/users、/user 的路由层序列化视图） */
+export interface AdminUserInfo {
+  id: string;
+  username: string;
+  studentId: string | null;
+  /** 权限位掩码，后端以十进制字符串返回（BigInt 序列化） */
+  permissions: string;
+  nameColor: string | null;
+  badge: string | null;
+  violationCount: number;
+  /** 账号是否已注销 */
+  isDeactivated: boolean;
+  createdAt: string;
+}
 
 /** 用户公开资料（GET /api/user/profile，含头像与关注关系） */
 export interface UserPublicProfile {
@@ -415,7 +427,8 @@ export interface TicketInfo {
   type: TicketType;
   title: string;
   content: string | null;
-  status: "open" | "closed";
+  /** 后端当前仅产生 open / closed；processing 预留兼容 */
+  status: "open" | "processing" | "closed";
   submittedBy: string;
   assignedTo: string | null;
   result: string | null;

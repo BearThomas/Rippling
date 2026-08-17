@@ -23,6 +23,8 @@ export interface AdminSummary {
   totalConfessions: number;
   totalTimelineEvents: number;
   totalTickets: number;
+  /** 待处理工单数 */
+  openTickets: number;
   totalBlocks: number;
   recentTickets: TicketInfo[];
 }
@@ -105,10 +107,14 @@ export function getTableData(name: string): Promise<Record<string, unknown>[]> {
   });
 }
 
-/** SQL 查询结果（仅 SELECT） */
+/** SQL 查询结果（仅 SELECT / WITH） */
 export interface SqlQueryResult {
   columns: string[];
   rows: Record<string, unknown>[];
+  /** 实际总行数（可能大于返回行数） */
+  rowCount: number;
+  /** 超过 500 行被截断时为 true */
+  truncated: boolean;
 }
 
 /** 执行只读 SQL（edit_database 权限，仅允许 SELECT / WITH） */
@@ -129,14 +135,28 @@ export interface ArchiveFileInfo {
   archivedAt: string;
 }
 
-/** 归档文件列表（view_database 权限） */
-export function listArchiveFiles(): Promise<ArchiveFileInfo[]> {
-  return apiGet<ArchiveFileInfo[]>("/api/admin/archive/files");
+/** 归档文件列表（view_database 权限，支持分页） */
+export function listArchiveFiles(limit = 20, offset = 0): Promise<ArchiveFileInfo[]> {
+  return apiGet<ArchiveFileInfo[]>("/api/admin/archive/files", {
+    params: { limit, offset },
+  });
 }
 
-/** 归档文件内容（解密后，view_database 权限） */
-export function getArchiveFileContent(path: string): Promise<Record<string, unknown>> {
-  return apiGet<Record<string, unknown>>("/api/admin/archive/file", {
+/** 归档文件解密内容（与后端 ArchiveFileContent 结构一致） */
+export interface ArchiveFileContent {
+  /** 归档格式版本 */
+  version: number;
+  /** 归档执行时间（ISO 8601） */
+  archivedAt: string;
+  /** 最终状态快照（归档时刻的完整记录） */
+  result: Record<string, unknown>;
+  /** 完整操作链 */
+  operations: Record<string, unknown>[];
+}
+
+/** 归档文件内容（解密后，view_database 权限；路径由客户端自动 URL 编码） */
+export function getArchiveFileContent(path: string): Promise<ArchiveFileContent> {
+  return apiGet<ArchiveFileContent>("/api/admin/archive/file", {
     params: { path },
   });
 }

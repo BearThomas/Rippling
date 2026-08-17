@@ -139,6 +139,7 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "设置", showBack: true, requiresAuth: true },
       },
       {
+        // access_admin_panel 权限校验在 AdminView 内完成（无权限 Toast + 跳首页）
         path: "admin",
         name: "admin",
         component: AdminView,
@@ -188,8 +189,9 @@ const routes: RouteRecordRaw[] = [
       },
       {
         path: "tickets",
-        // 兼容任务约定的 /ticket/my 路径
-        alias: "ticket/my",
+        // 兼容任务约定的 /ticket/my 与 /ticket/list 路径
+        //（全部工单由页面内 Tab 切换，需 view_ticket 权限）
+        alias: ["ticket/my", "ticket/list"],
         name: "ticket-list",
         component: TicketListView,
         meta: { title: "我的工单", showBack: true, requiresAuth: true },
