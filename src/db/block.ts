@@ -17,14 +17,46 @@ import { getArchivePath } from "../utils/archive";
 import { decryptData } from "../utils/crypto";
 import {
   PERM_MANAGE_BLOCK,
-} from "../shared/permissions";
-import {
+  BLOCK_PERM_VIEW,
+  BLOCK_PERM_CREATE_POST,
+  BLOCK_PERM_COMMENT,
+  BLOCK_PERM_LIKE,
+  BLOCK_PERM_EDIT_OWN_POST,
+  BLOCK_PERM_DELETE_OWN_POST,
+  BLOCK_PERM_UPLOAD_IMAGE,
   BLOCK_PERM_APPROVE_JOIN,
+  BLOCK_PERM_MANAGE_MEMBER,
   BLOCK_PERM_MANAGE_ROLE,
   BLOCK_PERM_DELETE,
+  BLOCK_PERM_TRANSFER,
 } from "../shared/permissions";
 import { generateUUID } from "../utils/uuid";
 import { nowISO } from "../utils/time";
+
+// ============================================================
+//  板块权限常量
+// ============================================================
+
+/**
+ * 板块长（owner）权限位 — 0-14 位全开
+ *
+ * (1n << 15n) - 1n = 32767。板块长在任期间权限不可修改。
+ */
+export const BLOCK_OWNER_PERMISSIONS = 32767;
+
+/**
+ * 默认成员（member）权限位
+ *
+ * view + create_post + comment + like + edit_own_post + delete_own_post + upload_image
+ */
+export const BLOCK_DEFAULT_MEMBER_PERMISSIONS =
+  (1 << BLOCK_PERM_VIEW) |
+  (1 << BLOCK_PERM_CREATE_POST) |
+  (1 << BLOCK_PERM_COMMENT) |
+  (1 << BLOCK_PERM_LIKE) |
+  (1 << BLOCK_PERM_EDIT_OWN_POST) |
+  (1 << BLOCK_PERM_DELETE_OWN_POST) |
+  (1 << BLOCK_PERM_UPLOAD_IMAGE);
 
 // ============================================================
 //  归档回退辅助函数
@@ -108,7 +140,7 @@ async function applyHotOperations(
 //  返回类型
 // ============================================================
 
-/** 板块信息 */
+/** 板块信息（列表用） */
 export interface BlockInfo {
   id: string;
   name: string;
@@ -116,6 +148,16 @@ export interface BlockInfo {
   ownerId: string;
   isLocked: boolean;
   createdAt: string;
+}
+
+/** 板块详情（含当前用户成员信息） */
+export interface BlockDetailInfo extends BlockInfo {
+  /** 当前用户是否为成员 */
+  isMember: boolean;
+  /** 当前用户角色（owner/member），非成员为 null */
+  myRole: string | null;
+  /** 当前用户板块权限（BigInt 字符串），非成员为 null */
+  myPermissions: string | null;
 }
 
 /** 板块成员信息 */
@@ -126,6 +168,14 @@ export interface BlockMemberInfo {
   role: string;
   permissions: bigint;
   joinedAt: string;
+}
+
+/** 板块加入申请信息 */
+export interface JoinRequestInfo {
+  id: string;
+  userId: string;
+  status: string;
+  createdAt: string;
 }
 
 /** 创建板块的输入参数 */
@@ -176,6 +226,20 @@ async function isBlockMember(
   return !!row;
 }
 
+/** 检查用户是否为板块长（owner） */
+async function isBlockOwner(
+  db: D1Database,
+  blockId: string,
+  userId: string
+): Promise<boolean> {
+  const row = await db
+    .prepare("SELECT id FROM block_member WHERE blockId = ? AND userId = ? AND role = 'owner'")
+    .bind(blockId, userId)
+    .first();
+
+  return !!row;
+}
+
 // ============================================================
 //  查询函数
 // ============================================================
@@ -207,13 +271,12 @@ export async function createBlock(
 
   // 创建者自动成为板块成员（owner 角色）
   // 板块长初始权限全开（0-14 位全部置 1 = 32767）
-  // 注：板块长在任期间权限不可变，由后续 Task 在 updateMemberPermissions 中增加保护
-  const OWNER_PERMISSIONS = 32767; // (1n << 15n) - 1 = 15 位全开
+  // 板块长在任期间权限不可变，由 updateMemberPermissions 保护
   await db
     .prepare(
       "INSERT INTO block_member (id, blockId, userId, role, permissions, joinedAt) VALUES (?, ?, ?, 'owner', ?, ?)"
     )
-    .bind(generateUUID(), id, data.ownerId, OWNER_PERMISSIONS, now)
+    .bind(generateUUID(), id, data.ownerId, BLOCK_OWNER_PERMISSIONS, now)
     .run();
 
   return id;
@@ -225,13 +288,15 @@ export async function createBlock(
  * - isDeleted = 1 → null
  * - isLocked = 1 且非成员且无 manage_block → null
  * - D1 中不存在 → 尝试从归档文件加载
+ *
+ * 返回 BlockDetailInfo，含当前用户是否为成员、角色、权限。
  */
 export async function getBlockById(
   db: D1Database,
   id: string,
   user: CurrentUser | null,
   archiveEnv?: ArchiveEnv
-): Promise<BlockInfo | null> {
+): Promise<BlockDetailInfo | null> {
   const row = await db
     .prepare("SELECT id, name, description, ownerId, isLocked, isDeleted, isArchived, createdAt FROM block WHERE id = ?")
     .bind(id)
@@ -259,6 +324,8 @@ export async function getBlockById(
       }
     }
 
+    const membership = await getMyMembership(db, id, user);
+
     return {
       id: row.id,
       name: row.name,
@@ -266,6 +333,9 @@ export async function getBlockById(
       ownerId: row.ownerId,
       isLocked: !!row.isLocked,
       createdAt: row.createdAt,
+      isMember: membership.isMember,
+      myRole: membership.myRole,
+      myPermissions: membership.myPermissions,
     };
   }
 
@@ -306,6 +376,8 @@ export async function getBlockById(
   // 归档数据同样检查删除状态
   if (aRow.isDeleted) return null;
 
+  const membership = await getMyMembership(db, id, user);
+
   return {
     id: aRow.id,
     name: aRow.name,
@@ -313,6 +385,35 @@ export async function getBlockById(
     ownerId: aRow.ownerId,
     isLocked: !!aRow.isLocked,
     createdAt: aRow.createdAt,
+    isMember: membership.isMember,
+    myRole: membership.myRole,
+    myPermissions: membership.myPermissions,
+  };
+}
+
+/**
+ * 查询当前用户在板块中的成员信息
+ *
+ * @returns isMember / myRole / myPermissions（BigInt 字符串）
+ */
+async function getMyMembership(
+  db: D1Database,
+  blockId: string,
+  user: CurrentUser | null
+): Promise<{ isMember: boolean; myRole: string | null; myPermissions: string | null }> {
+  if (!user) return { isMember: false, myRole: null, myPermissions: null };
+
+  const member = await db
+    .prepare("SELECT role, permissions FROM block_member WHERE blockId = ? AND userId = ?")
+    .bind(blockId, user.id)
+    .first<{ role: string; permissions: number }>();
+
+  if (!member) return { isMember: false, myRole: null, myPermissions: null };
+
+  return {
+    isMember: true,
+    myRole: member.role,
+    myPermissions: BigInt(member.permissions).toString(),
   };
 }
 
@@ -426,12 +527,12 @@ export async function approveJoin(
     .bind(user.id, now, request.id)
     .run();
 
-  // 插入成员
+  // 插入成员（默认成员权限）
   await db
     .prepare(
-      "INSERT INTO block_member (id, blockId, userId, role, permissions, joinedAt) VALUES (?, ?, ?, 'member', 0, ?)"
+      "INSERT INTO block_member (id, blockId, userId, role, permissions, joinedAt) VALUES (?, ?, ?, 'member', ?, ?)"
     )
-    .bind(generateUUID(), blockId, userId, now)
+    .bind(generateUUID(), blockId, userId, BLOCK_DEFAULT_MEMBER_PERMISSIONS, now)
     .run();
 
   return true;
@@ -440,9 +541,10 @@ export async function approveJoin(
 /**
  * 更新板块成员权限
  *
- * 需要 block_manage_role 板块权限。
+ * 需要 block_manage_role 板块权限或 manage_block 全站权限。
+ * 禁止修改板块长（owner）的权限（owner 权限全开且不可变）。
  *
- * @returns false 表示无权限
+ * @returns false 表示无权限、目标不存在或目标是 owner
  */
 export async function updateMemberPermissions(
   db: D1Database,
@@ -458,7 +560,14 @@ export async function updateMemberPermissions(
 
   if (!hasBlockPerm) return false;
 
-  const now = nowISO();
+  // 禁止修改 owner 的权限
+  const target = await db
+    .prepare("SELECT role FROM block_member WHERE blockId = ? AND userId = ?")
+    .bind(blockId, userId)
+    .first<{ role: string }>();
+
+  if (!target) return false;
+  if (target.role === "owner") return false;
 
   await db
     .prepare("UPDATE block_member SET permissions = ? WHERE blockId = ? AND userId = ?")
@@ -498,10 +607,43 @@ export async function lockBlock(
 }
 
 /**
+ * 解锁板块
+ *
+ * 需要 manage_block 权限。设置 isLocked = 0。
+ *
+ * @returns false 表示无权限或板块不存在
+ */
+export async function unlockBlock(
+  db: D1Database,
+  id: string,
+  user: CurrentUser | null
+): Promise<boolean> {
+  if (!can(user, PERM_MANAGE_BLOCK)) return false;
+
+  const exists = await db
+    .prepare("SELECT id FROM block WHERE id = ? AND isDeleted = 0")
+    .bind(id)
+    .first();
+
+  if (!exists) return false;
+
+  await db
+    .prepare("UPDATE block SET isLocked = 0 WHERE id = ?")
+    .bind(id)
+    .run();
+
+  return true;
+}
+
+/**
  * 删除板块（软删除）
  *
  * 需要 block_delete 板块权限或 manage_block 全站权限。
- * 设置 isDeleted = 1，并在 archive_operation 记录。
+ * 操作：
+ *   1. 软删除板块内的所有帖子（isDeleted = 1）+ 每个帖子记录 archive_operation delete
+ *   2. 软删除板块本身（isDeleted = 1）+ 记录 archive_operation delete
+ *
+ * 板块数据不物理删除，归档保留用于追责。
  *
  * @returns false 表示无权限或板块不存在
  */
@@ -526,19 +668,377 @@ export async function deleteBlock(
 
   const now = nowISO();
 
-  // 软删除
+  // 1. 查找板块内所有未删除帖子
+  const posts = await db
+    .prepare("SELECT id FROM post WHERE blockId = ? AND isDeleted = 0")
+    .bind(id)
+    .all<{ id: string }>();
+
+  // 2. 软删除每个帖子 + 记录操作链（批量）
+  for (const post of posts.results) {
+    await db
+      .prepare("UPDATE post SET isDeleted = 1, updatedAt = ? WHERE id = ?")
+      .bind(now, post.id)
+      .run();
+
+    await db
+      .prepare(
+        `INSERT INTO archive_operation (id, targetType, targetId, operation, operatedBy, createdAt)
+         VALUES (?, 'post', ?, 'delete', ?, ?)`
+      )
+      .bind(generateUUID(), post.id, user.id, now)
+      .run();
+  }
+
+  // 3. 软删除板块本身
   await db
     .prepare("UPDATE block SET isDeleted = 1 WHERE id = ?")
     .bind(id)
     .run();
 
-  // 记录到 archive_operation
+  // 4. 记录板块删除操作
   await db
     .prepare(
       `INSERT INTO archive_operation (id, targetType, targetId, operation, operatedBy, createdAt)
        VALUES (?, 'block', ?, 'delete', ?, ?)`
     )
     .bind(generateUUID(), id, user.id, now)
+    .run();
+
+  return true;
+}
+
+// ============================================================
+//  成员管理函数
+// ============================================================
+
+/**
+ * 列出板块成员
+ *
+ * 需要 block_manage_member 板块权限、owner 或 manage_block 全站权限。
+ *
+ * @returns 成员列表；无权限返回 null
+ */
+export async function listBlockMembers(
+  db: D1Database,
+  blockId: string,
+  user: CurrentUser | null
+): Promise<BlockMemberInfo[] | null> {
+  if (!user) return null;
+
+  const hasGlobalPerm = can(user, PERM_MANAGE_BLOCK);
+  const isOwner = await isBlockOwner(db, blockId, user.id);
+  const hasBlockPerm = hasGlobalPerm || isOwner || (await hasBlockPermission(db, blockId, user.id, BLOCK_PERM_MANAGE_MEMBER));
+
+  if (!hasBlockPerm) return null;
+
+  const rows = await db
+    .prepare(
+      "SELECT id, blockId, userId, role, permissions, joinedAt FROM block_member WHERE blockId = ? ORDER BY joinedAt ASC"
+    )
+    .bind(blockId)
+    .all<{
+      id: string;
+      blockId: string;
+      userId: string;
+      role: string;
+      permissions: number;
+      joinedAt: string;
+    }>();
+
+  return rows.results.map((r) => ({
+    id: r.id,
+    blockId: r.blockId,
+    userId: r.userId,
+    role: r.role,
+    permissions: BigInt(r.permissions),
+    joinedAt: r.joinedAt,
+  }));
+}
+
+/**
+ * 移除板块成员
+ *
+ * 需要 block_manage_member 板块权限或 manage_block 全站权限。
+ * 不能移除板块长（owner）。
+ *
+ * @returns false 表示无权限、目标不存在或目标是 owner
+ */
+export async function removeBlockMember(
+  db: D1Database,
+  blockId: string,
+  userId: string,
+  user: CurrentUser | null
+): Promise<boolean> {
+  if (!user) return false;
+
+  const hasGlobalPerm = can(user, PERM_MANAGE_BLOCK);
+  const hasBlockPerm = hasGlobalPerm || (await hasBlockPermission(db, blockId, user.id, BLOCK_PERM_MANAGE_MEMBER));
+
+  if (!hasBlockPerm) return false;
+
+  // 禁止移除 owner
+  const target = await db
+    .prepare("SELECT role FROM block_member WHERE blockId = ? AND userId = ?")
+    .bind(blockId, userId)
+    .first<{ role: string }>();
+
+  if (!target) return false;
+  if (target.role === "owner") return false;
+
+  const result = await db
+    .prepare("DELETE FROM block_member WHERE blockId = ? AND userId = ?")
+    .bind(blockId, userId)
+    .run();
+
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/**
+ * 将用户加入板块黑名单
+ *
+ * 需要 block_manage_member 板块权限或 manage_block 全站权限。
+ * 如果用户是成员，同时移除其成员身份。
+ *
+ * @returns false 表示无权限或已在黑名单
+ */
+export async function addToBlockBlacklist(
+  db: D1Database,
+  blockId: string,
+  userId: string,
+  reason: string | null,
+  user: CurrentUser | null
+): Promise<boolean> {
+  if (!user) return false;
+
+  const hasGlobalPerm = can(user, PERM_MANAGE_BLOCK);
+  const hasBlockPerm = hasGlobalPerm || (await hasBlockPermission(db, blockId, user.id, BLOCK_PERM_MANAGE_MEMBER));
+
+  if (!hasBlockPerm) return false;
+
+  // 禁止拉黑 owner
+  if (await isBlockOwner(db, blockId, userId)) return false;
+
+  // 检查是否已在黑名单
+  const existing = await db
+    .prepare("SELECT id FROM block_blacklist WHERE blockId = ? AND userId = ?")
+    .bind(blockId, userId)
+    .first();
+  if (existing) return false;
+
+  const now = nowISO();
+
+  // 如果是成员，移除成员身份
+  await db
+    .prepare("DELETE FROM block_member WHERE blockId = ? AND userId = ? AND role != 'owner'")
+    .bind(blockId, userId)
+    .run();
+
+  await db
+    .prepare(
+      "INSERT INTO block_blacklist (id, blockId, userId, reason, createdAt) VALUES (?, ?, ?, ?, ?)"
+    )
+    .bind(generateUUID(), blockId, userId, reason, now)
+    .run();
+
+  return true;
+}
+
+/**
+ * 将用户移出板块黑名单
+ *
+ * 需要 block_manage_member 板块权限或 manage_block 全站权限。
+ *
+ * @returns false 表示无权限或不在黑名单
+ */
+export async function removeFromBlockBlacklist(
+  db: D1Database,
+  blockId: string,
+  userId: string,
+  user: CurrentUser | null
+): Promise<boolean> {
+  if (!user) return false;
+
+  const hasGlobalPerm = can(user, PERM_MANAGE_BLOCK);
+  const hasBlockPerm = hasGlobalPerm || (await hasBlockPermission(db, blockId, user.id, BLOCK_PERM_MANAGE_MEMBER));
+
+  if (!hasBlockPerm) return false;
+
+  const result = await db
+    .prepare("DELETE FROM block_blacklist WHERE blockId = ? AND userId = ?")
+    .bind(blockId, userId)
+    .run();
+
+  return (result.meta.changes ?? 0) > 0;
+}
+
+/**
+ * 转让板块所有权
+ *
+ * 仅 owner 本人可操作。转让后：
+ *   - 原 owner 角色变为 member，权限重置为默认成员权限
+ *   - 新 owner 角色变为 owner，权限设为全开
+ *
+ * @returns false 表示非 owner、目标不存在或目标已在板块
+ */
+export async function transferBlockOwnership(
+  db: D1Database,
+  blockId: string,
+  newOwnerId: string,
+  user: CurrentUser | null
+): Promise<boolean> {
+  if (!user) return false;
+
+  // 仅 owner 本人可转让
+  if (!(await isBlockOwner(db, blockId, user.id))) return false;
+
+  // 不能转让给自己
+  if (newOwnerId === user.id) return false;
+
+  // 板块必须存在且未删除
+  const block = await db
+    .prepare("SELECT id FROM block WHERE id = ? AND isDeleted = 0")
+    .bind(blockId)
+    .first();
+  if (!block) return false;
+
+  const now = nowISO();
+
+  // 检查新 owner 是否已是成员
+  const existingMember = await db
+    .prepare("SELECT id, role FROM block_member WHERE blockId = ? AND userId = ?")
+    .bind(blockId, newOwnerId)
+    .first<{ id: string; role: string }>();
+
+  if (existingMember) {
+    // 已是成员 → 提升为 owner
+    await db
+      .prepare("UPDATE block_member SET role = 'owner', permissions = ? WHERE blockId = ? AND userId = ?")
+      .bind(BLOCK_OWNER_PERMISSIONS, blockId, newOwnerId)
+      .run();
+  } else {
+    // 非成员 → 新增为 owner
+    await db
+      .prepare(
+        "INSERT INTO block_member (id, blockId, userId, role, permissions, joinedAt) VALUES (?, ?, ?, 'owner', ?, ?)"
+      )
+      .bind(generateUUID(), blockId, newOwnerId, BLOCK_OWNER_PERMISSIONS, now)
+      .run();
+  }
+
+  // 原 owner 降级为 member，权限重置为默认
+  await db
+    .prepare("UPDATE block_member SET role = 'member', permissions = ? WHERE blockId = ? AND userId = ?")
+    .bind(BLOCK_DEFAULT_MEMBER_PERMISSIONS, blockId, user.id)
+    .run();
+
+  // 更新板块 ownerId
+  await db
+    .prepare("UPDATE block SET ownerId = ? WHERE id = ?")
+    .bind(newOwnerId, blockId)
+    .run();
+
+  return true;
+}
+
+/**
+ * 退出板块
+ *
+ * 普通成员可退出；owner 不可直接退出（需先转让）。
+ *
+ * @returns false 表示不是成员或 owner
+ */
+export async function leaveBlock(
+  db: D1Database,
+  blockId: string,
+  userId: string
+): Promise<boolean> {
+  const member = await db
+    .prepare("SELECT role FROM block_member WHERE blockId = ? AND userId = ?")
+    .bind(blockId, userId)
+    .first<{ role: string }>();
+
+  if (!member) return false;
+  if (member.role === "owner") return false;
+
+  const result = await db
+    .prepare("DELETE FROM block_member WHERE blockId = ? AND userId = ?")
+    .bind(blockId, userId)
+    .run();
+
+  return (result.meta.changes ?? 0) > 0;
+}
+
+// ============================================================
+//  加入申请管理
+// ============================================================
+
+/**
+ * 获取板块待审核的加入申请
+ *
+ * 需要 block_approve_join 板块权限或 manage_block 全站权限。
+ *
+ * @returns 待审核申请列表；无权限返回 null
+ */
+export async function getBlockJoinRequests(
+  db: D1Database,
+  blockId: string,
+  user: CurrentUser | null
+): Promise<JoinRequestInfo[] | null> {
+  if (!user) return null;
+
+  const hasGlobalPerm = can(user, PERM_MANAGE_BLOCK);
+  const hasBlockPerm = hasGlobalPerm || (await hasBlockPermission(db, blockId, user.id, BLOCK_PERM_APPROVE_JOIN));
+
+  if (!hasBlockPerm) return null;
+
+  const rows = await db
+    .prepare(
+      "SELECT id, userId, status, createdAt FROM block_join_request WHERE blockId = ? AND status = 'pending' ORDER BY createdAt ASC"
+    )
+    .bind(blockId)
+    .all<{ id: string; userId: string; status: string; createdAt: string }>();
+
+  return rows.results.map((r) => ({
+    id: r.id,
+    userId: r.userId,
+    status: r.status,
+    createdAt: r.createdAt,
+  }));
+}
+
+/**
+ * 拒绝加入申请
+ *
+ * 需要 block_approve_join 板块权限或 manage_block 全站权限。
+ *
+ * @returns false 表示无权限或申请不存在
+ */
+export async function rejectJoinRequest(
+  db: D1Database,
+  blockId: string,
+  userId: string,
+  user: CurrentUser | null
+): Promise<boolean> {
+  if (!user) return false;
+
+  const hasGlobalPerm = can(user, PERM_MANAGE_BLOCK);
+  const hasBlockPerm = hasGlobalPerm || (await hasBlockPermission(db, blockId, user.id, BLOCK_PERM_APPROVE_JOIN));
+
+  if (!hasBlockPerm) return false;
+
+  const request = await db
+    .prepare("SELECT id FROM block_join_request WHERE blockId = ? AND userId = ? AND status = 'pending'")
+    .bind(blockId, userId)
+    .first<{ id: string }>();
+
+  if (!request) return false;
+
+  const now = nowISO();
+
+  await db
+    .prepare("UPDATE block_join_request SET status = 'rejected', reviewedBy = ?, reviewedAt = ? WHERE id = ?")
+    .bind(user.id, now, request.id)
     .run();
 
   return true;

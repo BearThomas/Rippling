@@ -31,6 +31,13 @@ import {
   PERM_DELETE_OWN_POST,
   PERM_DELETE_OTHERS_POST,
   PERM_PIN_POST,
+  BLOCK_PERM_CREATE_POST,
+  BLOCK_PERM_COMMENT,
+  BLOCK_PERM_EDIT_OWN_POST,
+  BLOCK_PERM_EDIT_OTHERS_POST,
+  BLOCK_PERM_DELETE_OWN_POST,
+  BLOCK_PERM_DELETE_OTHERS_POST,
+  BLOCK_PERM_PIN_POST,
 } from "../shared/permissions";
 import { generateUUID } from "../utils/uuid";
 import { nowISO } from "../utils/time";
@@ -163,11 +170,13 @@ function hasAnonView(user: CurrentUser | null): boolean {
 }
 
 /**
- * 检查用户是否可访问指定板块
+ * 检查用户是否可访问指定板块（读取）
  *
  * 无 blockId → 可访问
+ * 板块不存在或已删除 → 不可访问（任何人，含 manage_block）
  * 有 manage_block 全站权限 → 可访问
- * 是板块成员 → 可访问
+ * 是板块成员 → 可访问（锁定板块对成员仍可读取）
+ * 非成员 → 不可访问
  */
 async function canAccessBlock(
   db: D1Database,
@@ -175,6 +184,14 @@ async function canAccessBlock(
   user: CurrentUser | null
 ): Promise<boolean> {
   if (!blockId) return true;
+
+  // 板块必须存在且未删除（删除后所有数据不可访问）
+  const block = await db
+    .prepare("SELECT isDeleted FROM block WHERE id = ?")
+    .bind(blockId)
+    .first<{ isDeleted: number }>();
+  if (!block || block.isDeleted) return false;
+
   if (can(user, PERM_MANAGE_BLOCK)) return true;
   if (!user) return false;
 
@@ -184,6 +201,45 @@ async function canAccessBlock(
     .first();
 
   return !!member;
+}
+
+/**
+ * 检查用户能否对板块内帖子执行写操作（发帖/评论/编辑/删除/置顶）
+ *
+ * 规则：
+ *   - 板块不存在或已删除 → 拒绝
+ *   - manage_block 全站权限 → 放行（绕过锁定和成员权限，超级权限）
+ *   - 锁定板块禁止写操作 → 拒绝
+ *   - 必须是成员且拥有对应板块权限位
+ *
+ * @param permBit - 需要的板块权限位（如 BLOCK_PERM_CREATE_POST）
+ */
+async function canWriteBlockPost(
+  db: D1Database,
+  blockId: string,
+  user: CurrentUser,
+  permBit: number
+): Promise<boolean> {
+  const block = await db
+    .prepare("SELECT isDeleted, isLocked FROM block WHERE id = ?")
+    .bind(blockId)
+    .first<{ isDeleted: number; isLocked: number }>();
+  if (!block || block.isDeleted) return false;
+
+  // manage_block 超级权限：绕过锁定和成员权限检查
+  if (can(user, PERM_MANAGE_BLOCK)) return true;
+
+  // 锁定板块禁止写操作
+  if (block.isLocked) return false;
+
+  const member = await db
+    .prepare("SELECT permissions FROM block_member WHERE blockId = ? AND userId = ?")
+    .bind(blockId, user.id)
+    .first<{ permissions: number }>();
+  if (!member) return false;
+
+  const mask = 1n << BigInt(permBit);
+  return (BigInt(member.permissions) & mask) === mask;
 }
 
 /**
@@ -466,15 +522,44 @@ export interface CreatePostData {
 }
 
 /**
- * 创建帖子
+ * 创建帖子 / 评论
+ *
+ * 权限规则：
+ *   - 如果属于板块（blockId 非空或从父帖继承）：
+ *     顶级帖需 block_create_post，评论需 block_comment（由 canWriteBlockPost 检查）
+ *     锁定板块禁止发帖/评论（除非 manage_block）
+ *   - 如果不属于板块：权限由路由层检查（全站 create_post / comment）
+ *
+ * 评论的 blockId 继承父帖的 blockId。
  *
  * 如果 visibility = 'selected'，同时写入 post_visibility 白名单。
+ *
+ * @returns 帖子 ID；无权限或板块不存在/锁定返回 null
  */
 export async function createPost(
   db: D1Database,
   data: CreatePostData,
-  _user: CurrentUser
-): Promise<string> {
+  user: CurrentUser
+): Promise<string | null> {
+  let blockId = data.blockId ?? null;
+
+  // 评论继承父帖的 blockId
+  if (!blockId && data.parentId) {
+    const parent = await db
+      .prepare("SELECT blockId FROM post WHERE id = ? AND isDeleted = 0")
+      .bind(data.parentId)
+      .first<{ blockId: string | null }>();
+    if (!parent) return null; // 父帖不存在
+    blockId = parent.blockId;
+  }
+
+  // 板块内发帖 / 评论检查
+  if (blockId) {
+    const isComment = !!data.parentId;
+    const permBit = isComment ? BLOCK_PERM_COMMENT : BLOCK_PERM_CREATE_POST;
+    if (!(await canWriteBlockPost(db, blockId, user, permBit))) return null;
+  }
+
   const id = generateUUID();
   const now = nowISO();
   const visibility = data.visibility ?? "public";
@@ -493,7 +578,7 @@ export async function createPost(
       data.title ?? null,
       data.content,
       visibility,
-      data.blockId ?? null,
+      blockId,
       now,
       now
     )
@@ -506,13 +591,15 @@ export async function createPost(
  * 创建帖子（含可见性白名单）
  *
  * @param visibleUserIds - visibility='selected' 时可见的用户 ID 列表
+ * @returns 帖子 ID；无权限或板块检查失败返回 null
  */
 export async function createPostWithVisibility(
   db: D1Database,
   data: CreatePostData & { visibleUserIds?: string[] },
   user: CurrentUser
-): Promise<string> {
+): Promise<string | null> {
   const id = await createPost(db, data, user);
+  if (!id) return null;
   const now = nowISO();
 
   // 写入白名单
@@ -535,7 +622,10 @@ export async function createPostWithVisibility(
  *
  * 同时更新当前内容（post.content）和记录操作链（archive_operation）。
  * 读取时直接读 post.content，不重放操作链。
- * 权限：作者本人（且未归档）或 edit_others_post 权限。
+ *
+ * 权限：
+ *   - 非板块帖：作者本人（edit_own_post）或 edit_others_post 权限
+ *   - 板块帖：作者本人（block_edit_own_post）或 block_edit_others_post；锁定板块禁止（除非 manage_block）
  *
  * @returns false 表示无权限或帖子不存在
  */
@@ -548,21 +638,27 @@ export async function updatePostContent(
   if (!user) return false;
 
   const post = await db
-    .prepare("SELECT authorId, isArchived FROM post WHERE id = ?")
+    .prepare("SELECT authorId, isArchived, blockId FROM post WHERE id = ?")
     .bind(id)
-    .first<{ authorId: string; isArchived: number }>();
+    .first<{ authorId: string; isArchived: number; blockId: string | null }>();
 
   if (!post) return false;
 
   const isAuthor = post.authorId === user.id;
-  const canEditOthers = can(user, PERM_EDIT_OTHERS_POST);
-  const canEditOwn = can(user, PERM_EDIT_OWN_POST);
 
-  // 作者本人需未归档且有 edit_own_post 权限；非作者需 edit_others_post
-  if (isAuthor) {
-    if (post.isArchived || !canEditOwn) return false;
-  } else if (!canEditOthers) {
-    return false;
+  if (post.blockId) {
+    // 板块帖：锁定检查 + 板块权限（manage_block 绕过）
+    const permBit = isAuthor ? BLOCK_PERM_EDIT_OWN_POST : BLOCK_PERM_EDIT_OTHERS_POST;
+    if (!(await canWriteBlockPost(db, post.blockId, user, permBit))) return false;
+  } else {
+    // 非板块帖：全站权限
+    const canEditOthers = can(user, PERM_EDIT_OTHERS_POST);
+    const canEditOwn = can(user, PERM_EDIT_OWN_POST);
+    if (isAuthor) {
+      if (post.isArchived || !canEditOwn) return false;
+    } else if (!canEditOthers) {
+      return false;
+    }
   }
 
   const now = nowISO();
@@ -589,7 +685,10 @@ export async function updatePostContent(
  * 软删除帖子（事件溯源 — 双写）
  *
  * 同时标记 isDeleted=1 和记录操作链（archive_operation）。
- * 权限：作者本人（需 delete_own_post）或 delete_others_post 权限。
+ *
+ * 权限：
+ *   - 非板块帖：作者本人（delete_own_post）或 delete_others_post 权限
+ *   - 板块帖：作者本人（block_delete_own_post）或 block_delete_others_post；锁定板块禁止（除非 manage_block）
  *
  * @returns false 表示无权限或帖子不存在
  */
@@ -601,20 +700,27 @@ export async function softDeletePost(
   if (!user) return false;
 
   const post = await db
-    .prepare("SELECT authorId, isDeleted FROM post WHERE id = ?")
+    .prepare("SELECT authorId, isDeleted, blockId FROM post WHERE id = ?")
     .bind(id)
-    .first<{ authorId: string; isDeleted: number }>();
+    .first<{ authorId: string; isDeleted: number; blockId: string | null }>();
 
   if (!post || post.isDeleted) return false;
 
   const isAuthor = post.authorId === user.id;
-  const canDeleteOthers = can(user, PERM_DELETE_OTHERS_POST);
-  const canDeleteOwn = can(user, PERM_DELETE_OWN_POST);
 
-  if (isAuthor) {
-    if (!canDeleteOwn) return false;
-  } else if (!canDeleteOthers) {
-    return false;
+  if (post.blockId) {
+    // 板块帖：锁定检查 + 板块权限（manage_block 绕过）
+    const permBit = isAuthor ? BLOCK_PERM_DELETE_OWN_POST : BLOCK_PERM_DELETE_OTHERS_POST;
+    if (!(await canWriteBlockPost(db, post.blockId, user, permBit))) return false;
+  } else {
+    // 非板块帖：全站权限
+    const canDeleteOthers = can(user, PERM_DELETE_OTHERS_POST);
+    const canDeleteOwn = can(user, PERM_DELETE_OWN_POST);
+    if (isAuthor) {
+      if (!canDeleteOwn) return false;
+    } else if (!canDeleteOthers) {
+      return false;
+    }
   }
 
   const now = nowISO();
@@ -640,7 +746,9 @@ export async function softDeletePost(
 /**
  * 置顶 / 取消置顶帖子
  *
- * 需要 pin_post 权限。直接更新 isPinned（状态字段，非内容）。
+ * 权限：
+ *   - 非板块帖：全站 pin_post 权限
+ *   - 板块帖：block_pin_post 板块权限；锁定板块禁止（除非 manage_block）
  *
  * @returns false 表示无权限或帖子不存在
  */
@@ -649,14 +757,22 @@ export async function pinPost(
   id: string,
   user: CurrentUser | null
 ): Promise<boolean> {
-  if (!can(user, PERM_PIN_POST)) return false;
+  if (!user) return false;
 
   const post = await db
-    .prepare("SELECT id, isPinned FROM post WHERE id = ? AND isDeleted = 0")
+    .prepare("SELECT id, isPinned, blockId FROM post WHERE id = ? AND isDeleted = 0")
     .bind(id)
-    .first<{ id: string; isPinned: number }>();
+    .first<{ id: string; isPinned: number; blockId: string | null }>();
 
   if (!post) return false;
+
+  if (post.blockId) {
+    // 板块帖：锁定检查 + block_pin_post 权限（manage_block 绕过）
+    if (!(await canWriteBlockPost(db, post.blockId, user, BLOCK_PERM_PIN_POST))) return false;
+  } else if (!can(user, PERM_PIN_POST)) {
+    // 非板块帖：全站 pin_post 权限
+    return false;
+  }
 
   await db
     .prepare("UPDATE post SET isPinned = ? WHERE id = ?")

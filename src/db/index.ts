@@ -91,7 +91,18 @@ export {
   approveJoin,
   updateMemberPermissions,
   lockBlock,
+  unlockBlock,
   deleteBlock,
+  listBlockMembers,
+  removeBlockMember,
+  addToBlockBlacklist,
+  removeFromBlockBlacklist,
+  transferBlockOwnership,
+  leaveBlock,
+  getBlockJoinRequests,
+  rejectJoinRequest,
+  BLOCK_OWNER_PERMISSIONS,
+  BLOCK_DEFAULT_MEMBER_PERMISSIONS,
 } from "./block";
 
 // 推荐流

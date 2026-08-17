@@ -34,7 +34,6 @@ import { checkRateLimit } from "../utils/rate-limit";
 import {
   PERM_CREATE_POST,
   PERM_COMMENT,
-  PERM_PIN_POST,
 } from "../shared/permissions";
 import {
   NOT_FOUND,
@@ -150,7 +149,7 @@ postRoutes.post("/", requirePermission(PERM_CREATE_POST), async (c) => {
     blockId: (body.blockId as string) ?? undefined,
   };
 
-  let id: string;
+  let id: string | null;
 
   if (data.visibility === "selected" && Array.isArray(body.visibleUserIds)) {
     id = await createPostWithVisibility(
@@ -160,6 +159,14 @@ postRoutes.post("/", requirePermission(PERM_CREATE_POST), async (c) => {
     );
   } else {
     id = await createPost(c.env.DB, data, cu);
+  }
+
+  // 板块发帖检查失败（无权限/板块锁定/不存在）→ 404
+  if (!id) {
+    return c.json(
+      { success: false, error: { code: NOT_FOUND.code, message: NOT_FOUND.message } },
+      NOT_FOUND.statusCode as any
+    );
   }
 
   return c.json({ success: true, data: { id } });
@@ -333,6 +340,14 @@ postRoutes.post("/comment", requirePermission(PERM_COMMENT), async (c) => {
     authorVisible: (body.authorVisible as boolean) ?? true,
   }, user as CurrentUser);
 
+  // 板块评论检查失败（无权限/板块锁定/父帖不存在）→ 404
+  if (!id) {
+    return c.json(
+      { success: false, error: { code: NOT_FOUND.code, message: NOT_FOUND.message } },
+      NOT_FOUND.statusCode as any
+    );
+  }
+
   // --- 评论通知：查询父级作者并发送通知 ---
   const parent = await c.env.DB
     .prepare("SELECT authorId, parentId FROM post WHERE id = ?")
@@ -366,9 +381,22 @@ postRoutes.post("/comment", requirePermission(PERM_COMMENT), async (c) => {
 
 // ------------------------------------------------------------
 //  POST /pin  — 置顶 / 取消置顶
+//
+//  权限由 DAL 根据帖子是否属于板块区分：
+//    - 非板块帖：全站 pin_post 权限
+//    - 板块帖：block_pin_post 板块权限
+//  故不用 requirePermission 拦截，由 DAL 返回 false → 404。
 // ------------------------------------------------------------
 
-postRoutes.post("/pin", requirePermission(PERM_PIN_POST), async (c) => {
+postRoutes.post("/pin", async (c) => {
+  const user = c.get("user");
+  if (!user) {
+    return c.json(
+      { success: false, error: { code: NOT_FOUND.code, message: NOT_FOUND.message } },
+      NOT_FOUND.statusCode as any
+    );
+  }
+
   let body: Record<string, unknown>;
   try {
     body = await c.req.json() as Record<string, unknown>;
@@ -387,7 +415,6 @@ postRoutes.post("/pin", requirePermission(PERM_PIN_POST), async (c) => {
     );
   }
 
-  const user = c.get("user");
   const ok = await pinPost(c.env.DB, id, user);
   if (!ok) {
     return c.json(
