@@ -26,6 +26,7 @@ import {
   updatePostContent,
   softDeletePost,
   pinPost,
+  createNotification,
 } from "../db";
 import type { ArchiveEnv } from "../utils/archive";
 import type { CurrentUser } from "../utils/permission";
@@ -331,6 +332,34 @@ postRoutes.post("/comment", requirePermission(PERM_COMMENT), async (c) => {
     content,
     authorVisible: (body.authorVisible as boolean) ?? true,
   }, user as CurrentUser);
+
+  // --- 评论通知：查询父级作者并发送通知 ---
+  const parent = await c.env.DB
+    .prepare("SELECT authorId, parentId FROM post WHERE id = ?")
+    .bind(parentId)
+    .first<{ authorId: string; parentId: string | null }>();
+
+  if (parent && parent.authorId !== user.id) {
+    // 获取当前用户 username
+    const profile = await c.env.DB
+      .prepare("SELECT username FROM user_profile WHERE userId = ?")
+      .bind(user.id)
+      .first<{ username: string }>();
+    const username = profile?.username ?? "用户";
+
+    // 判断父级是帖子还是评论
+    const isParentPost = !parent.parentId; // parentId 为 null = 顶级帖
+    const targetType = isParentPost ? "post" : "comment";
+    const targetLabel = isParentPost ? "帖子" : "评论";
+
+    await createNotification(c.env.DB, {
+      userId: parent.authorId,
+      type: "comment",
+      targetType,
+      targetId: parentId,
+      content: `${username} 评论了你的${targetLabel}`,
+    });
+  }
 
   return c.json({ success: true, data: { id } });
 });

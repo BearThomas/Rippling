@@ -356,3 +356,18 @@ CREATE TABLE pinned_item (
 
 CREATE INDEX idx_pinned_item_type ON pinned_item(targetType);
 CREATE INDEX idx_pinned_item_created ON pinned_item(createdAt DESC);
+
+-- ============================================================
+--  八、通知表
+-- ============================================================
+
+-- 未读通知（读后即删，服务器只存未读）
+CREATE TABLE notification (
+    id          TEXT PRIMARY KEY,
+    userId      TEXT NOT NULL REFERENCES user(id),
+    type        TEXT NOT NULL,
+    targetType  TEXT,
+    targetId    TEXT,
+    content     TEXT NOT NULL,
+    createdAt   TEXT NOT NULL
+);

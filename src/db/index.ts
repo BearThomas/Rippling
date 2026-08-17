@@ -110,3 +110,11 @@ export {
   searchConfessions,
   searchAll,
 } from "./search";
+
+// 通知
+export {
+  createNotification,
+  listUserNotifications,
+  getUnreadCount,
+  deleteNotification,
+} from "./notification";

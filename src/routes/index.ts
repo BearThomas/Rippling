@@ -13,3 +13,4 @@ export { default as recommendRoutes } from "./recommend";
 export { default as searchRoutes } from "./search";
 export { default as followRoutes } from "./follow";
 export { default as questionRoutes } from "./question";
+export { default as notificationRoutes } from "./notification";

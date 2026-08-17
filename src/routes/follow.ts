@@ -22,6 +22,7 @@ import {
   isFollowing,
   listFollowing,
   listFollowers,
+  createNotification,
 } from "../db";
 import { PERM_FOLLOW_USER } from "../shared/permissions";
 import {
@@ -161,6 +162,21 @@ followRoutes.post("/", requirePermission(PERM_FOLLOW_USER), async (c) => {
   }
 
   await followUser(c.env.DB, user.id, targetUserId);
+
+  // --- 关注通知：通知被关注者 ---
+  const profile = await c.env.DB
+    .prepare("SELECT username FROM user_profile WHERE userId = ?")
+    .bind(user.id)
+    .first<{ username: string }>();
+  const username = profile?.username ?? "用户";
+
+  await createNotification(c.env.DB, {
+    userId: targetUserId,
+    type: "follow",
+    targetType: "user",
+    targetId: targetUserId,
+    content: `${username} 关注了你`,
+  });
 
   return c.json({ success: true, data: { following: true } });
 });

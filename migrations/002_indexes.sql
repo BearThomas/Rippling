@@ -102,3 +102,10 @@ CREATE INDEX idx_archive_target_created ON archive_operation(targetType, targetI
 -- 管理日志按时间排序
 CREATE INDEX idx_admin_log_createdAt ON admin_log(createdAt);
 
+-- ============================================================
+--  通知表索引
+-- ============================================================
+
+-- 通知按用户+时间查询
+CREATE INDEX idx_notification_user_created ON notification(userId, createdAt);
+
