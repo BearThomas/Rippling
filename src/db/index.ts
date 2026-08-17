@@ -41,8 +41,8 @@ export {
 export type { AdminUserInfo } from "./user";
 
 // 管理日志
-export { writeAdminLog } from "./adminLog";
-export type { WriteAdminLogData } from "./adminLog";
+export { writeAdminLog, listAdminLogs } from "./adminLog";
+export type { WriteAdminLogData, AdminLogInfo, AdminLogFilters } from "./adminLog";
 
 // 点赞
 export { toggleLike, getLikeCount, getUserLiked } from "./likes";
