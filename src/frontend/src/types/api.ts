@@ -71,6 +71,37 @@ export interface UserProfile {
 /** 管理面板用户信息 */
 export interface AdminUserInfo extends UserProfile {}
 
+/** 用户公开资料（GET /api/user/profile，含头像与关注关系） */
+export interface UserPublicProfile {
+  userId: string;
+  username: string;
+  nameColor: string | null;
+  /** 名字牌子（认证 / 头衔标识） */
+  badge: string | null;
+  /** 头像 URL（无头像为 null） */
+  avatar: string | null;
+  questionBoxEnabled: boolean;
+  /** 关注数（TA 关注了多少人） */
+  followingCount: number;
+  /** 粉丝数（多少人关注了 TA） */
+  followerCount: number;
+  /** 当前用户是否关注了 TA（游客 / 看自己为 false） */
+  isFollowedByMe: boolean;
+  createdAt: string;
+}
+
+/** 用户帖子列表响应（GET /api/user/posts） */
+export interface UserPostsData {
+  posts: PostInfo[];
+  total: number;
+}
+
+/** 用户评论列表响应（GET /api/user/comments） */
+export interface UserCommentsData {
+  comments: PostInfo[];
+  total: number;
+}
+
 // ============================================================
 //  帖子 / 评论
 // ============================================================
@@ -399,10 +430,10 @@ export interface TicketInfo {
 //  通知
 // ============================================================
 
-/** 通知（服务器只存未读） */
+/** 通知（服务器只存未读；不返回 userId） */
 export interface NotificationInfo {
   id: string;
-  userId: string;
+  /** comment / follow / system */
   type: string;
   targetType: string | null;
   targetId: string | null;
@@ -414,10 +445,19 @@ export interface NotificationInfo {
 //  关注 / 提问箱
 // ============================================================
 
-/** 关注状态 */
+/** 关注状态（GET /api/follow/status） */
 export interface FollowStatus {
   following: boolean;
-  followedBy: boolean;
+}
+
+/** 关注 / 粉丝列表项 */
+export interface FollowUserInfo {
+  id: string;
+  username: string;
+  nameColor: string | null;
+  badge: string | null;
+  /** 当前登录用户是否关注了 TA */
+  isFollowedByMe: boolean;
 }
 
 /** 提问箱设置 */
@@ -426,15 +466,12 @@ export interface QuestionBoxInfo {
   onlyFollowers: boolean;
 }
 
-/** 提问 */
+/** 提问（askerId 永不返回；未回答问题仅主人可见由后端过滤） */
 export interface QuestionInfo {
   id: string;
-  boxId: string;
-  askerId: string;
   content: string;
   answer: string | null;
   answered: boolean;
-  isDeleted: boolean;
   createdAt: string;
   answeredAt: string | null;
 }

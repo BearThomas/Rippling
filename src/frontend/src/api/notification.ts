@@ -21,7 +21,7 @@ export function getUnreadCount(): Promise<{ count: number }> {
   });
 }
 
-/** 删除通知（单条 id，或省略 id 清空全部） */
-export function deleteNotification(id?: string): Promise<void> {
-  return apiDelete<void>("/api/notification", { body: { id } });
+/** 删除通知（读后即删；后端无批量接口，全部已读由调用方循环调用） */
+export function deleteNotification(id: string): Promise<void> {
+  return apiDelete<void>("/api/notification", { params: { id } });
 }

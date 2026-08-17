@@ -1,0 +1,1 @@
+import{R as a,a7 as i}from"./index-Ct9QOAhH.js";function c(t){return i("/api/ticket",t)}function n(t=50,e=0){return a("/api/ticket/my",{params:{limit:t,offset:e}})}function p(t){return a("/api/ticket",{params:{id:t}})}export{p as a,c,n as g};

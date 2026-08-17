@@ -1,0 +1,1 @@
+import{R as n,a7 as a}from"./index-Ct9QOAhH.js";function e(s=20,o=0){return n("/api/confession/list",{params:{limit:s,offset:o}})}function t(s){return n("/api/confession",{params:{id:s}})}function r(s){return a("/api/confession",{content:s})}export{t as a,r as c,e as g};

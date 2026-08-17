@@ -1,0 +1,1 @@
+import{R as i,a4 as a}from"./index-Ct9QOAhH.js";function m(){return i("/api/admin/summary")}function r(){return i("/api/admin/config")}function u(n){return a("/api/admin/config",n)}export{m as a,r as g,u};

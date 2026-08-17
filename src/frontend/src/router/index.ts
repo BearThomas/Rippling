@@ -21,7 +21,7 @@ import { useAuthStore } from "../stores/auth";
 import HomeView from "../views/HomeView.vue";
 import BlocksView from "../views/BlocksView.vue";
 import AppsView from "../views/AppsView.vue";
-import ProfileView from "../views/ProfileView.vue";
+import UserProfileView from "../views/UserProfileView.vue";
 
 // 次级页面（懒加载，减小首屏体积）
 const PostDetailView = () => import("../views/PostDetailView.vue");
@@ -86,10 +86,17 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "应用" },
       },
       {
+        // 我的页面：无路由参数时 UserProfileView 取当前登录用户 ID
         path: "profile",
         name: "profile",
-        component: ProfileView,
+        component: UserProfileView,
         meta: { title: "我的" },
+      },
+      {
+        path: "user/:id",
+        name: "user-profile",
+        component: UserProfileView,
+        meta: { title: "用户主页", showBack: true, showTabbar: false },
       },
       {
         // 注意：静态段 "post/create" 由 Vue Router 4 的打分机制保证
@@ -119,6 +126,8 @@ const routes: RouteRecordRaw[] = [
       },
       {
         path: "notifications",
+        // 兼容任务约定的 /notification 路径
+        alias: "notification",
         name: "notifications",
         component: NotificationView,
         meta: { title: "通知", showBack: true, requiresAuth: true },

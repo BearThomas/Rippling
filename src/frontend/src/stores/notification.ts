@@ -53,16 +53,22 @@ export const useNotificationStore = defineStore("notification", {
       this.unreadCount = this.notifications.length;
     },
 
-    /** 删除单条通知（已读） */
-    async markRead(id: string): Promise<void> {
-      await deleteNotification(id);
+    /** 仅从本地列表移除（删除请求失败时兜底） */
+    removeLocal(id: string): void {
       this.notifications = this.notifications.filter((n) => n.id !== id);
       this.unreadCount = this.notifications.length;
     },
 
-    /** 清空全部通知（全部已读） */
+    /** 删除单条通知（已读） */
+    async markRead(id: string): Promise<void> {
+      await deleteNotification(id);
+      this.removeLocal(id);
+    },
+
+    /** 清空全部通知（后端无批量接口，循环调用单条删除） */
     async markAllRead(): Promise<void> {
-      await deleteNotification();
+      const ids = this.notifications.map((n) => n.id);
+      await Promise.allSettled(ids.map((id) => deleteNotification(id)));
       this.notifications = [];
       this.unreadCount = 0;
     },
