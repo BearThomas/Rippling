@@ -1,0 +1,60 @@
+/**
+ * 主题系统 — CSS 变量定义
+ *
+ * 四套预设主题（light / dark / campus / warm），
+ * theme store 会在运行时根据 /api/config 返回的主题配置
+ * 覆写 :root 上的变量，管理面板自定义 CSS 也由 theme store 注入。
+ *
+ * 变量说明：
+ *   --c-primary    主题色（按钮、链接、高亮）
+ *   --c-accent     强调色（徽标、活跃状态辅助色）
+ *   --c-bg         页面背景色
+ *   --c-surface    卡片 / 面板背景色
+ *   --c-text       主文字色
+ *   --c-text-soft  次级文字色
+ *   --c-border     边框 / 分割线色
+ */
+
+/* 默认 = light 预设 */
+:root {
+  --c-primary: #3b82f6;
+  --c-accent: #10b981;
+  --c-bg: #f9fafb;
+  --c-surface: #ffffff;
+  --c-text: #1f2937;
+  --c-text-soft: #6b7280;
+  --c-border: #e5e7eb;
+}
+
+/* 深色预设 */
+:root[data-theme="dark"] {
+  --c-primary: #60a5fa;
+  --c-accent: #34d399;
+  --c-bg: #111827;
+  --c-surface: #1f2937;
+  --c-text: #f9fafb;
+  --c-text-soft: #9ca3af;
+  --c-border: #374151;
+}
+
+/* 校园预设（青绿色调） */
+:root[data-theme="campus"] {
+  --c-primary: #0d9488;
+  --c-accent: #f59e0b;
+  --c-bg: #f0fdfa;
+  --c-surface: #ffffff;
+  --c-text: #134e4a;
+  --c-text-soft: #5f7d7a;
+  --c-border: #ccfbf1;
+}
+
+/* 暖色预设 */
+:root[data-theme="warm"] {
+  --c-primary: #f97316;
+  --c-accent: #ef4444;
+  --c-bg: #fffbeb;
+  --c-surface: #ffffff;
+  --c-text: #431407;
+  --c-text-soft: #a8a29e;
+  --c-border: #fed7aa;
+}

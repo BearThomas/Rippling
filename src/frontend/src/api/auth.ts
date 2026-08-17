@@ -1,0 +1,72 @@
+/**
+ * 认证 API（Better Auth，挂载于 /api/auth）
+ *
+ * Better Auth 响应格式为原生 JSON（非 { success, data } 统一格式），
+ * 全部走 requestRaw 透传。注册使用学号作为邮箱（authMethod: student_id）。
+ */
+
+import { requestRaw } from "./client";
+import type { SessionInfo } from "../types";
+
+/** 登录凭证 */
+export interface SignInInput {
+  /** 学号（注册时即学号） */
+  email: string;
+  password: string;
+}
+
+/** 注册输入 */
+export interface SignUpInput {
+  /** 用户名 */
+  name: string;
+  /** 学号（作为登录邮箱） */
+  email: string;
+  password: string;
+}
+
+/**
+ * 登录（email + password）
+ * Better Auth 成功后通过 Set-Cookie 写入会话 Cookie
+ */
+export async function signIn(input: SignInInput): Promise<SessionInfo> {
+  return requestRaw<SessionInfo>("/api/auth/sign-in/email", "POST", {
+    body: { email: input.email, password: input.password },
+  });
+}
+
+/**
+ * 注册（用户名 + 学号 + 密码）
+ */
+export async function signUp(input: SignUpInput): Promise<SessionInfo> {
+  return requestRaw<SessionInfo>("/api/auth/sign-up/email", "POST", {
+    body: { name: input.name, email: input.email, password: input.password },
+  });
+}
+
+/** 登出（清除会话 Cookie） */
+export async function signOut(): Promise<void> {
+  await requestRaw("/api/auth/sign-out", "POST", {});
+}
+
+/**
+ * 获取当前会话（游客返回 null 字段，不抛错）
+ */
+export async function getSession(): Promise<SessionInfo | null> {
+  try {
+    return await requestRaw<SessionInfo | null>("/api/auth/get-session", "GET", {
+      silentError: true,
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** 修改密码（Better Auth change-password） */
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string
+): Promise<void> {
+  await requestRaw("/api/auth/change-password", "POST", {
+    body: { currentPassword, newPassword, revokeOtherSessions: false },
+  });
+}
