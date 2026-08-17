@@ -1,29 +1,63 @@
 <!--
   帖子卡片（列表项）
 
-  展示：作者（匿名时隐藏）、时间、标题、内容预览、点赞/评论数。
+  展示：作者头像占位（首字圆形）、用户名 + 颜色、徽章、置顶标记、
+  相对时间、标题、内容预览（Markdown 转纯文本截断）、点赞 / 评论数。
   点击整卡跳转详情页。
+
+  兼容两种数据源：PostInfo（详情 / 搜索）与推荐流的 post data。
 -->
 <script setup lang="ts">
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import AppSvgIcon from "../layout/AppSvgIcon.vue";
 import { formatRelativeTime, formatNumber, truncateText } from "../../utils/format";
-import type { PostInfo } from "../../types";
+import type { PostAuthor } from "../../types";
 
-const props = defineProps<{ post: PostInfo }>();
+/** 卡片所需的帖子数据结构（PostInfo / RecommendPostData 均兼容） */
+interface PostCardData {
+  id: string;
+  title: string | null;
+  content: string;
+  /** 匿名时为 null */
+  author?: PostAuthor | null;
+  createdAt: string;
+  likeCount?: number;
+  commentCount?: number;
+  isPinned?: boolean;
+  liked?: boolean;
+}
+
+const props = defineProps<{ post: PostCardData }>();
 
 const router = useRouter();
 
-/** 作者显示名：匿名（authorVisible=false）或无作者信息时显示「匿名用户」 */
-const authorName = computed(() => {
-  if (!props.post.authorVisible) return "匿名用户";
-  return props.post.author?.username ?? "未知用户";
+/** 匿名（无作者信息）标识 */
+const isAnonymous = computed(() => !props.post.author);
+
+/** 作者显示名 */
+const authorName = computed(() => props.post.author?.username ?? "匿名用户");
+
+/** 头像占位：作者名首字 */
+const avatarChar = computed(() => authorName.value.slice(0, 1));
+
+/** 内容预览（Markdown 转纯文本后截断） */
+const preview = computed(() => {
+  const plain = props.post.content
+    // 去掉代码块围栏与行内代码反引号
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]*)`/g, "$1")
+    // 去掉图片 / 保留链接文字
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    // 去掉 Markdown 标记符号
+    .replace(/[#>*_~|-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return truncateText(plain, 120);
 });
 
-/** 内容预览（纯文本截断） */
-const preview = computed(() => truncateText(props.post.content, 120));
-
+/** 跳转帖子详情 */
 function openDetail(): void {
   router.push({ name: "post-detail", params: { id: props.post.id } });
 }
@@ -39,22 +73,38 @@ function openDetail(): void {
   >
     <!-- 作者行 -->
     <div class="mb-2 flex items-center gap-2">
+      <!-- 头像占位（首字圆形；匿名用灰色） -->
       <span
-        class="text-sm font-medium"
+        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+        :style="
+          post.author?.nameColor
+            ? {
+                color: post.author.nameColor,
+                background: 'color-mix(in srgb, ' + post.author.nameColor + ' 14%, transparent)',
+              }
+            : undefined
+        "
+        :class="isAnonymous ? 'bg-line text-ink-soft' : 'bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] text-primary'"
+      >
+        {{ avatarChar }}
+      </span>
+      <span
+        class="truncate text-sm font-medium"
         :style="{ color: post.author?.nameColor ?? undefined }"
       >
         {{ authorName }}
       </span>
       <span
         v-if="post.author?.badge"
-        class="rounded bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] px-1 text-[10px] text-primary"
+        class="shrink-0 rounded bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] px-1 text-[10px] text-primary"
       >
         {{ post.author.badge }}
       </span>
       <span
         v-if="post.isPinned"
-        class="rounded bg-[color-mix(in_srgb,var(--c-accent)_12%,transparent)] px-1 text-[10px] text-accent"
+        class="flex shrink-0 items-center gap-0.5 rounded bg-[color-mix(in_srgb,var(--c-accent)_12%,transparent)] px-1 text-[10px] text-accent"
       >
+        <AppSvgIcon name="pin" :size="10" />
         置顶
       </span>
       <span class="ml-auto shrink-0 text-xs text-ink-soft">
@@ -74,7 +124,7 @@ function openDetail(): void {
 
     <!-- 统计行 -->
     <div class="mt-3 flex items-center gap-4 text-xs text-ink-soft">
-      <span class="flex items-center gap-1">
+      <span class="flex items-center gap-1" :class="post.liked ? 'text-primary' : ''">
         <AppSvgIcon name="thumbUp" :size="14" />
         {{ formatNumber(post.likeCount ?? 0) }}
       </span>

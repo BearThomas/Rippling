@@ -87,23 +87,170 @@ export interface PostAuthor {
 export interface PostInfo {
   id: string;
   parentId: string | null;
-  authorId: string;
-  authorVisible: boolean;
+  /** 匿名时对当前用户为 null */
+  authorId: string | null;
   title: string | null;
   content: string;
   visibility: "public" | "private" | "specified";
   blockId: string | null;
   isPinned: boolean;
   isArchived: boolean;
-  isDeleted: boolean;
   createdAt: string;
   updatedAt: string;
-  /** 路由层附加：作者信息（匿名时可能为 null） */
+  /** 路由层附加：作者信息（匿名时为 null） */
   author?: PostAuthor | null;
   /** 路由层附加：点赞数 */
   likeCount?: number;
   /** 路由层附加：评论数（顶级帖） */
   commentCount?: number;
+  /** 路由层附加：当前用户是否已点赞 */
+  liked?: boolean;
+}
+
+// ============================================================
+//  推荐流 / 置顶
+// ============================================================
+
+/** 推荐流中的帖子数据 */
+export interface RecommendPostData {
+  id: string;
+  title: string | null;
+  content: string;
+  authorId: string;
+  author: PostAuthor | null;
+  authorVisible: boolean;
+  isPinned: boolean;
+  likeCount: number;
+  commentCount: number;
+  /** 当前用户是否关注了作者 */
+  followed: boolean;
+  createdAt: string;
+}
+
+/** 推荐流中的表白墙数据 */
+export interface RecommendConfessionData {
+  id: string;
+  content: string;
+  likeCount: number;
+  createdAt: string;
+}
+
+/** 推荐流中的大事记数据 */
+export interface RecommendTimelineData {
+  id: string;
+  title: string;
+  description: string;
+  eventDate: string;
+  likeCount: number;
+  createdAt: string;
+}
+
+/** 推荐流中的投票数据 */
+export interface RecommendVoteData {
+  id: string;
+  title: string;
+  description: string | null;
+  endAt: string;
+  isClosed: boolean;
+  likeCount: number;
+  createdAt: string;
+}
+
+/** 推荐流内容项 */
+export type RecommendItem =
+  | { type: "post"; id: string; score: number; data: RecommendPostData }
+  | { type: "confession"; id: string; score: number; data: RecommendConfessionData }
+  | { type: "timeline"; id: string; score: number; data: RecommendTimelineData }
+  | { type: "vote"; id: string; score: number; data: RecommendVoteData };
+
+/** 推荐流置顶项 */
+export interface PinnedItemInfo {
+  id: string;
+  targetType: "post" | "timeline" | "vote";
+  targetId: string;
+  createdBy: string;
+  expiresAt: string | null;
+  createdAt: string;
+  /** 关联内容数据（结构与推荐流对应类型的 data 一致） */
+  data: Record<string, unknown> | null;
+}
+
+/** 推荐流响应（第一页含 pinned，后续页 pinned 为空数组） */
+export interface RecommendFeed {
+  pinned: PinnedItemInfo[];
+  items: RecommendItem[];
+  /** 下一页游标（null 表示没有更多） */
+  nextCursor: { lastScore: number; lastId: string } | null;
+}
+
+// ============================================================
+//  搜索
+// ============================================================
+
+/** 搜索类型 */
+export type SearchType = "all" | "post" | "user" | "block" | "timeline" | "confession" | "comment";
+
+/** 搜索结果中的帖子 / 评论 */
+export interface SearchPostResult {
+  id: string;
+  parentId: string | null;
+  authorId: string | null;
+  title: string | null;
+  content: string;
+  blockId: string | null;
+  createdAt: string;
+}
+
+/** 搜索结果中的用户（不含学号） */
+export interface SearchUserResult {
+  userId: string;
+  username: string;
+  nameColor: string | null;
+  badge: string | null;
+}
+
+/** 搜索结果中的板块 */
+export interface SearchBlockResult {
+  id: string;
+  name: string;
+  description: string | null;
+  ownerId: string;
+  isLocked: boolean;
+  createdAt: string;
+}
+
+/** 搜索结果中的大事记 */
+export interface SearchTimelineResult {
+  id: string;
+  title: string;
+  description: string;
+  eventDate: string;
+  createdAt: string;
+}
+
+/** 搜索结果中的表白墙 */
+export interface SearchConfessionResult {
+  id: string;
+  content: string;
+  createdAt: string;
+}
+
+/** 聚合搜索结果（按 type 过滤时只有对应字段） */
+export interface SearchAllResult {
+  posts?: SearchPostResult[];
+  comments?: SearchPostResult[];
+  users?: SearchUserResult[];
+  blocks?: SearchBlockResult[];
+  timeline?: SearchTimelineResult[];
+  confessions?: SearchConfessionResult[];
+}
+
+/** 搜索响应 */
+export interface SearchData {
+  q: string;
+  type: SearchType;
+  results: SearchAllResult;
+  total: number;
 }
 
 // ============================================================

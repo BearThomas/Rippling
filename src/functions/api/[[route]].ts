@@ -22,6 +22,7 @@
  *   - /api/ticket       工单系统
  *   - /api/admin        管理员用户管理
  *   - /api/admin-log    管理日志（公开）
+ *   - /api/permissions  当前用户权限查询（公开）
  *
  * 待挂载路由：
  *   - ...
@@ -34,7 +35,7 @@ import { errorHandler } from "../../middleware/error";
 import { authMiddleware } from "../../middleware/auth";
 import type { AppContextVars } from "../../middleware/auth";
 import { deviceMiddleware } from "../../middleware/device";
-import { postRoutes, likeRoutes, confessionRoutes, timelineRoutes, voteRoutes, recommendRoutes, searchRoutes, followRoutes, questionRoutes, notificationRoutes, blockRoutes, ticketRoutes, adminRoutes, adminLogRoutes } from "../../routes";
+import { postRoutes, likeRoutes, confessionRoutes, timelineRoutes, voteRoutes, recommendRoutes, searchRoutes, followRoutes, questionRoutes, notificationRoutes, blockRoutes, ticketRoutes, adminRoutes, adminLogRoutes, permissionRoutes } from "../../routes";
 import { nowISO } from "../../utils/time";
 import { NOT_FOUND } from "../../utils/errors";
 import { getSiteConfig } from "../../db";
@@ -121,6 +122,9 @@ app.route("/api/admin", adminRoutes);
 
 // 管理日志（公开接口）
 app.route("/api/admin-log", adminLogRoutes);
+
+// 当前用户权限查询（自己看自己，无需权限位；未登录返回 "0"）
+app.route("/api/permissions", permissionRoutes);
 
 // ============================================================
 //  404 兜底

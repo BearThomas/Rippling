@@ -18,3 +18,4 @@ export { default as blockRoutes } from "./block";
 export { default as ticketRoutes } from "./ticket";
 export { default as adminRoutes } from "./admin";
 export { default as adminLogRoutes } from "./adminLog";
+export { default as permissionRoutes } from "./permission";

@@ -27,6 +27,8 @@ import {
   softDeletePost,
   pinPost,
   createNotification,
+  enrichPost,
+  enrichPosts,
 } from "../db";
 import type { ArchiveEnv } from "../utils/archive";
 import type { CurrentUser } from "../utils/permission";
@@ -88,7 +90,10 @@ postRoutes.get("/", async (c) => {
     );
   }
 
-  return c.json({ success: true, data: post });
+  // 附加展示信息：作者 / 点赞数 / 评论数 / 是否已赞
+  const enriched = await enrichPost(c.env.DB, post, user as CurrentUser | null);
+
+  return c.json({ success: true, data: enriched });
 });
 
 // ------------------------------------------------------------
@@ -282,7 +287,10 @@ postRoutes.get("/comments", async (c) => {
 
   const comments = await listPostsByParent(c.env.DB, parentId, user, limit, offset);
 
-  return c.json({ success: true, data: comments });
+  // 批量附加展示信息（作者 / 点赞数 / 是否已赞），避免 N+1
+  const enriched = await enrichPosts(c.env.DB, comments, user as CurrentUser | null);
+
+  return c.json({ success: true, data: enriched });
 });
 
 // ------------------------------------------------------------

@@ -14,6 +14,11 @@ import { can } from "../utils/permission";
 import { PERM_PIN_POST, PERM_MANAGE_BLOCK } from "../shared/permissions";
 import { generateUUID } from "../utils/uuid";
 import { nowISO } from "../utils/time";
+import {
+  getPostAuthorBrief,
+  getTargetLikeCount,
+  getChildCommentCount,
+} from "./enrichment";
 
 // ============================================================
 //  返回类型
@@ -176,7 +181,7 @@ export async function listActivePinned(
 //  内部辅助：加载关联数据
 // ============================================================
 
-/** 加载帖子数据（含权限过滤） */
+/** 加载帖子数据（含权限过滤 + 展示信息附加） */
 async function loadPostForPinned(
   db: D1Database,
   postId: string,
@@ -184,13 +189,14 @@ async function loadPostForPinned(
 ): Promise<Record<string, unknown> | null> {
   const post = await db
     .prepare(
-      `SELECT id, authorId, title, content, visibility, blockId, createdAt
+      `SELECT id, authorId, authorVisible, title, content, visibility, blockId, createdAt
        FROM post WHERE id = ? AND isDeleted = 0 AND isArchived = 0 AND parentId IS NULL`
     )
     .bind(postId)
     .first<{
       id: string;
       authorId: string;
+      authorVisible: number;
       title: string | null;
       content: string;
       visibility: string;
@@ -218,10 +224,21 @@ async function loadPostForPinned(
     if (!canAccess) return null;
   }
 
+  // 附加展示信息：作者 / 点赞数 / 评论数（置顶项数量少，逐项查询可接受）
+  const [author, likeCount, commentCount] = await Promise.all([
+    getPostAuthorBrief(db, post.authorId, post.authorVisible === 1, user),
+    getTargetLikeCount(db, "post", post.id),
+    getChildCommentCount(db, post.id),
+  ]);
+
   return {
     id: post.id,
     title: post.title,
     content: post.content,
+    author,
+    authorVisible: post.authorVisible === 1,
+    likeCount,
+    commentCount,
     createdAt: post.createdAt,
   };
 }

@@ -20,7 +20,7 @@
 
 import type { CurrentUser } from "../utils/permission";
 import { can } from "../utils/permission";
-import { PERM_MANAGE_BLOCK } from "../shared/permissions";
+import { PERM_MANAGE_BLOCK, PERM_VIEW_ANONYMOUS_IDENTITY } from "../shared/permissions";
 import { nowISO } from "../utils/time";
 
 // ============================================================
@@ -68,6 +68,14 @@ export interface RecommendResult {
   items: RecommendItem[];
   /** 下一页游标（items < limit 时为 null，表示没有更多） */
   nextCursor: { lastScore: number; lastId: string } | null;
+}
+
+/** 推荐流帖子数据中的作者摘要（匿名时为 null） */
+export interface RecommendPostAuthor {
+  id: string;
+  username: string;
+  nameColor: string | null;
+  badge: string | null;
 }
 
 // ============================================================
@@ -127,7 +135,7 @@ export async function listRecommendations(
     // 顶级帖子（未删除、未归档）
     db
       .prepare(
-        `SELECT id, parentId, authorId, title, content, visibility, blockId, isPinned, createdAt
+        `SELECT id, parentId, authorId, authorVisible, title, content, visibility, blockId, isPinned, createdAt
          FROM post
          WHERE parentId IS NULL AND isDeleted = 0 AND isArchived = 0
          ORDER BY createdAt DESC LIMIT ?`
@@ -137,6 +145,7 @@ export async function listRecommendations(
         id: string;
         parentId: string | null;
         authorId: string;
+        authorVisible: number;
         title: string | null;
         content: string;
         visibility: string;
@@ -211,7 +220,7 @@ export async function listRecommendations(
   const allVoteIds = votes.results.map((v) => v.id);
 
   // 点赞数：按 targetType 分组查询
-  const [likeCounts, commentCounts, followSet] = await Promise.all([
+  const [likeCounts, commentCounts, followSet, authors] = await Promise.all([
     batchGetLikeCounts(db, [
       { type: "post", ids: allPostIds },
       { type: "confession", ids: allConfessionIds },
@@ -220,6 +229,7 @@ export async function listRecommendations(
     ]),
     batchGetCommentCounts(db, allPostIds),
     batchGetFollowStatus(db, user?.id ?? null, filteredPosts.map((p) => p.authorId)),
+    batchGetAuthors(db, filteredPosts.map((p) => p.authorId)),
   ]);
 
   // 板块成员集合（用于 block 权重）
@@ -248,6 +258,9 @@ export async function listRecommendations(
       stableRandom(post.id) * weights.random +
       TYPE_BONUS.post;
 
+    // 匿名规则：authorVisible=0 且无匿名查看权限 → 不返回作者信息
+    const showAuthor = post.authorVisible === 1 || can(user, PERM_VIEW_ANONYMOUS_IDENTITY);
+
     items.push({
       type: "post",
       id: post.id,
@@ -257,6 +270,13 @@ export async function listRecommendations(
         title: post.title,
         content: post.content,
         authorId: post.authorId,
+        author: showAuthor ? authors.get(post.authorId) ?? null : null,
+        authorVisible: post.authorVisible === 1,
+        isPinned: !!post.isPinned,
+        likeCount,
+        commentCount,
+        /** 当前用户是否关注了作者（用于卡片展示） */
+        followed: followSet.has(post.authorId),
         createdAt: post.createdAt,
       },
     });
@@ -279,6 +299,7 @@ export async function listRecommendations(
       data: {
         id: confession.id,
         content: confession.content,
+        likeCount,
         createdAt: confession.createdAt,
       },
     });
@@ -303,6 +324,7 @@ export async function listRecommendations(
         title: event.title,
         description: event.description,
         eventDate: event.eventDate,
+        likeCount,
         createdAt: event.createdAt,
       },
     });
@@ -328,6 +350,7 @@ export async function listRecommendations(
         description: vote.description,
         endAt: vote.endAt,
         isClosed: !!vote.isClosed,
+        likeCount,
         createdAt: vote.createdAt,
       },
     });
@@ -371,6 +394,7 @@ async function filterPostsByPermission(
     id: string;
     parentId: string | null;
     authorId: string;
+    authorVisible: number;
     title: string | null;
     content: string;
     visibility: string;
@@ -515,6 +539,45 @@ async function batchGetFollowStatus(
   }
 
   return set;
+}
+
+/** 批量查询作者资料（username / nameColor / badge） */
+async function batchGetAuthors(
+  db: D1Database,
+  authorIds: string[]
+): Promise<Map<string, RecommendPostAuthor>> {
+  const map = new Map<string, RecommendPostAuthor>();
+  const unique = [...new Set(authorIds)];
+  if (!unique.length) return map;
+
+  const batchSize = 50;
+  for (let i = 0; i < unique.length; i += batchSize) {
+    const batch = unique.slice(i, i + batchSize);
+    const placeholders = batch.map(() => "?").join(",");
+    const rows = await db
+      .prepare(
+        `SELECT userId, username, nameColor, badge
+         FROM user_profile WHERE userId IN (${placeholders})`
+      )
+      .bind(...batch)
+      .all<{
+        userId: string;
+        username: string;
+        nameColor: string | null;
+        badge: string | null;
+      }>();
+
+    for (const row of rows.results) {
+      map.set(row.userId, {
+        id: row.userId,
+        username: row.username,
+        nameColor: row.nameColor,
+        badge: row.badge,
+      });
+    }
+  }
+
+  return map;
 }
 
 /** 获取用户加入的所有板块 ID */

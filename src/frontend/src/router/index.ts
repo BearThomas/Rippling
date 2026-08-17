@@ -25,6 +25,8 @@ import ProfileView from "../views/ProfileView.vue";
 
 // 次级页面（懒加载，减小首屏体积）
 const PostDetailView = () => import("../views/PostDetailView.vue");
+const PostCreateView = () => import("../views/PostCreateView.vue");
+const CommentDetailView = () => import("../views/CommentDetailView.vue");
 const SearchView = () => import("../views/SearchView.vue");
 const LoginView = () => import("../views/LoginView.vue");
 const RegisterView = () => import("../views/RegisterView.vue");
@@ -85,10 +87,24 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "我的" },
       },
       {
+        // 注意：静态段 "post/create" 由 Vue Router 4 的打分机制保证
+        // 优先于下方 "post/:id" 匹配，无需担心被详情路由吞掉
+        path: "post/create",
+        name: "post-create",
+        component: PostCreateView,
+        meta: { title: "发帖", showBack: true, showTabbar: false, requiresAuth: true },
+      },
+      {
         path: "post/:id",
         name: "post-detail",
         component: PostDetailView,
         meta: { title: "帖子详情", showBack: true, showTabbar: false },
+      },
+      {
+        path: "comment/:id",
+        name: "comment-detail",
+        component: CommentDetailView,
+        meta: { title: "评论详情", showBack: true, showTabbar: false },
       },
       {
         path: "search",

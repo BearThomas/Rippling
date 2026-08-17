@@ -1,0 +1,1 @@
+import{a as o,N as t,L as s}from"./index-_sPBDuGv.js";function r(a){return s("/api/follow",{targetUserId:a})}function e(a){return t("/api/follow",{params:{targetUserId:a}})}function f(a){return o("/api/follow/status",{params:{targetUserId:a}})}export{r as f,f as g,e as u};

@@ -56,6 +56,16 @@ export type {
 export { listArchiveFiles, getArchiveFileContent } from "./archiveViewer";
 export type { ArchiveFileInfo } from "./archiveViewer";
 
+// 帖子 / 评论展示信息附加
+export {
+  enrichPosts,
+  enrichPost,
+  getPostAuthorBrief,
+  getTargetLikeCount,
+  getChildCommentCount,
+} from "./enrichment";
+export type { EnrichedPost, PostAuthorBrief } from "./enrichment";
+
 // 点赞
 export { toggleLike, getLikeCount, getUserLiked } from "./likes";
 
