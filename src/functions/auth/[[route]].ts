@@ -23,7 +23,7 @@ import { checkRateLimit, resetRateLimit } from "../../utils/rate-limit";
 import { generateUUID } from "../../utils/uuid";
 import { nowISO } from "../../utils/time";
 import { DEFAULT_USER_PERMISSIONS } from "../../shared/permissions";
-import siteConfig from "../../../config/site.config.json";
+import siteConfig from "../../config/site.config.json";
 
 // ============================================================
 //  解析验证问题

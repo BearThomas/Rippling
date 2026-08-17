@@ -66,7 +66,7 @@ import {
   NOT_FOUND,
   VALIDATION_ERROR,
 } from "../utils/errors";
-import staticSiteConfig from "../../config/site.config.json";
+import staticSiteConfig from "../config/site.config.json";
 
 // ============================================================
 //  类型定义

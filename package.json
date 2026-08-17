@@ -5,7 +5,7 @@
   "description": "可部署的校园社区论坛系统",
   "license": "MIT",
   "scripts": {
-    "build": "cp -r src/functions functions && cd src/frontend && npm install && npm run build",
+    "build": "cp -r src/functions functions && cp -r src/auth src/config src/db src/middleware src/routes src/shared src/utils . && cd src/frontend && npm install && npm run build",
     "dev": "wrangler pages dev",
     "deploy": "wrangler pages deploy",
     "typecheck": "tsc --noEmit"

@@ -93,9 +93,8 @@ Cloudflare 需要能访问到 Rippling 的源码。
 
 ```
 ├── .github/workflows/archive.yml   # 每日归档自动化
-├── config/site.config.json         # 站点初始配置
 ├── migrations/                     # 数据库建表脚本
-├── src/                            # 全部源码（前端 + 后端）
+├── src/                            # 全部源码（前端 + 后端 + 站点初始配置）
 ├── public/                         # 静态资源目录
 ├── package.json
 └── wrangler.toml
@@ -116,20 +115,15 @@ Cloudflare 需要能访问到 Rippling 的源码。
    | --- | --- |
    | Project name | `rippling`（会成为域名的一部分） |
    | Production branch | `main` |
-   | Framework preset | 选择 **Vite**（或 None，不影响） |
-   | Build command | 见下方 |
+   | Framework preset | 选择 **None** |
+   | Build command | `npm run build` |
    | Build output directory | `public` |
    | Root directory (advanced) | 留空 |
 
-   **Build command** 填写（一整行）：
-
-   ```
-   cp -r src/functions functions && cd src/frontend && npm install && npm run build
-   ```
-
-   > 解释：Rippling 的后端代码在 `src/functions/` 目录，而 Cloudflare Pages
-   > 只识别仓库根目录的 `functions/` 目录，所以构建时需要先复制一份。
-   > 前半句 `cp -r src/functions functions` 就是做这件事，不要漏掉。
+   > 解释：仓库根目录的 `package.json` 里已经定义好 `build` 脚本：
+   > 先把后端入口复制到 Cloudflare 能识别的 `functions/` 目录，
+   > 再把后端依赖的模块（auth、db、routes 等）复制到仓库根目录供其引用，
+   > 最后安装前端依赖并构建。所以你只需要填 `npm run build` 即可。
 
 6. 点击 **Save and Deploy**，等待构建完成（首次约 2~5 分钟）
 7. 部署成功后，页面会显示你的网址，形如 `https://rippling.pages.dev`。
@@ -369,9 +363,9 @@ Cloudflare Dashboard 首页右侧边栏即显示 **Account ID**，直接复制�
 
 **5. 注册时提示学号格式错误**
 
-- 默认学号格式为 `20 开头 + 6 位数字`（见 `config/site.config.json`）
+- 默认学号格式为 `20 开头 + 6 位数字`（见 `src/config/site.config.json`）
 - 用超级管理员账号登录 → 管理面板 → 站点配置，修改"学号格式正则"和提示文案
-- 若暂时没有管理员账号，可修改 `config/site.config.json` 中的
+- 若暂时没有管理员账号，可修改 `src/config/site.config.json` 中的
   `studentIdPattern` 后重新推送部署
 
 **6. 修改环境变量 / 绑定后网站没变化**

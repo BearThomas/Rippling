@@ -24,7 +24,7 @@ Rippling 是一个面向校园的社区论坛系统，支持帖子、板块、�
 
 | 文件 | 用途 | 是否提交到 Git |
 |------|------|----------------|
-| `config/site.config.json` | 站点公开配置（站名、主题、推荐权重等） | 是 |
+| `src/config/site.config.json` | 站点公开配置（站名、主题、推荐权重等） | 是 |
 | `.env` | 敏感配置（密钥、数据库 ID 等） | 否 |
 
 部署前请复制 `.env.example` 为 `.env` 并填写实际值：
@@ -36,12 +36,13 @@ cp .env.example .env
 ## 项目结构
 
 ```
-├── config/
-│   └── site.config.json      # 站点公开配置
 ├── src/
+│   ├── config/
+│   │   └── site.config.json   # 站点公开配置
 │   ├── functions/
 │   │   ├── api/[[route]].ts   # Hono 后端入口
 │   │   └── auth/[[route]].ts  # Better Auth 入口
+│   ├── frontend/              # Vue 3 前端
 │   └── shared/
 │       └── permissions.ts     # 权限位掩码定义
 ├── migrations/                # D1 数据库迁移

@@ -41,7 +41,7 @@ import { postRoutes, likeRoutes, confessionRoutes, timelineRoutes, voteRoutes, r
 import { nowISO } from "../../utils/time";
 import { NOT_FOUND } from "../../utils/errors";
 import { getSiteConfig } from "../../db";
-import siteConfig from "../../../config/site.config.json";
+import siteConfig from "../../config/site.config.json";
 
 const app = new Hono<{ Bindings: CloudflareEnv; Variables: AppContextVars }>();
 
