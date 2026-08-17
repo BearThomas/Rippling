@@ -19,6 +19,7 @@
  *   - /api/question     提问箱
  *   - /api/notification 通知
  *   - /api/block        板块管理
+ *   - /api/ticket       工单系统
  *
  * 待挂载路由：
  *   - ...
@@ -29,7 +30,7 @@ import { loggerMiddleware } from "../../middleware/logger";
 import { errorHandler } from "../../middleware/error";
 import { authMiddleware } from "../../middleware/auth";
 import { deviceMiddleware } from "../../middleware/device";
-import { postRoutes, likeRoutes, confessionRoutes, timelineRoutes, voteRoutes, recommendRoutes, searchRoutes, followRoutes, questionRoutes, notificationRoutes, blockRoutes } from "../../routes";
+import { postRoutes, likeRoutes, confessionRoutes, timelineRoutes, voteRoutes, recommendRoutes, searchRoutes, followRoutes, questionRoutes, notificationRoutes, blockRoutes, ticketRoutes } from "../../routes";
 import { nowISO } from "../../utils/time";
 import { NOT_FOUND } from "../../utils/errors";
 import siteConfig from "../../../config/site.config.json";
@@ -104,6 +105,9 @@ app.route("/api/notification", notificationRoutes);
 
 // 板块管理
 app.route("/api/block", blockRoutes);
+
+// 工单系统
+app.route("/api/ticket", ticketRoutes);
 
 // ============================================================
 //  404 兜底

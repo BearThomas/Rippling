@@ -3,10 +3,9 @@
  *
  * 路由表（挂载前缀 /api/timeline）：
  *   GET  /list    大事记列表（仅 approved，含 likeCount）
- *   GET  /my      当前用户提交的所有大事记（含各状态）
+ *   GET  /my      当前用户提交的大事记工单（timeline_submit）
  *   GET  /        单条大事记详情（含 likeCount + 用户名）
- *   POST /        提交大事记
- *   POST /review  审核大事记（通过 / 拒绝）
+ *   POST /        提交大事记（创建 timeline_submit 工单，审核走工单系统）
  *
  * 所有写操作需认证 + 权限检查 + 频率限制（临时内存方案）。
  * DAL 返回 null / false → 统一 404（不暴露隐藏 ID）。
@@ -19,15 +18,13 @@ import { requirePermission } from "../middleware/permission";
 import {
   listTimelineEvents,
   getTimelineEventById,
-  submitTimeline,
-  reviewTimeline,
-  listUserTimelines,
   getTimelineReviewInfo,
   getLikeCount,
+  createTicket,
+  getMyTickets,
 } from "../db";
 import type { TimelineEventInfo } from "../db/timeline";
 import type { ArchiveEnv } from "../utils/archive";
-import type { CurrentUser } from "../utils/permission";
 import { can } from "../utils/permission";
 import { checkRateLimit } from "../utils/rate-limit";
 import {
@@ -137,7 +134,10 @@ timelineRoutes.get("/list", async (c) => {
 });
 
 // ------------------------------------------------------------
-//  GET /my  — 当前用户提交的所有大事记（含各审核状态）
+//  GET /my  — 当前用户提交的大事记工单（timeline_submit）
+//
+//  大事记提交已改走工单系统，此处查询本人的 timeline_submit 工单，
+//  工单状态映射：open → pending，closed 时依 result 判定通过 / 拒绝。
 // ------------------------------------------------------------
 
 timelineRoutes.get("/my", async (c) => {
@@ -149,9 +149,42 @@ timelineRoutes.get("/my", async (c) => {
     );
   }
 
-  const events = await listUserTimelines(c.env.DB, user.id);
+  // 拉取本人工单后过滤出大事记提交类型
+  const tickets = await getMyTickets(c.env.DB, user.id, 100, 0);
 
-  return c.json({ success: true, data: events });
+  const items = tickets
+    .filter((t) => t.type === "timeline_submit")
+    .map((t) => {
+      // 从 extraData 中还原 eventDate
+      let eventDate = "";
+      if (t.extraData) {
+        try {
+          const extra = JSON.parse(t.extraData) as Record<string, unknown>;
+          eventDate = typeof extra.eventDate === "string" ? extra.eventDate : "";
+        } catch {
+          eventDate = "";
+        }
+      }
+
+      // 工单状态 → 审核状态映射
+      const status =
+        t.status === "open"
+          ? "pending"
+          : t.result?.startsWith("已批准")
+            ? "approved"
+            : "rejected";
+
+      return {
+        id: t.id,
+        title: t.title,
+        status,
+        eventDate,
+        createdAt: t.createdAt,
+        result: t.result,
+      };
+    });
+
+  return c.json({ success: true, data: items });
 });
 
 // ------------------------------------------------------------
@@ -224,7 +257,10 @@ timelineRoutes.get("/", async (c) => {
 });
 
 // ------------------------------------------------------------
-//  POST /  — 提交大事记
+//  POST /  — 提交大事记（创建 timeline_submit 工单）
+//
+//  审核统一走工单系统（POST /api/ticket/handle），
+//  工单批准后由 createTimelineFromTicket 创建 approved 大事记。
 // ------------------------------------------------------------
 
 timelineRoutes.post("/", requirePermission(PERM_SUBMIT_TIMELINE), async (c) => {
@@ -285,68 +321,16 @@ timelineRoutes.post("/", requirePermission(PERM_SUBMIT_TIMELINE), async (c) => {
     );
   }
 
-  const id = await submitTimeline(c.env.DB, { title, description, eventDate }, user as CurrentUser);
-  if (!id) {
-    return c.json(
-      { success: false, error: { code: NOT_FOUND.code, message: NOT_FOUND.message } },
-      NOT_FOUND.statusCode as any
-    );
-  }
+  // 创建 timeline_submit 工单，eventDate 存入 extraData
+  const id = await createTicket(c.env.DB, {
+    type: "timeline_submit",
+    title,
+    content: description,
+    submittedBy: user.id,
+    extraData: { eventDate },
+  });
 
   return c.json({ success: true, data: { id } });
-});
-
-// ------------------------------------------------------------
-//  POST /review  — 审核大事记（通过 / 拒绝）
-// ------------------------------------------------------------
-
-timelineRoutes.post("/review", requirePermission(PERM_REVIEW_TIMELINE), async (c) => {
-  const user = c.get("user")!;
-
-  let body: Record<string, unknown>;
-  try {
-    body = await c.req.json() as Record<string, unknown>;
-  } catch {
-    return c.json(
-      { success: false, error: { code: VALIDATION_ERROR.code, message: "请求体格式错误" } },
-      VALIDATION_ERROR.statusCode as any
-    );
-  }
-
-  const id = body.id as string;
-  const status = body.status as string;
-  const reason = (body.reason as string) ?? undefined;
-
-  // 参数校验
-  if (!id) {
-    return c.json(
-      { success: false, error: { code: VALIDATION_ERROR.code, message: "缺少 id" } },
-      VALIDATION_ERROR.statusCode as any
-    );
-  }
-  if (status !== "approved" && status !== "rejected") {
-    return c.json(
-      { success: false, error: { code: VALIDATION_ERROR.code, message: "status 须为 approved 或 rejected" } },
-      VALIDATION_ERROR.statusCode as any
-    );
-  }
-  // 拒绝时 reason 必填
-  if (status === "rejected" && !reason) {
-    return c.json(
-      { success: false, error: { code: VALIDATION_ERROR.code, message: "拒绝时必须填写原因" } },
-      VALIDATION_ERROR.statusCode as any
-    );
-  }
-
-  const ok = await reviewTimeline(c.env.DB, id, status as "approved" | "rejected", user as CurrentUser, reason);
-  if (!ok) {
-    return c.json(
-      { success: false, error: { code: NOT_FOUND.code, message: NOT_FOUND.message } },
-      NOT_FOUND.statusCode as any
-    );
-  }
-
-  return c.json({ success: true });
 });
 
 export default timelineRoutes;

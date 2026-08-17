@@ -17,6 +17,7 @@ import { decryptData } from "../utils/crypto";
 import { PERM_SUBMIT_TIMELINE, PERM_REVIEW_TIMELINE } from "../shared/permissions";
 import { generateUUID } from "../utils/uuid";
 import { nowISO } from "../utils/time";
+import type { TicketInfo } from "./ticket";
 
 // ============================================================
 //  归档回退辅助函数
@@ -371,4 +372,55 @@ export async function getTimelineReviewInfo(
     .first<{ reviewedBy: string | null; reviewedAt: string | null }>();
 
   return row;
+}
+
+/**
+ * 从工单创建大事记（工单审核通过后调用）
+ *
+ * 直接创建 status = 'approved' 的大事记：
+ *   - title / description 来自工单的 title / content
+ *   - eventDate 从工单 extraData（JSON）中读取
+ *   - submittedBy 为工单提交者，reviewedBy 为工单处理人
+ *
+ * @returns 新大事记 ID；extraData 缺少 eventDate 时返回 null
+ */
+export async function createTimelineFromTicket(
+  db: D1Database,
+  ticketInfo: TicketInfo,
+  submittedBy: string
+): Promise<string | null> {
+  // 从工单扩展信息中解析 eventDate
+  let eventDate = "";
+  if (ticketInfo.extraData) {
+    try {
+      const extra = JSON.parse(ticketInfo.extraData) as Record<string, unknown>;
+      eventDate = typeof extra.eventDate === "string" ? extra.eventDate : "";
+    } catch {
+      return null;
+    }
+  }
+  if (!eventDate) return null;
+
+  const id = generateUUID();
+  const now = nowISO();
+
+  await db
+    .prepare(
+      `INSERT INTO timeline_event (id, title, description, eventDate, status, submittedBy, reviewedBy, reviewedAt, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, 'approved', ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      id,
+      ticketInfo.title,
+      ticketInfo.content ?? "",
+      eventDate,
+      submittedBy,
+      ticketInfo.assignedTo,
+      now,
+      now,
+      now
+    )
+    .run();
+
+  return id;
 }

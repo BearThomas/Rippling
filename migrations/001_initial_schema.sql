@@ -76,6 +76,7 @@ CREATE TABLE user_profile (
     badge             TEXT,
     questionBoxEnabled INTEGER DEFAULT 0,
     violationCount    INTEGER DEFAULT 0,
+    isDeactivated     INTEGER DEFAULT 0,
     createdAt         TEXT NOT NULL,
     updatedAt         TEXT NOT NULL
 );
@@ -252,6 +253,9 @@ CREATE TABLE ticket (
     submittedBy TEXT NOT NULL REFERENCES user(id),
     assignedTo  TEXT,
     result      TEXT,
+    targetType  TEXT,
+    targetId    TEXT,
+    extraData   TEXT,
     createdAt   TEXT NOT NULL,
     updatedAt   TEXT NOT NULL
 );

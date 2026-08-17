@@ -49,17 +49,24 @@ export const authMiddleware = createMiddleware<{
     return;
   }
 
-  // 从 user_profile 表读取权限掩码
+  // 从 user_profile 表读取权限掩码 + 注销状态
   const profile = await c.env.DB
-    .prepare("SELECT permissions FROM user_profile WHERE userId = ?")
+    .prepare("SELECT permissions, isDeactivated FROM user_profile WHERE userId = ?")
     .bind(sessionData.user.id)
-    .first<{ permissions: number }>();
+    .first<{ permissions: number; isDeactivated: number | null }>();
 
   if (!profile) {
     // 理论上不应发生（注册时已创建 profile），安全降级
     console.warn(
       `[Auth] user_profile not found for userId=${sessionData.user.id}, falling back to null`
     );
+    c.set("user", null);
+    await next();
+    return;
+  }
+
+  // 已注销账号无法登录（账号注销工单批准后 isDeactivated = 1）
+  if (profile.isDeactivated) {
     c.set("user", null);
     await next();
     return;

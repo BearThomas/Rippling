@@ -23,6 +23,14 @@ export {
   getUserProfileByUsername,
   updateUsername,
   updatePermissions,
+  deactivateUser,
+  reactivateUser,
+  incrementViolationCount,
+  resetViolationCount,
+  getUserViolationCount,
+  setUserPermissionsDirect,
+  getUserPermissions,
+  updateUserNameColor,
 } from "./user";
 
 // 点赞
@@ -44,6 +52,7 @@ export {
   reviewTimeline,
   listUserTimelines,
   getTimelineReviewInfo,
+  createTimelineFromTicket,
 } from "./timeline";
 
 // 投票
@@ -78,9 +87,12 @@ export {
 export {
   createTicket,
   listTickets,
+  listTicketsByType,
+  getMyTickets,
   getTicketById,
   updateTicketStatus,
 } from "./ticket";
+export type { TicketInfo } from "./ticket";
 
 // 板块
 export {

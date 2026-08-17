@@ -250,3 +250,200 @@ export async function updatePermissions(
 
   return true;
 }
+
+// ============================================================
+//  账号注销
+// ============================================================
+
+/**
+ * 注销用户账号
+ *
+ * 设置 isDeactivated = 1（学号保留，UNIQUE 约束阻止重新注册），
+ * 并记录到 user_log。注销后 auth 中间件会拒绝登录。
+ *
+ * @returns false 表示用户不存在
+ */
+export async function deactivateUser(
+  db: D1Database,
+  userId: string
+): Promise<boolean> {
+  const now = nowISO();
+
+  const result = await db
+    .prepare("UPDATE user_profile SET isDeactivated = 1, updatedAt = ? WHERE userId = ?")
+    .bind(now, userId)
+    .run();
+
+  if (!result.meta.changes) return false;
+
+  // 记录到 user_log
+  await db
+    .prepare(
+      "INSERT INTO user_log (id, userId, action, detail, createdAt) VALUES (?, ?, 'deactivate_account', ?, ?)"
+    )
+    .bind(generateUUID(), userId, JSON.stringify({ isDeactivated: 1 }), now)
+    .run();
+
+  return true;
+}
+
+/**
+ * 恢复用户账号（申诉通过时用）
+ *
+ * 设置 isDeactivated = 0，并记录到 user_log。
+ *
+ * @returns false 表示用户不存在
+ */
+export async function reactivateUser(
+  db: D1Database,
+  userId: string
+): Promise<boolean> {
+  const now = nowISO();
+
+  const result = await db
+    .prepare("UPDATE user_profile SET isDeactivated = 0, updatedAt = ? WHERE userId = ?")
+    .bind(now, userId)
+    .run();
+
+  if (!result.meta.changes) return false;
+
+  // 记录到 user_log
+  await db
+    .prepare(
+      "INSERT INTO user_log (id, userId, action, detail, createdAt) VALUES (?, ?, 'reactivate_account', ?, ?)"
+    )
+    .bind(generateUUID(), userId, JSON.stringify({ isDeactivated: 0 }), now)
+    .run();
+
+  return true;
+}
+
+// ============================================================
+//  违规次数
+// ============================================================
+
+/**
+ * 违规次数 +1
+ *
+ * @returns 新的违规次数；用户不存在返回 -1
+ */
+export async function incrementViolationCount(
+  db: D1Database,
+  userId: string
+): Promise<number> {
+  const now = nowISO();
+
+  const result = await db
+    .prepare("UPDATE user_profile SET violationCount = violationCount + 1, updatedAt = ? WHERE userId = ?")
+    .bind(now, userId)
+    .run();
+
+  if (!result.meta.changes) return -1;
+
+  const row = await db
+    .prepare("SELECT violationCount FROM user_profile WHERE userId = ?")
+    .bind(userId)
+    .first<{ violationCount: number }>();
+
+  return row?.violationCount ?? -1;
+}
+
+/**
+ * 重置违规次数为 0
+ *
+ * @returns false 表示用户不存在
+ */
+export async function resetViolationCount(
+  db: D1Database,
+  userId: string
+): Promise<boolean> {
+  const now = nowISO();
+
+  const result = await db
+    .prepare("UPDATE user_profile SET violationCount = 0, updatedAt = ? WHERE userId = ?")
+    .bind(now, userId)
+    .run();
+
+  return result.meta.changes > 0;
+}
+
+/**
+ * 获取用户违规次数
+ *
+ * @returns 用户不存在返回 0
+ */
+export async function getUserViolationCount(
+  db: D1Database,
+  userId: string
+): Promise<number> {
+  const row = await db
+    .prepare("SELECT violationCount FROM user_profile WHERE userId = ?")
+    .bind(userId)
+    .first<{ violationCount: number }>();
+
+  return row?.violationCount ?? 0;
+}
+
+// ============================================================
+//  工单系统专用权限操作
+// ============================================================
+
+/**
+ * 直接设置用户权限掩码（不检查 edit_others_permission）
+ *
+ * 仅由工单处理流程调用（权限申请批准 / 申诉恢复 / 举报封禁），
+ * 调用方已具备 handle_ticket 权限，并由路由层统一写 admin_log。
+ *
+ * @returns false 表示用户不存在
+ */
+export async function setUserPermissionsDirect(
+  db: D1Database,
+  userId: string,
+  permissions: bigint
+): Promise<boolean> {
+  const now = nowISO();
+
+  const result = await db
+    .prepare("UPDATE user_profile SET permissions = ?, updatedAt = ? WHERE userId = ?")
+    .bind(Number(permissions), now, userId)
+    .run();
+
+  return result.meta.changes > 0;
+}
+
+/**
+ * 读取用户当前权限掩码
+ *
+ * @returns 用户不存在返回 null
+ */
+export async function getUserPermissions(
+  db: D1Database,
+  userId: string
+): Promise<bigint | null> {
+  const row = await db
+    .prepare("SELECT permissions FROM user_profile WHERE userId = ?")
+    .bind(userId)
+    .first<{ permissions: number }>();
+
+  return row ? BigInt(row.permissions) : null;
+}
+
+/**
+ * 修改用户昵称颜色（认证通过时用）
+ *
+ * @returns false 表示用户不存在
+ */
+export async function updateUserNameColor(
+  db: D1Database,
+  userId: string,
+  nameColor: string
+): Promise<boolean> {
+  const now = nowISO();
+
+  const result = await db
+    .prepare("UPDATE user_profile SET nameColor = ?, updatedAt = ? WHERE userId = ?")
+    .bind(nameColor, now, userId)
+    .run();
+
+  return result.meta.changes > 0;
+}
