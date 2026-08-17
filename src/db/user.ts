@@ -167,6 +167,101 @@ export async function getUserProfileByUsername(
   };
 }
 
+// ============================================================
+//  公开用户主页（含头像与关注关系）
+// ============================================================
+
+/** 用户公开资料（比 PublicUserProfile 多头像与关注关系） */
+export interface UserPublicProfile extends PublicUserProfile {
+  /** 头像 URL（user 表 image 字段） */
+  avatar: string | null;
+  /** 当前用户是否关注了 TA（游客为 false） */
+  isFollowedByMe: boolean;
+}
+
+/**
+ * 获取用户公开资料（游客可见）
+ *
+ * 不返回 studentId / email / permissions 等敏感信息；
+ * 头像取自 Better Auth 的 user 表 image 字段。
+ *
+ * @returns 用户不存在返回 null
+ */
+export async function getUserPublicProfile(
+  db: D1Database,
+  userId: string,
+  currentUser: CurrentUser | null
+): Promise<UserPublicProfile | null> {
+  // user_profile 与 user 表左连接，一次查出基础资料 + 头像
+  const row = await db
+    .prepare(
+      `SELECT p.userId, p.username, p.nameColor, p.badge, p.questionBoxEnabled,
+              p.createdAt, u.image AS avatar
+       FROM user_profile p
+       LEFT JOIN user u ON u.id = p.userId
+       WHERE p.userId = ?`
+    )
+    .bind(userId)
+    .first<{
+      userId: string;
+      username: string;
+      nameColor: string | null;
+      badge: string | null;
+      questionBoxEnabled: number;
+      createdAt: string;
+      avatar: string | null;
+    }>();
+
+  if (!row) return null;
+
+  // 关注数：TA 关注了多少人（followerId = TA）
+  const followingRow = await db
+    .prepare("SELECT COUNT(*) as count FROM follow WHERE followerId = ?")
+    .bind(userId)
+    .first<{ count: number }>();
+
+  // 粉丝数：多少人关注了 TA（followingId = TA）
+  const followerRow = await db
+    .prepare("SELECT COUNT(*) as count FROM follow WHERE followingId = ?")
+    .bind(userId)
+    .first<{ count: number }>();
+
+  // 当前用户是否关注了 TA
+  let isFollowedByMe = false;
+  if (currentUser && currentUser.id !== userId) {
+    const rel = await db
+      .prepare("SELECT id FROM follow WHERE followerId = ? AND followingId = ?")
+      .bind(currentUser.id, userId)
+      .first();
+    isFollowedByMe = !!rel;
+  }
+
+  return {
+    userId: row.userId,
+    username: row.username,
+    nameColor: row.nameColor,
+    badge: row.badge,
+    avatar: row.avatar,
+    questionBoxEnabled: !!row.questionBoxEnabled,
+    followingCount: followingRow?.count ?? 0,
+    followerCount: followerRow?.count ?? 0,
+    isFollowedByMe,
+    createdAt: row.createdAt,
+  };
+}
+
+/** 检查用户是否存在（供路由层 404 判断） */
+export async function userExists(
+  db: D1Database,
+  userId: string
+): Promise<boolean> {
+  const row = await db
+    .prepare("SELECT userId FROM user_profile WHERE userId = ?")
+    .bind(userId)
+    .first();
+  return !!row;
+}
+
 /**
  * 修改用户名
  *
@@ -211,6 +306,61 @@ export async function updateUsername(
       JSON.stringify({ from: oldRow?.username ?? "", to: newUsername }),
       now
     )
+    .run();
+
+  return true;
+}
+
+/**
+ * 统计最近 N 天内的改名次数
+ *
+ * 用于用户名修改频率限制（每月 4 次）。
+ * createdAt 为 ISO 8601 字符串，字典序比较安全。
+ */
+export async function countRecentUsernameChanges(
+  db: D1Database,
+  userId: string,
+  days = 30
+): Promise<number> {
+  const since = new Date(Date.now() - days * 24 * 3600 * 1000).toISOString();
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) as count FROM user_log
+       WHERE userId = ? AND action = 'change_username' AND createdAt >= ?`
+    )
+    .bind(userId, since)
+    .first<{ count: number }>();
+
+  return row?.count ?? 0;
+}
+
+/**
+ * 修改用户头像
+ *
+ * 头像 URL 存入 Better Auth 的 user 表 image 字段，
+ * 并记录到 user_log（不存储旧值，只记录新 URL）。
+ *
+ * @returns false 表示用户不存在
+ */
+export async function updateAvatar(
+  db: D1Database,
+  userId: string,
+  avatarUrl: string
+): Promise<boolean> {
+  const now = nowISO();
+
+  const result = await db
+    .prepare("UPDATE user SET image = ?, updatedAt = ? WHERE id = ?")
+    .bind(avatarUrl, now, userId)
+    .run();
+
+  if (!result.meta.changes) return false;
+
+  await db
+    .prepare(
+      "INSERT INTO user_log (id, userId, action, detail, createdAt) VALUES (?, ?, 'change_avatar', ?, ?)"
+    )
+    .bind(generateUUID(), userId, JSON.stringify({ avatarUrl }), now)
     .run();
 
   return true;

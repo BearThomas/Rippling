@@ -510,6 +510,52 @@ export async function listUserPosts(
   return results;
 }
 
+/**
+ * 列出某用户发表的评论（parentId IS NOT NULL）
+ *
+ * 与 listUserPosts 对称：同样应用可见性和板块过滤，
+ * 按 createdAt 倒序。匿名评论的 authorId 由 filterPostFields 按权限隐藏。
+ */
+export async function listUserComments(
+  db: D1Database,
+  userId: string,
+  user: CurrentUser | null,
+  limit: number,
+  offset: number
+): Promise<PostInfo[]> {
+  const rows = await db
+    .prepare(
+      "SELECT * FROM post WHERE authorId = ? AND parentId IS NOT NULL AND isDeleted = 0 ORDER BY createdAt DESC LIMIT ? OFFSET ?"
+    )
+    .bind(userId, limit, offset)
+    .all<{
+      id: string;
+      parentId: string | null;
+      authorId: string;
+      authorVisible: number;
+      title: string | null;
+      content: string;
+      visibility: string;
+      blockId: string | null;
+      isPinned: number;
+      isArchived: number;
+      createdAt: string;
+      updatedAt: string;
+    }>();
+
+  const results: PostInfo[] = [];
+  for (const row of rows.results) {
+    const visible = await checkPostVisibility(
+      db, row.id, row.authorId, row.visibility, user
+    );
+    if (!visible) continue;
+    if (!(await canAccessBlock(db, row.blockId, user))) continue;
+    results.push(filterPostFields(row, user));
+  }
+
+  return results;
+}
+
 /** 创建帖子/评论的数据参数 */
 export interface CreatePostData {
   parentId?: string | null;

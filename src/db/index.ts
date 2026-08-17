@@ -10,6 +10,7 @@ export {
   getPostById,
   listPostsByParent,
   listUserPosts,
+  listUserComments,
   createPost,
   createPostWithVisibility,
   updatePostContent,
@@ -21,7 +22,11 @@ export {
 export {
   getUserProfileById,
   getUserProfileByUsername,
+  getUserPublicProfile,
+  userExists,
   updateUsername,
+  countRecentUsernameChanges,
+  updateAvatar,
   updatePermissions,
   deactivateUser,
   reactivateUser,
@@ -38,7 +43,7 @@ export {
   unbanUser,
   resetUserViolations,
 } from "./user";
-export type { AdminUserInfo } from "./user";
+export type { AdminUserInfo, UserPublicProfile } from "./user";
 
 // 管理日志
 export { writeAdminLog, listAdminLogs } from "./adminLog";

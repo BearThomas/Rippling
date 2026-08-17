@@ -19,6 +19,12 @@ export interface CloudflareEnv {
   TRUSTED_ORIGINS?: string;
   REGISTER_QUESTIONS?: string;
   ENCRYPTION_KEY?: string;
+  /** Backblaze B2（S3 兼容）配置 */
+  B2_BUCKET_NAME?: string;
+  B2_ACCESS_KEY_ID?: string;
+  B2_SECRET_ACCESS_KEY?: string;
+  /** S3 端点，如 https://s3.us-west-000.backblazeb2.com */
+  B2_ENDPOINT?: string;
   [key: string]: unknown;
 }
 
