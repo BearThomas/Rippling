@@ -28,16 +28,19 @@
  */
 
 import { Hono } from "hono";
+import type { CloudflareEnv } from "../../auth";
 import { loggerMiddleware } from "../../middleware/logger";
 import { errorHandler } from "../../middleware/error";
 import { authMiddleware } from "../../middleware/auth";
+import type { AppContextVars } from "../../middleware/auth";
 import { deviceMiddleware } from "../../middleware/device";
 import { postRoutes, likeRoutes, confessionRoutes, timelineRoutes, voteRoutes, recommendRoutes, searchRoutes, followRoutes, questionRoutes, notificationRoutes, blockRoutes, ticketRoutes, adminRoutes, adminLogRoutes } from "../../routes";
 import { nowISO } from "../../utils/time";
 import { NOT_FOUND } from "../../utils/errors";
+import { getSiteConfig } from "../../db";
 import siteConfig from "../../../config/site.config.json";
 
-const app = new Hono();
+const app = new Hono<{ Bindings: CloudflareEnv; Variables: AppContextVars }>();
 
 // ============================================================
 //  全局中间件
@@ -58,11 +61,13 @@ app.get("/api/health", (c) => {
   });
 });
 
-/** 公开站点配置（后续改为从 D1 读取） */
-app.get("/api/config", (c) => {
+/** 站点配置：优先从 D1 读取，无配置时回退静态 site.config.json */
+app.get("/api/config", async (c) => {
+  const dbConfig = await getSiteConfig(c.env.DB);
+
   return c.json({
     success: true,
-    data: siteConfig,
+    data: dbConfig ?? siteConfig,
   });
 });
 

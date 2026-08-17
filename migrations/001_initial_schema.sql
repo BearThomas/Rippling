@@ -332,6 +332,15 @@ CREATE TABLE archive_operation (
     createdAt     TEXT NOT NULL
 );
 
+-- 归档文件索引表（归档脚本写入，供管理面板归档查看器使用）
+CREATE TABLE archive_index (
+    id         TEXT PRIMARY KEY,
+    filePath   TEXT NOT NULL UNIQUE,
+    targetType TEXT,
+    targetId   TEXT,
+    archivedAt TEXT NOT NULL
+);
+
 -- 管理员操作日志表
 CREATE TABLE admin_log (
     id         TEXT PRIMARY KEY,

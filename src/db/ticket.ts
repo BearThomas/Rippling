@@ -209,6 +209,25 @@ export async function getMyTickets(
 }
 
 /**
+ * 列出最近提交的工单（管理面板聚合信息用）
+ *
+ * 不做权限检查，由路由层确认 access_admin_panel 后调用。
+ */
+export async function getRecentTickets(
+  db: D1Database,
+  limit = 5
+): Promise<TicketInfo[]> {
+  const safeLimit = Math.min(Math.max(limit, 1), 20);
+
+  const rows = await db
+    .prepare(`SELECT * FROM ticket ORDER BY createdAt DESC LIMIT ?`)
+    .bind(safeLimit)
+    .all<TicketRow>();
+
+  return rows.results;
+}
+
+/**
  * 获取单个工单
  *
  * 普通用户只能看自己的；有 view_ticket 权限可看任意工单。

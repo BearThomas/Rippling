@@ -99,6 +99,9 @@ CREATE INDEX idx_block_join_request_block_status ON block_join_request(blockId, 
 -- 归档操作按目标+时间查询
 CREATE INDEX idx_archive_target_created ON archive_operation(targetType, targetId, createdAt);
 
+-- 归档文件索引按归档时间排序
+CREATE INDEX idx_archive_index_archivedAt ON archive_index(archivedAt);
+
 -- 管理日志按时间排序
 CREATE INDEX idx_admin_log_createdAt ON admin_log(createdAt);
 

@@ -44,6 +44,18 @@ export type { AdminUserInfo } from "./user";
 export { writeAdminLog, listAdminLogs } from "./adminLog";
 export type { WriteAdminLogData, AdminLogInfo, AdminLogFilters } from "./adminLog";
 
+// 站点配置
+export { getSiteConfig, updateSiteConfig } from "./siteConfig";
+export type {
+  SiteConfig,
+  SiteConfigTheme,
+  SiteConfigRecommendWeights,
+} from "./siteConfig";
+
+// 归档查看器
+export { listArchiveFiles, getArchiveFileContent } from "./archiveViewer";
+export type { ArchiveFileInfo } from "./archiveViewer";
+
 // 点赞
 export { toggleLike, getLikeCount, getUserLiked } from "./likes";
 
@@ -100,6 +112,7 @@ export {
   listTickets,
   listTicketsByType,
   getMyTickets,
+  getRecentTickets,
   getTicketById,
   updateTicketStatus,
 } from "./ticket";

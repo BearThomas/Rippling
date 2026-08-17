@@ -21,6 +21,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { encryptData } from "../src/utils/crypto";
 import { buildArchiveFile, getArchivePath } from "../src/utils/archive";
+import { generateUUID } from "../src/utils/uuid";
+import { nowISO } from "../src/utils/time";
 
 // ============================================================
 //  配置
@@ -152,7 +154,16 @@ async function archiveType(
       ensureDir(path.dirname(fullPath));
       fs.writeFileSync(fullPath, encrypted, "utf-8");
 
-      // 5. 在 D1 中标记已归档
+      // 5. 登记归档文件到 archive_index（供管理面板归档查看器使用）
+      const archivedAt = nowISO();
+      await d1Execute(
+        `INSERT INTO archive_index (id, filePath, targetType, targetId, archivedAt)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(filePath) DO UPDATE SET archivedAt = ?`,
+        [generateUUID(), filePath, type, id, archivedAt, archivedAt]
+      );
+
+      // 6. 在 D1 中标记已归档
       await d1Execute(
         `UPDATE ${table} SET isArchived = 1 WHERE id = ?`,
         [id]
