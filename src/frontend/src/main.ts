@@ -5,6 +5,7 @@
  *   1. 创建 Pinia / Router
  *   2. 拉取站点配置应用主题（不阻塞渲染）
  *   3. 拉取会话，登录用户启动通知轮询
+ *   4. PWA：注册 Service Worker（仅生产环境）+ 离线监听
  */
 
 import { createApp } from "vue";
@@ -15,6 +16,7 @@ import "./styles/main.css";
 import { useThemeStore } from "./stores/theme";
 import { useAuthStore } from "./stores/auth";
 import { useNotificationStore } from "./stores/notification";
+import { registerServiceWorker, setupOfflineListener } from "./utils/pwa";
 
 const app = createApp(App);
 const pinia = createPinia();
@@ -33,3 +35,7 @@ void auth.fetchSession().then(() => {
   // 登录用户启动未读通知轮询（红点）
   if (auth.isLoggedIn) notification.startPolling();
 });
+
+// PWA：生产环境注册 Service Worker（window load 后），并监听离线状态
+registerServiceWorker();
+setupOfflineListener();
