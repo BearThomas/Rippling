@@ -16,3 +16,4 @@ export { default as questionRoutes } from "./question";
 export { default as notificationRoutes } from "./notification";
 export { default as blockRoutes } from "./block";
 export { default as ticketRoutes } from "./ticket";
+export { default as adminRoutes } from "./admin";

@@ -247,6 +247,36 @@ export const ROLE_SUPER_ADMIN =
   MASK_EDIT_OTHERS_PERMISSION |
   MASK_EDIT_DATABASE;
 
+/**
+ * 新注册用户默认权限（与注册流程一致的基础权限位）
+ *
+ * 用途：
+ *   - 注册成功后创建 user_profile 的初始权限
+ *   - 解封用户（unban）时恢复的默认权限
+ *   - 申诉工单批准时恢复的基准（ROLE_USER 为其超集）
+ */
+export const DEFAULT_USER_PERMISSIONS =
+  MASK_VIEW_SITE |
+  MASK_CREATE_POST |
+  MASK_COMMENT |
+  MASK_LIKE |
+  MASK_EDIT_OWN_POST |
+  MASK_DELETE_OWN_POST |
+  MASK_CREATE_CONFESSION |
+  MASK_VIEW_CONFESSION |
+  MASK_VIEW_POST |
+  MASK_VIEW_TIMELINE |
+  MASK_SUBMIT_PERMISSION_REQUEST |
+  MASK_SUBMIT_REPORT |
+  MASK_SUBMIT_APPEAL |
+  MASK_MODIFY_OWN_USERNAME |
+  MASK_MODIFY_PASSWORD |
+  MASK_FOLLOW_USER |
+  MASK_ENABLE_QUESTION_BOX |
+  MASK_VIEW_QUESTION_BOX |
+  MASK_ASK_QUESTION |
+  MASK_UPLOAD_IMAGE;
+
 // ============================================================
 //  工具函数
 // ============================================================

@@ -22,33 +22,8 @@ import { createAuth } from "../../auth";
 import { checkRateLimit, resetRateLimit } from "../../utils/rate-limit";
 import { generateUUID } from "../../utils/uuid";
 import { nowISO } from "../../utils/time";
+import { DEFAULT_USER_PERMISSIONS } from "../../shared/permissions";
 import siteConfig from "../../../config/site.config.json";
-
-// ============================================================
-//  新注册用户默认权限（BigInt 位掩码）
-// ============================================================
-
-const DEFAULT_USER_PERMISSIONS =
-  (1n << 0n)  | // view_site
-  (1n << 1n)  | // create_post
-  (1n << 2n)  | // comment
-  (1n << 3n)  | // like
-  (1n << 4n)  | // edit_own_post
-  (1n << 5n)  | // delete_own_post
-  (1n << 9n)  | // create_confession
-  (1n << 10n) | // view_confession
-  (1n << 11n) | // view_post
-  (1n << 12n) | // view_timeline
-  (1n << 19n) | // submit_permission_request
-  (1n << 20n) | // submit_report
-  (1n << 21n) | // submit_appeal
-  (1n << 26n) | // modify_own_username
-  (1n << 29n) | // modify_password
-  (1n << 30n) | // follow_user
-  (1n << 31n) | // enable_question_box
-  (1n << 32n) | // view_question_box
-  (1n << 33n) | // ask_question
-  (1n << 36n);  // upload_image
 
 // ============================================================
 //  解析验证问题

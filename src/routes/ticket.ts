@@ -43,6 +43,7 @@ import {
   updateUserNameColor,
   updateUsername,
   createNotification,
+  writeAdminLog,
 } from "../db";
 import {
   PERM_SUBMIT_PERMISSION_REQUEST,
@@ -59,11 +60,9 @@ import {
   MASK_VIEW_SITE,
   MASK_SUBMIT_TIMELINE,
   MASK_MANAGE_BLOCK,
-  ROLE_USER,
+  DEFAULT_USER_PERMISSIONS,
 } from "../shared/permissions";
 import { checkRateLimit } from "../utils/rate-limit";
-import { generateUUID } from "../utils/uuid";
-import { nowISO } from "../utils/time";
 import {
   UNAUTHORIZED,
   NOT_FOUND,
@@ -216,26 +215,8 @@ async function resolveReportTargetAuthor(
 /**
  * 封禁用户：权限掩码清零，只保留 view_site
  */
-async function banUser(db: D1Database, userId: string): Promise<boolean> {
+async function banUserFromReport(db: D1Database, userId: string): Promise<boolean> {
   return setUserPermissionsDirect(db, userId, MASK_VIEW_SITE);
-}
-
-/**
- * 写管理日志（action = 'handle_ticket'）
- */
-async function writeAdminLog(
-  db: D1Database,
-  adminId: string,
-  ticketId: string,
-  detail: Record<string, unknown>
-): Promise<void> {
-  await db
-    .prepare(
-      `INSERT INTO admin_log (id, adminId, action, targetType, targetId, detail, createdAt)
-       VALUES (?, ?, 'handle_ticket', 'ticket', ?, ?, ?)`
-    )
-    .bind(generateUUID(), adminId, ticketId, JSON.stringify(detail), nowISO())
-    .run();
 }
 
 // ============================================================
@@ -307,14 +288,14 @@ async function handleReport(
 
   // 封禁：直接封禁，不累加违规次数
   if (action === "ban") {
-    await banUser(db, authorId);
+    await banUserFromReport(db, authorId);
     return `${detail}已封禁被举报用户`;
   }
 
   // 警告 / 处罚：累加违规次数，达到阈值自动封禁
   const count = await incrementViolationCount(db, authorId);
   if (count >= VIOLATION_BAN_THRESHOLD) {
-    await banUser(db, authorId);
+    await banUserFromReport(db, authorId);
     return `${detail}违规次数达 ${count} 次，已自动封禁`;
   }
 
@@ -332,7 +313,7 @@ async function handleAppeal(
     return `已拒绝：${reason ?? ""}`;
   }
 
-  await setUserPermissionsDirect(db, ticket.submittedBy, ROLE_USER);
+  await setUserPermissionsDirect(db, ticket.submittedBy, DEFAULT_USER_PERMISSIONS);
   // 顺带解除注销状态（若账号已被注销）
   await reactivateUser(db, ticket.submittedBy);
 
@@ -678,12 +659,18 @@ ticketRoutes.post("/handle", async (c) => {
   const updated = await updateTicketStatus(c.env.DB, id, "closed", resultText, user.id, admin);
   if (!updated) return errorResponse(c, NOT_FOUND);
 
-  // 写管理日志
-  await writeAdminLog(c.env.DB, user.id, id, {
-    type: ticket.type,
-    action,
-    reason: reason ?? null,
-    result: resultText,
+  // 写管理日志（统一走 writeAdminLog）
+  await writeAdminLog(c.env.DB, {
+    adminId: user.id,
+    action: "handle_ticket",
+    targetType: "ticket",
+    targetId: id,
+    detail: JSON.stringify({
+      type: ticket.type,
+      action,
+      reason: reason ?? null,
+      result: resultText,
+    }),
   });
 
   // 通知提交者处理结果

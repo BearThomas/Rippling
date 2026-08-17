@@ -31,7 +31,18 @@ export {
   setUserPermissionsDirect,
   getUserPermissions,
   updateUserNameColor,
+  getAdminUserInfo,
+  listUsersForAdmin,
+  setUserPermissions,
+  banUser,
+  unbanUser,
+  resetUserViolations,
 } from "./user";
+export type { AdminUserInfo } from "./user";
+
+// 管理日志
+export { writeAdminLog } from "./adminLog";
+export type { WriteAdminLogData } from "./adminLog";
 
 // 点赞
 export { toggleLike, getLikeCount, getUserLiked } from "./likes";

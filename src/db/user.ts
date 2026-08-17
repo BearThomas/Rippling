@@ -7,9 +7,15 @@
 
 import type { CurrentUser } from "../utils/permission";
 import { can } from "../utils/permission";
-import { PERM_VIEW_DATABASE, PERM_EDIT_OTHERS_PERMISSION } from "../shared/permissions";
+import {
+  PERM_VIEW_DATABASE,
+  PERM_EDIT_OTHERS_PERMISSION,
+  DEFAULT_USER_PERMISSIONS,
+  MASK_VIEW_SITE,
+} from "../shared/permissions";
 import { generateUUID } from "../utils/uuid";
 import { nowISO } from "../utils/time";
+import { writeAdminLog } from "./adminLog";
 
 // ============================================================
 //  返回类型
@@ -446,4 +452,260 @@ export async function updateUserNameColor(
     .run();
 
   return result.meta.changes > 0;
+}
+
+// ============================================================
+//  管理面板 — 用户管理
+//
+//  查询类函数不内置权限检查，由路由层确认 access_admin_panel 后调用；
+//  写操作内置 edit_others_permission 检查并统一写 admin_log。
+// ============================================================
+
+/** 用户管理信息（含敏感字段，仅管理员可见） */
+export interface AdminUserInfo {
+  id: string;
+  username: string;
+  /** 学号（仅管理员可见） */
+  studentId: string | null;
+  permissions: bigint;
+  nameColor: string | null;
+  badge: string | null;
+  violationCount: number;
+  isDeactivated: boolean;
+  createdAt: string;
+}
+
+/** user_profile 管理视图行结构 */
+interface AdminUserRow {
+  userId: string;
+  username: string;
+  studentId: string | null;
+  permissions: number;
+  nameColor: string | null;
+  badge: string | null;
+  violationCount: number;
+  isDeactivated: number | null;
+  createdAt: string;
+}
+
+/** 行 → AdminUserInfo 转换 */
+function toAdminUserInfo(row: AdminUserRow): AdminUserInfo {
+  return {
+    id: row.userId,
+    username: row.username,
+    studentId: row.studentId,
+    permissions: BigInt(row.permissions),
+    nameColor: row.nameColor,
+    badge: row.badge,
+    violationCount: row.violationCount,
+    isDeactivated: !!row.isDeactivated,
+    createdAt: row.createdAt,
+  };
+}
+
+/**
+ * 转义 LIKE 通配符
+ *
+ * 防止用户输入的 % / _ 被当作通配符，配合 ESCAPE '\' 使用。
+ */
+function escapeLike(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
+/**
+ * 获取用户管理信息
+ *
+ * @returns 用户不存在返回 null
+ */
+export async function getAdminUserInfo(
+  db: D1Database,
+  userId: string
+): Promise<AdminUserInfo | null> {
+  const row = await db
+    .prepare(
+      `SELECT userId, username, studentId, permissions, nameColor, badge,
+              violationCount, isDeactivated, createdAt
+       FROM user_profile WHERE userId = ?`
+    )
+    .bind(userId)
+    .first<AdminUserRow>();
+
+  if (!row) return null;
+
+  return toAdminUserInfo(row);
+}
+
+/**
+ * 列出用户（管理视图）
+ *
+ * 可按 username 或 studentId 模糊搜索，按 createdAt 倒序。
+ */
+export async function listUsersForAdmin(
+  db: D1Database,
+  search: string | undefined,
+  limit: number,
+  offset: number
+): Promise<AdminUserInfo[]> {
+  let sql: string;
+  let params: unknown[];
+
+  if (search) {
+    const pattern = `%${escapeLike(search)}%`;
+    sql = `SELECT userId, username, studentId, permissions, nameColor, badge,
+                  violationCount, isDeactivated, createdAt
+           FROM user_profile
+           WHERE username LIKE ? ESCAPE '\\' OR studentId LIKE ? ESCAPE '\\'
+           ORDER BY createdAt DESC LIMIT ? OFFSET ?`;
+    params = [pattern, pattern, limit, offset];
+  } else {
+    sql = `SELECT userId, username, studentId, permissions, nameColor, badge,
+                  violationCount, isDeactivated, createdAt
+           FROM user_profile
+           ORDER BY createdAt DESC LIMIT ? OFFSET ?`;
+    params = [limit, offset];
+  }
+
+  const rows = await db.prepare(sql).bind(...params).all<AdminUserRow>();
+
+  return rows.results.map(toAdminUserInfo);
+}
+
+/**
+ * 修改用户权限（管理面板）
+ *
+ * 需要 edit_others_permission 权限，操作记录到 admin_log。
+ *
+ * @returns false 表示无权限或用户不存在
+ */
+export async function setUserPermissions(
+  db: D1Database,
+  userId: string,
+  permissions: bigint,
+  adminUser: CurrentUser | null
+): Promise<boolean> {
+  if (!can(adminUser, PERM_EDIT_OTHERS_PERMISSION)) return false;
+  if (!adminUser) return false;
+
+  const now = nowISO();
+
+  const result = await db
+    .prepare("UPDATE user_profile SET permissions = ?, updatedAt = ? WHERE userId = ?")
+    .bind(Number(permissions), now, userId)
+    .run();
+
+  if (!result.meta.changes) return false;
+
+  await writeAdminLog(db, {
+    adminId: adminUser.id,
+    action: "edit_permissions",
+    targetType: "user",
+    targetId: userId,
+    detail: JSON.stringify({ permissions: String(permissions) }),
+  });
+
+  return true;
+}
+
+/**
+ * 封禁用户：权限掩码清零，只保留 view_site
+ *
+ * 需要 edit_others_permission 权限，操作记录到 admin_log。
+ *
+ * @returns false 表示无权限或用户不存在
+ */
+export async function banUser(
+  db: D1Database,
+  userId: string,
+  adminUser: CurrentUser | null
+): Promise<boolean> {
+  if (!can(adminUser, PERM_EDIT_OTHERS_PERMISSION)) return false;
+  if (!adminUser) return false;
+
+  const now = nowISO();
+
+  const result = await db
+    .prepare("UPDATE user_profile SET permissions = ?, updatedAt = ? WHERE userId = ?")
+    .bind(Number(MASK_VIEW_SITE), now, userId)
+    .run();
+
+  if (!result.meta.changes) return false;
+
+  await writeAdminLog(db, {
+    adminId: adminUser.id,
+    action: "ban_user",
+    targetType: "user",
+    targetId: userId,
+    detail: JSON.stringify({ permissions: String(MASK_VIEW_SITE) }),
+  });
+
+  return true;
+}
+
+/**
+ * 解封用户：恢复注册用户默认权限（DEFAULT_USER_PERMISSIONS）
+ *
+ * 需要 edit_others_permission 权限，操作记录到 admin_log。
+ *
+ * @returns false 表示无权限或用户不存在
+ */
+export async function unbanUser(
+  db: D1Database,
+  userId: string,
+  adminUser: CurrentUser | null
+): Promise<boolean> {
+  if (!can(adminUser, PERM_EDIT_OTHERS_PERMISSION)) return false;
+  if (!adminUser) return false;
+
+  const now = nowISO();
+
+  const result = await db
+    .prepare("UPDATE user_profile SET permissions = ?, updatedAt = ? WHERE userId = ?")
+    .bind(Number(DEFAULT_USER_PERMISSIONS), now, userId)
+    .run();
+
+  if (!result.meta.changes) return false;
+
+  await writeAdminLog(db, {
+    adminId: adminUser.id,
+    action: "unban_user",
+    targetType: "user",
+    targetId: userId,
+    detail: JSON.stringify({ permissions: String(DEFAULT_USER_PERMISSIONS) }),
+  });
+
+  return true;
+}
+
+/**
+ * 重置用户违规次数为 0
+ *
+ * 需要 edit_others_permission 权限，操作记录到 admin_log。
+ *
+ * @returns false 表示无权限或用户不存在
+ */
+export async function resetUserViolations(
+  db: D1Database,
+  userId: string,
+  adminUser: CurrentUser | null
+): Promise<boolean> {
+  if (!can(adminUser, PERM_EDIT_OTHERS_PERMISSION)) return false;
+  if (!adminUser) return false;
+
+  const now = nowISO();
+
+  const result = await db
+    .prepare("UPDATE user_profile SET violationCount = 0, updatedAt = ? WHERE userId = ?")
+    .bind(now, userId)
+    .run();
+
+  if (!result.meta.changes) return false;
+
+  await writeAdminLog(db, {
+    adminId: adminUser.id,
+    action: "reset_violations",
+    targetType: "user",
+    targetId: userId,
+  });
+
+  return true;
 }
