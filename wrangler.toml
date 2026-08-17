@@ -3,8 +3,8 @@ compatibility_flags = ["nodejs_compat"]
 
 [[d1_databases]]
 binding = "DB"
-database_name = "rippling"
-database_id = "待填写"
+database_name = "rippling-test"
+database_id = "14ea9388-168e-417b-a1af-d1c99726c0ec"
 
 [pages]
 pages_build_output_dir = "public"
