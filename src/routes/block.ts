@@ -19,6 +19,10 @@
  *   POST   /lock              锁定板块（manage_block）
  *   POST   /unlock            解锁板块（manage_block）
  *   DELETE /                  删除板块（block_delete 或 manage_block）
+ *   GET    /posts             板块帖子流（板块可见性由 DAL 检查）
+ *   GET    /blacklist         黑名单列表（block_manage_member）
+ *   GET    /my                我的板块列表（登录）
+ *   GET    /my-requests       我的待审申请板块 ID 列表（登录）
  *
  * 权限模型：
  *   - 全站权限（manage_block）用 requirePermission 拦截
@@ -26,6 +30,7 @@
  */
 
 import { Hono } from "hono";
+import type { Context } from "hono";
 import type { CloudflareEnv } from "../auth";
 import type { AppContextVars } from "../middleware/auth";
 import { requirePermission } from "../middleware/permission";
@@ -42,11 +47,16 @@ import {
   updateMemberPermissions,
   addToBlockBlacklist,
   removeFromBlockBlacklist,
+  listBlockBlacklist,
+  listMyBlocks,
+  listMyPendingJoinRequests,
   transferBlockOwnership,
   leaveBlock,
   lockBlock,
   unlockBlock,
   deleteBlock,
+  listBlockPosts,
+  enrichPosts,
 } from "../db";
 import type { ArchiveEnv } from "../utils/archive";
 import { PERM_MANAGE_BLOCK } from "../shared/permissions";
@@ -100,6 +110,15 @@ function badRequest(c: any, message: string): Response {
     { success: false, error: { code: VALIDATION_ERROR.code, message } },
     VALIDATION_ERROR.statusCode as any
   );
+}
+
+/**
+ * 解析分页参数（limit 默认 20，最大 50；offset 默认 0）
+ */
+function parsePagination(c: Context<E>): { limit: number; offset: number } {
+  const limit = Math.min(Math.max(parseInt(c.req.query("limit") ?? "20", 10) || 20, 1), 50);
+  const offset = Math.max(parseInt(c.req.query("offset") ?? "0", 10) || 0, 0);
+  return { limit, offset };
 }
 
 // ============================================================
@@ -516,6 +535,70 @@ blockRoutes.delete("/", async (c) => {
   if (!ok) return notFound(c); // 无权限 / 板块不存在
 
   return c.json({ success: true });
+});
+
+// ------------------------------------------------------------
+//  GET /posts  — 板块帖子流（板块可见性由 DAL 检查）
+// ------------------------------------------------------------
+
+blockRoutes.get("/posts", async (c) => {
+  const blockId = c.req.query("blockId");
+  if (!blockId) return badRequest(c, "缺少 blockId");
+
+  const { limit, offset } = parsePagination(c);
+  const posts = await listBlockPosts(c.env.DB, blockId, c.get("user"), limit, offset);
+  if (!posts) return notFound(c); // 板块不存在 / 锁定且非成员
+
+  // 附加作者信息 / 点赞数 / 评论数 / liked（批量查询，无 N+1）
+  const enriched = await enrichPosts(c.env.DB, posts, c.get("user"));
+
+  return c.json({ success: true, data: { posts: enriched, total: enriched.length } });
+});
+
+// ------------------------------------------------------------
+//  GET /blacklist  — 黑名单列表（block_manage_member）
+// ------------------------------------------------------------
+
+blockRoutes.get("/blacklist", async (c) => {
+  const user = c.get("user");
+  if (!user) return notFound(c);
+
+  const blockId = c.req.query("blockId");
+  if (!blockId) return badRequest(c, "缺少 blockId");
+
+  const list = await listBlockBlacklist(c.env.DB, blockId, user);
+  if (!list) return notFound(c); // 无权限
+
+  // 批量解析被拉黑用户用户名
+  const nameMap = await resolveUsernames(c.env.DB, list.map((r) => r.userId));
+  const data = list.map((r) => ({
+    ...r,
+    username: nameMap.get(r.userId) ?? null,
+  }));
+
+  return c.json({ success: true, data });
+});
+
+// ------------------------------------------------------------
+//  GET /my  — 我的板块列表（登录）
+// ------------------------------------------------------------
+
+blockRoutes.get("/my", async (c) => {
+  const user = c.get("user");
+  const blocks = await listMyBlocks(c.env.DB, user);
+  return c.json({ success: true, data: blocks });
+});
+
+// ------------------------------------------------------------
+//  GET /my-requests  — 我的待审申请板块 ID 列表（登录）
+// ------------------------------------------------------------
+
+blockRoutes.get("/my-requests", async (c) => {
+  const user = c.get("user");
+  if (!user) return c.json({ success: true, data: [] });
+
+  const blockIds = await listMyPendingJoinRequests(c.env.DB, user.id);
+  return c.json({ success: true, data: blockIds });
 });
 
 export default blockRoutes;

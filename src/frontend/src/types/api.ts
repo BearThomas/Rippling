@@ -319,11 +319,19 @@ export interface BlockInfo {
   description: string | null;
   ownerId: string;
   isLocked: boolean;
-  isDeleted: boolean;
-  isArchived: boolean;
   createdAt: string;
-  /** 路由层附加：成员数 */
+  /** 路由层附加：成员数（后端暂未提供） */
   memberCount?: number;
+}
+
+/** 板块详情（含当前用户的成员信息） */
+export interface BlockDetailInfo extends BlockInfo {
+  /** 当前用户是否为成员 */
+  isMember: boolean;
+  /** 当前用户角色（owner / member；非成员为 null） */
+  myRole: string | null;
+  /** 当前用户板块权限掩码（十进制字符串；非成员为 null） */
+  myPermissions: string | null;
 }
 
 // ============================================================

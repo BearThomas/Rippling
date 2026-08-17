@@ -1,7 +1,7 @@
 /**
  * 权限工具
  *
- * 与后端 src/shared/permissions.ts 的权限位定义保持一致（位 0-37）。
+ * 与后端 src/shared/permissions.ts 的权限位定义保持一致（全站位 0-37，板块位 0-14）。
  * 后端权限掩码以十进制字符串返回（BigInt 无法 JSON 序列化），
  * hasPermission 同时接受 bigint / 十进制字符串 / 数字。
  */
@@ -48,6 +48,45 @@ export const PERM_VIEW_ANONYMOUS_IDENTITY = 34;
 export const PERM_VIEW_ADMIN_LOG = 35;
 export const PERM_UPLOAD_IMAGE = 36;
 export const PERM_CREATE_VOTE = 37;
+
+// ============================================================
+//  板块权限位（0-14），与后端 shared/permissions.ts 一致
+// ============================================================
+
+export const BLOCK_PERM_VIEW = 0;
+export const BLOCK_PERM_CREATE_POST = 1;
+export const BLOCK_PERM_COMMENT = 2;
+export const BLOCK_PERM_LIKE = 3;
+export const BLOCK_PERM_EDIT_OWN_POST = 4;
+export const BLOCK_PERM_DELETE_OWN_POST = 5;
+export const BLOCK_PERM_EDIT_OTHERS_POST = 6;
+export const BLOCK_PERM_DELETE_OTHERS_POST = 7;
+export const BLOCK_PERM_PIN_POST = 8;
+export const BLOCK_PERM_APPROVE_JOIN = 9;
+export const BLOCK_PERM_MANAGE_MEMBER = 10;
+export const BLOCK_PERM_MANAGE_ROLE = 11;
+export const BLOCK_PERM_UPLOAD_IMAGE = 12;
+export const BLOCK_PERM_DELETE = 13;
+export const BLOCK_PERM_TRANSFER = 14;
+
+/** 板块权限位元信息（用于权限编辑弹窗展示） */
+export const BLOCK_PERMISSION_BITS: { bit: number; label: string }[] = [
+  { bit: BLOCK_PERM_VIEW, label: "浏览板块" },
+  { bit: BLOCK_PERM_CREATE_POST, label: "发帖" },
+  { bit: BLOCK_PERM_COMMENT, label: "评论" },
+  { bit: BLOCK_PERM_LIKE, label: "点赞" },
+  { bit: BLOCK_PERM_EDIT_OWN_POST, label: "编辑自己的帖子" },
+  { bit: BLOCK_PERM_DELETE_OWN_POST, label: "删除自己的帖子" },
+  { bit: BLOCK_PERM_EDIT_OTHERS_POST, label: "编辑他人帖子" },
+  { bit: BLOCK_PERM_DELETE_OTHERS_POST, label: "删除他人帖子" },
+  { bit: BLOCK_PERM_PIN_POST, label: "置顶帖子" },
+  { bit: BLOCK_PERM_APPROVE_JOIN, label: "审批加入申请" },
+  { bit: BLOCK_PERM_MANAGE_MEMBER, label: "管理成员" },
+  { bit: BLOCK_PERM_MANAGE_ROLE, label: "修改成员权限" },
+  { bit: BLOCK_PERM_UPLOAD_IMAGE, label: "上传图片" },
+  { bit: BLOCK_PERM_DELETE, label: "删除板块" },
+  { bit: BLOCK_PERM_TRANSFER, label: "转让板块" },
+];
 
 // ============================================================
 //  工具函数

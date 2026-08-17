@@ -29,7 +29,7 @@ import {
 } from "../api/post";
 import { toggleLike } from "../api/like";
 import { followUser, unfollowUser, getFollowStatus } from "../api/follow";
-import { getBlock } from "../api/block";
+import { getBlockDetail } from "../api/block";
 import { formatDateTime, formatNumber } from "../utils/format";
 import { showToast } from "../utils/toast";
 import { useAuthStore } from "../stores/auth";
@@ -180,7 +180,7 @@ async function loadRelations(): Promise<void> {
   // 板块名
   if (p.blockId) {
     try {
-      const block = await getBlock(p.blockId);
+      const block = await getBlockDetail(p.blockId);
       blockName.value = block.name;
     } catch {
       blockName.value = null;

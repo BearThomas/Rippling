@@ -11,6 +11,7 @@ export {
   listPostsByParent,
   listUserPosts,
   listUserComments,
+  listBlockPosts,
   createPost,
   createPostWithVisibility,
   updatePostContent,
@@ -148,6 +149,9 @@ export {
   removeBlockMember,
   addToBlockBlacklist,
   removeFromBlockBlacklist,
+  listBlockBlacklist,
+  listMyBlocks,
+  listMyPendingJoinRequests,
   transferBlockOwnership,
   leaveBlock,
   getBlockJoinRequests,
@@ -155,6 +159,7 @@ export {
   BLOCK_OWNER_PERMISSIONS,
   BLOCK_DEFAULT_MEMBER_PERMISSIONS,
 } from "./block";
+export type { BlockBlacklistInfo } from "./block";
 
 // 推荐流
 export { listRecommendations } from "./recommend";

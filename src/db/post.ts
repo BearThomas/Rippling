@@ -556,6 +556,58 @@ export async function listUserComments(
   return results;
 }
 
+/**
+ * 列出板块内的顶级帖子（板块帖子流）
+ *
+ * 板块访问检查由 canAccessBlock 统一完成：
+ *   - 板块不存在 / 已删除 → null
+ *   - 锁定板块仅成员或 manage_block 可见 → 否则 null
+ * 帖子级可见性（private / selected）同样过滤。按 createdAt 倒序。
+ *
+ * @returns 帖子列表；无权访问该板块时返回 null
+ */
+export async function listBlockPosts(
+  db: D1Database,
+  blockId: string,
+  user: CurrentUser | null,
+  limit: number,
+  offset: number
+): Promise<PostInfo[] | null> {
+  // 板块访问检查（不存在 / 已删除 / 锁定且非成员）
+  if (!(await canAccessBlock(db, blockId, user))) return null;
+
+  const rows = await db
+    .prepare(
+      "SELECT * FROM post WHERE blockId = ? AND parentId IS NULL AND isDeleted = 0 ORDER BY createdAt DESC LIMIT ? OFFSET ?"
+    )
+    .bind(blockId, limit, offset)
+    .all<{
+      id: string;
+      parentId: string | null;
+      authorId: string;
+      authorVisible: number;
+      title: string | null;
+      content: string;
+      visibility: string;
+      blockId: string | null;
+      isPinned: number;
+      isArchived: number;
+      createdAt: string;
+      updatedAt: string;
+    }>();
+
+  const results: PostInfo[] = [];
+  for (const row of rows.results) {
+    const visible = await checkPostVisibility(
+      db, row.id, row.authorId, row.visibility, user
+    );
+    if (!visible) continue;
+    results.push(filterPostFields(row, user));
+  }
+
+  return results;
+}
+
 /** 创建帖子/评论的数据参数 */
 export interface CreatePostData {
   parentId?: string | null;

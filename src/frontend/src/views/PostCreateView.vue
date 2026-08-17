@@ -11,15 +11,16 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import MarkdownRenderer from "../components/markdown/MarkdownRenderer.vue";
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
 import { createPost } from "../api/post";
 import { search } from "../api/search";
-import { listBlocks } from "../api/block";
+import { getBlockDetail, getBlockList } from "../api/block";
 import { showToast } from "../utils/toast";
 import type { BlockInfo, SearchUserResult } from "../types";
 
+const route = useRoute();
 const router = useRouter();
 
 // ------------------------------------------------------------
@@ -100,7 +101,7 @@ async function loadBlocks(): Promise<void> {
   if (blocks.value.length > 0 || blocksLoading.value) return;
   blocksLoading.value = true;
   try {
-    blocks.value = await listBlocks();
+    blocks.value = await getBlockList();
   } catch {
     // client.ts 已自动 Toast
   } finally {
@@ -158,8 +159,24 @@ function onUploadImage(): void {
 const previewContent = computed(() => content.value || "（暂无内容）");
 
 onMounted(() => {
-  // 预加载板块列表，避免切换模式时等待
-  void loadBlocks();
+  // 预加载板块列表，避免切换模式时等待；
+  // 若携带 blockId query（从板块详情页"发帖"进入）则预选该板块
+  void loadBlocks().then(async () => {
+    const qBlockId = route.query.blockId;
+    if (typeof qBlockId === "string" && qBlockId) {
+      mode.value = "block";
+      selectedBlockId.value = qBlockId;
+      // 列表中没有该板块时补充进去，保证 select 可展示
+      if (!blocks.value.some((b) => b.id === qBlockId)) {
+        try {
+          const detail = await getBlockDetail(qBlockId);
+          blocks.value = [{ ...detail }, ...blocks.value];
+        } catch {
+          // 无权访问时忽略预选
+        }
+      }
+    }
+  });
 });
 </script>
 

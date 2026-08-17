@@ -1044,3 +1044,102 @@ export async function rejectJoinRequest(
   return true;
 }
 
+/** 板块黑名单信息 */
+export interface BlockBlacklistInfo {
+  id: string;
+  userId: string;
+  reason: string | null;
+  createdAt: string;
+}
+
+/**
+ * 列出板块黑名单
+ *
+ * 需要 block_manage_member 板块权限、owner 或 manage_block 全站权限。
+ *
+ * @returns 黑名单列表；无权限时返回 null
+ */
+export async function listBlockBlacklist(
+  db: D1Database,
+  blockId: string,
+  user: CurrentUser | null
+): Promise<BlockBlacklistInfo[] | null> {
+  if (!user) return null;
+
+  const hasGlobalPerm = can(user, PERM_MANAGE_BLOCK);
+  const isOwner = await isBlockOwner(db, blockId, user.id);
+  const hasBlockPerm =
+    hasGlobalPerm || isOwner || (await hasBlockPermission(db, blockId, user.id, BLOCK_PERM_MANAGE_MEMBER));
+
+  if (!hasBlockPerm) return null;
+
+  const rows = await db
+    .prepare(
+      "SELECT id, userId, reason, createdAt FROM block_blacklist WHERE blockId = ? ORDER BY createdAt DESC"
+    )
+    .bind(blockId)
+    .all<{ id: string; userId: string; reason: string | null; createdAt: string }>();
+
+  return rows.results.map((r) => ({
+    id: r.id,
+    userId: r.userId,
+    reason: r.reason,
+    createdAt: r.createdAt,
+  }));
+}
+
+/**
+ * 列出当前用户已加入的板块（我的板块）
+ *
+ * 通过 block_member 关联 block 表，仅返回未删除板块。
+ * 未登录返回空数组。
+ */
+export async function listMyBlocks(
+  db: D1Database,
+  user: CurrentUser | null
+): Promise<BlockInfo[]> {
+  if (!user) return [];
+
+  const rows = await db
+    .prepare(
+      "SELECT b.id, b.name, b.description, b.ownerId, b.isLocked, b.createdAt " +
+        "FROM block_member m JOIN block b ON m.blockId = b.id " +
+        "WHERE m.userId = ? AND b.isDeleted = 0 ORDER BY m.joinedAt DESC"
+    )
+    .bind(user.id)
+    .all<{
+      id: string;
+      name: string;
+      description: string | null;
+      ownerId: string;
+      isLocked: number;
+      createdAt: string;
+    }>();
+
+  return rows.results.map((r) => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    ownerId: r.ownerId,
+    isLocked: !!r.isLocked,
+    createdAt: r.createdAt,
+  }));
+}
+
+/**
+ * 列出当前用户待审核的加入申请所属板块 ID 列表
+ *
+ * 用于前端列表页展示"已申请 / 审核中"状态，避免重复申请。
+ */
+export async function listMyPendingJoinRequests(
+  db: D1Database,
+  userId: string
+): Promise<string[]> {
+  const rows = await db
+    .prepare("SELECT blockId FROM block_join_request WHERE userId = ? AND status = 'pending'")
+    .bind(userId)
+    .all<{ blockId: string }>();
+
+  return rows.results.map((r) => r.blockId);
+}
+
