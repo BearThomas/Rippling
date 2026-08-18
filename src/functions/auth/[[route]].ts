@@ -61,6 +61,30 @@ export async function handleAuthRequest(
     path.endsWith("/sign-in/username") || path.endsWith("/sign-in/email");
 
   // ----------------------------------------------------------
+  //  注册验证问题：随机返回 2 道题（index 为原数组下标，前端提交时回传）
+  // ----------------------------------------------------------
+  if (request.method === "GET" && path.endsWith("/register-questions")) {
+    const registerQuestions = parseRegisterQuestions(env.REGISTER_QUESTIONS);
+
+    // Fisher-Yates 洗牌后取前 2 道（不足 2 道时返回全部）
+    const indices = registerQuestions.map((_, i) => i);
+    for (let i = indices.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [indices[i], indices[j]] = [indices[j], indices[i]];
+    }
+
+    const questions = indices
+      .slice(0, 2)
+      .filter((i) => registerQuestions[i]?.question)
+      .map((i) => ({ index: i, question: registerQuestions[i].question }));
+
+    return new Response(
+      JSON.stringify({ success: true, data: { questions } }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  // ----------------------------------------------------------
   //  注册：前置验证（在 Better Auth 处理前拦截）
   // ----------------------------------------------------------
   if (isSignUp) {
@@ -97,18 +121,24 @@ export async function handleAuthRequest(
         );
       }
 
-      // 3. 验证问题（如果配置了）
-      // ⚠️ 前端注册页暂无验证问题 UI（不会携带问题字段），
-      //   此处仅在前端显式提交问题字段时校验；验证问题 UI 待开发
-      const hasQuestionFields = body.questionIndex1 !== undefined;
-      if (registerQuestions.length >= 2 && hasQuestionFields) {
+      // 3. 验证问题：配置了 >= 2 道题时强制校验（前端必须提交下标与答案）
+      //    缺失 / 下标越界 / 答案不匹配一律返回 400，不允许跳过验证
+      if (registerQuestions.length >= 2) {
         const q1 = Number(body.questionIndex1);
         const q2 = Number(body.questionIndex2);
         const a1 = (body.answer1 as string) ?? "";
         const a2 = (body.answer2 as string) ?? "";
 
+        const fieldsMissing =
+          body.questionIndex1 === undefined ||
+          body.questionIndex2 === undefined ||
+          body.answer1 === undefined ||
+          body.answer2 === undefined;
+
         if (
+          fieldsMissing ||
           isNaN(q1) || isNaN(q2) ||
+          !Number.isInteger(q1) || !Number.isInteger(q2) ||
           q1 < 0 || q1 >= registerQuestions.length ||
           q2 < 0 || q2 >= registerQuestions.length ||
           q1 === q2
@@ -116,7 +146,7 @@ export async function handleAuthRequest(
           return new Response(
             JSON.stringify({
               success: false,
-              error: { code: "VALIDATION_ERROR", message: "验证问题参数无效" },
+              error: { code: "VALIDATION_ERROR", message: "验证问题答案错误" },
             }),
             { status: 400, headers: { "Content-Type": "application/json" } }
           );

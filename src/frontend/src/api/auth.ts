@@ -38,6 +38,33 @@ export interface SignUpInput {
   /** 学号（作为登录邮箱） */
   email: string;
   password: string;
+  /** 验证问题下标（原数组下标，由 register-questions 返回） */
+  questionIndex1?: number;
+  questionIndex2?: number;
+  /** 验证问题答案 */
+  answer1?: string;
+  answer2?: string;
+}
+
+/** 注册验证问题项 */
+export interface RegisterQuestionItem {
+  /** 题目在原数组中的下标（提交注册时需回传） */
+  index: number;
+  question: string;
+}
+
+/**
+ * 获取注册验证问题（随机 2 道）
+ *
+ * 未配置 REGISTER_QUESTIONS 或解析失败时返回空数组，
+ * 调用方据此决定是否展示问题区（获取失败静默，不弹 Toast）。
+ */
+export async function getRegisterQuestions(): Promise<RegisterQuestionItem[]> {
+  const payload = await requestRaw<{
+    success?: boolean;
+    data?: { questions?: RegisterQuestionItem[] };
+  }>("/api/auth/register-questions", "GET", { silentError: true });
+  return payload?.data?.questions ?? [];
 }
 
 /**
@@ -51,7 +78,7 @@ export async function signIn(input: SignInInput): Promise<SessionInfo> {
 }
 
 /**
- * 注册（用户名 + 学号 + 密码）
+ * 注册（用户名 + 学号 + 密码 + 验证问题）
  */
 export async function signUp(input: SignUpInput): Promise<SessionInfo> {
   return requestRaw<SessionInfo>("/api/auth/sign-up/email", "POST", {
@@ -59,6 +86,11 @@ export async function signUp(input: SignUpInput): Promise<SessionInfo> {
       name: input.name,
       email: toStudentEmail(input.email),
       password: input.password,
+      // 验证问题字段为可选，未配置时后端不校验
+      questionIndex1: input.questionIndex1,
+      questionIndex2: input.questionIndex2,
+      answer1: input.answer1,
+      answer2: input.answer2,
     },
   });
 }

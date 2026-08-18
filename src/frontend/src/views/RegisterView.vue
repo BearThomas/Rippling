@@ -5,9 +5,14 @@
   注册成功后 Better Auth 自动登录，刷新会话跳回来源页。
 -->
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { signUp } from "../api/auth";
+import {
+  getRegisterQuestions,
+  signUp,
+  type RegisterQuestionItem,
+  type SignUpInput,
+} from "../api/auth";
 import { useAuthStore } from "../stores/auth";
 import { useThemeStore } from "../stores/theme";
 import { showToast } from "../utils/toast";
@@ -22,6 +27,22 @@ const studentId = ref("");
 const password = ref("");
 const confirmPassword = ref("");
 const submitting = ref(false);
+
+/** 注册验证问题（随机 2 道；未配置 / 获取失败时为空数组，不显示问题区） */
+const questions = ref<RegisterQuestionItem[]>([]);
+/** 两道题的答案输入 */
+const answers = ref(["", ""]);
+/** 是否已获取到 2 道验证问题 */
+const needQuestions = computed(() => questions.value.length >= 2);
+
+onMounted(async () => {
+  try {
+    questions.value = await getRegisterQuestions();
+  } catch {
+    // 获取失败不阻塞注册：不展示问题区
+    questions.value = [];
+  }
+});
 
 /** 学号格式提示（来自站点配置） */
 const studentIdHint = computed(
@@ -48,13 +69,30 @@ async function handleSubmit(): Promise<void> {
   if (password.value.length < 8) return showToast("密码至少 8 位", "error");
   if (password.value !== confirmPassword.value) return showToast("两次密码不一致", "error");
 
+  // 后端配置了验证问题时，两道答案必填
+  if (needQuestions.value) {
+    if (!answers.value[0].trim() || !answers.value[1].trim()) {
+      return showToast("请回答验证问题", "error");
+    }
+  }
+
+  const payload: SignUpInput = {
+    name: username.value.trim(),
+    email: studentId.value.trim(),
+    password: password.value,
+  };
+
+  // 携带验证问题下标与答案（index 为题目在原数组中的下标）
+  if (needQuestions.value) {
+    payload.questionIndex1 = questions.value[0].index;
+    payload.questionIndex2 = questions.value[1].index;
+    payload.answer1 = answers.value[0].trim();
+    payload.answer2 = answers.value[1].trim();
+  }
+
   submitting.value = true;
   try {
-    await signUp({
-      name: username.value.trim(),
-      email: studentId.value.trim(),
-      password: password.value,
-    });
+    await signUp(payload);
     await auth.fetchSession();
     showToast("注册成功", "success");
 
@@ -121,6 +159,20 @@ async function handleSubmit(): Promise<void> {
           class="input-base"
           placeholder="再次输入密码"
         />
+      </div>
+
+      <!-- 验证问题（后端配置了 >= 2 道题时显示，答案必填） -->
+      <div v-if="needQuestions" class="space-y-3 rounded-xl border border-line bg-surface p-3">
+        <p class="text-sm font-semibold text-ink">验证问题</p>
+        <div v-for="(q, qi) in questions.slice(0, 2)" :key="q.index">
+          <label class="mb-1 block text-sm text-ink-soft">{{ q.question }}</label>
+          <input
+            v-model="answers[qi]"
+            type="text"
+            class="input-base"
+            :placeholder="`请输入答案（${qi + 1}）`"
+          />
+        </div>
       </div>
 
       <button type="submit" class="btn-primary w-full" :disabled="submitting">
