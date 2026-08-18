@@ -48,12 +48,29 @@ const ARCHIVE_TARGETS: { type: string; table: string }[] = [
 //  Cloudflare D1 REST API 封装
 // ============================================================
 
-interface D1QueryResult<T = Record<string, unknown>> {
+/**
+ * D1 HTTP API 响应结构（/raw 端点）
+ *
+ * result 是“语句级结果”数组：每条 SQL 对应一个元素，
+ * SELECT 的行数据在 statement.results 里（空结果时为 []），
+ * 而不是直接放在 json.result 上。
+ */
+interface D1StatementResult<T = Record<string, unknown>> {
+  results: T[];
   success: boolean;
-  result: T[];
+  meta: Record<string, unknown>;
 }
 
-/** 执行 D1 SQL 查询（SELECT） */
+interface D1QueryResponse<T = Record<string, unknown>> {
+  success: boolean;
+  result: D1StatementResult<T>[];
+}
+
+/**
+ * 执行 D1 SQL 查询（SELECT）
+ *
+ * @returns 记录数组（查询结果为空时返回 []）
+ */
 async function d1Query<T = Record<string, unknown>>(
   sql: string,
   params: unknown[] = []
@@ -72,12 +89,14 @@ async function d1Query<T = Record<string, unknown>>(
     throw new Error(`D1 query failed (${resp.status}): ${text}`);
   }
 
-  const json = (await resp.json()) as D1QueryResult<T>;
+  const json = (await resp.json()) as D1QueryResponse<T>;
   if (!json.success) {
     throw new Error(`D1 query error: ${JSON.stringify(json)}`);
   }
 
-  return json.result;
+  // 取第一条语句的 results：真正的行数据在这里
+  // （UPDATE / INSERT 的 results 为空数组，d1Execute 忽略返回值）
+  return json.result[0]?.results ?? [];
 }
 
 /** 执行 D1 SQL 写入（UPDATE / INSERT） */
