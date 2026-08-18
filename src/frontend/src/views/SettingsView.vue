@@ -11,7 +11,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
-import { updateUsername, updateAvatar, updatePassword, updateBadge } from "../api/user";
+import { updateUsername, updateAvatar, updatePassword, updateBadge, getUserProfile } from "../api/user";
 import { uploadImage } from "../api/upload";
 import { getAdminSiteConfig, updateAdminSiteConfig } from "../api/admin";
 import { getQuestionBox, updateQuestionBox } from "../api/question";
@@ -32,11 +32,21 @@ const theme = useThemeStore();
 
 const isSuperAdmin = ref(false);
 const canSetBadge = ref(false);
+const myBadge = ref<string>("");
 
 onMounted(async () => {
   const mask = await getMyPermissions();
   isSuperAdmin.value = hasPermission(mask, PERM_EDIT_DATABASE);
   canSetBadge.value = hasPermission(mask, PERM_SET_NAME_BADGE);
+  // 加载当前用户的 badge（用于名字牌子设置）
+  if (auth.userId) {
+    try {
+      const profile = await getUserProfile(auth.userId);
+      myBadge.value = profile.badge ?? "";
+    } catch {
+      myBadge.value = "";
+    }
+  }
   await loadQuestionBox();
 });
 
@@ -119,7 +129,7 @@ const badgeDraft = ref("");
 const badgeSubmitting = ref(false);
 
 function openBadgeSheet(): void {
-  badgeDraft.value = auth.session?.user?.userProfile?.badge ?? "";
+  badgeDraft.value = myBadge.value;
   badgeSheet.value = true;
 }
 
@@ -137,6 +147,7 @@ async function submitBadge(): Promise<void> {
   try {
     await updateBadge(badge);
     showToast("名字牌子已更新", "success");
+    myBadge.value = badge; // 同步本地状态
     badgeSheet.value = false;
     await auth.fetchSession();
   } catch {
@@ -391,7 +402,7 @@ const currentAvatar = computed(() => auth.session?.user?.image ?? null);
       >
         <span>名字牌子</span>
         <span class="text-ink-soft">
-          {{ auth.session?.user?.userProfile?.badge || "未设置" }}
+          {{ myBadge || "未设置" }}
         </span>
       </button>
 
