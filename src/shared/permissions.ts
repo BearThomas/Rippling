@@ -205,7 +205,7 @@ export const ROLE_GUEST =
   MASK_SUBMIT_BLOCK_CREATE |
   MASK_UPLOAD_IMAGE;
 
-/** 注册用户：游客权限 + 发帖、编辑/删除自己的帖子、发布表白墙、提交大事记、修改用户名/密码、关注他人、启用提问箱、向提问箱提问、创建投票 */
+/** 注册用户：游客权限 + 发帖、编辑/删除自己的帖子、发布表白墙、提交大事记、修改用户名/密码、关注他人、启用提问箱、向提问箱提问、创建投票、提交认证 */
 export const ROLE_USER =
   ROLE_GUEST |
   MASK_CREATE_POST |
@@ -218,7 +218,8 @@ export const ROLE_USER =
   MASK_FOLLOW_USER |
   MASK_ENABLE_QUESTION_BOX |
   MASK_ASK_QUESTION |
-  MASK_CREATE_VOTE;
+  MASK_CREATE_VOTE |
+  MASK_SUBMIT_VERIFICATION;
 
 /** 认证用户：用户权限 + 设置昵称徽章、提交认证 */
 export const ROLE_VERIFIED =

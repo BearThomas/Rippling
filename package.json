@@ -5,7 +5,7 @@
   "description": "可部署的校园社区论坛系统",
   "license": "MIT",
   "scripts": {
-    "build": "powershell -Command \"Copy-Item -Recurse -Force src/functions functions; Copy-Item -Recurse -Force src/auth src/config src/db src/middleware src/routes src/shared src utils; Set-Location src/frontend; npm install; npm run build\"",
+    "build": "node -e \"require('child_process').execSync('cp -r src/functions functions && cp -r src/auth src/config src/db src/middleware src/routes src/shared src utils && cd src/frontend && npm install && npm run build', { stdio: 'inherit' })\"",
     "dev": "wrangler pages dev",
     "deploy": "wrangler pages deploy",
     "typecheck": "tsc --noEmit"

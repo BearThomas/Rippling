@@ -86,12 +86,12 @@ type HandleAction = "approve" | "reject" | "ignore" | "warn" | "punish" | "ban";
 //  常量配置
 // ============================================================
 
-/** 工单类型 → 提交所需权限位（null 表示仅需登录） */
+/** 工单类型 → 提交所需权限位 */
 const TICKET_TYPE_PERMISSIONS: Record<string, number | null> = {
   permission_request: PERM_SUBMIT_PERMISSION_REQUEST,
   report: PERM_SUBMIT_REPORT,
   appeal: PERM_SUBMIT_APPEAL,
-  verification: null, // 认证申请允许所有已登录用户提交
+  verification: PERM_SUBMIT_VERIFICATION,
   block_create: PERM_SUBMIT_BLOCK_CREATE,
   account_deletion: null,
   timeline_submit: PERM_SUBMIT_TIMELINE,
