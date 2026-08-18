@@ -37,11 +37,11 @@ const ARCHIVE_DAYS = parseInt(process.env.ARCHIVE_DAYS ?? "30", 10);
 const CF_API_BASE = `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/d1/database/${D1_DATABASE_ID}`;
 
 // 要归档的类型及对应表名
+// 注意：block 表没有 updatedAt 字段且无需归档，故不在列表中
 const ARCHIVE_TARGETS: { type: string; table: string }[] = [
   { type: "post", table: "post" },
   { type: "confession", table: "confession" },
   { type: "timeline", table: "timeline_event" },
-  { type: "block", table: "block" },
 ];
 
 // ============================================================
@@ -107,6 +107,23 @@ function ensureDir(dirPath: string): void {
 }
 
 /**
+ * 从 D1 查询结果中提取记录 ID
+ *
+ * 兼容不同的大小写 / 前缀写法（id / ID / _id / itemId），
+ * 保证不会把 undefined 写进归档文件名。
+ *
+ * @returns 有效 ID 返回字符串，否则返回 null
+ */
+function extractRecordId(record: Record<string, unknown>): string | null {
+  const candidates = ["id", "ID", "_id", "itemId"];
+  for (const key of candidates) {
+    const value = record[key];
+    if (typeof value === "string" && value) return value;
+  }
+  return null;
+}
+
+/**
  * 归档单个类型的记录
  *
  * @returns { archived: number, failed: number }
@@ -121,26 +138,19 @@ async function archiveType(
   let failed = 0;
 
   // 查询待归档记录：isArchived = 0 且 updatedAt 早于截止日期
-  // confession 和 block 表有 isDeleted 字段但不影响归档判断
-  let sql: string;
-  if (type === "timeline") {
-    // timeline_event 没有 isDeleted 字段
-    sql = `SELECT * FROM ${table} WHERE isArchived = 0 AND updatedAt < ?`;
-  } else {
-    sql = `SELECT * FROM ${table} WHERE isArchived = 0 AND updatedAt < ?`;
-  }
+  // （post / confession / timeline_event 均有 updatedAt 字段）
+  const sql = `SELECT * FROM ${table} WHERE isArchived = 0 AND updatedAt < ?`;
 
   const records = await d1Query<Record<string, unknown>>(sql, [cutoff]);
   console.log(`  [${type}] 找到 ${records.length} 条待归档记录`);
 
   for (const record of records) {
-    // 必须能取到字符串 id，否则跳过（避免生成 undefined.json）
-    const rawId = record.id;
-    if (typeof rawId !== "string" || !rawId) {
-      console.warn(`  [${type}] 跳过记录：id 缺失，记录内容:`, record);
+    // 必须能取到字符串 id，否则跳过并警告（避免生成 undefined.json）
+    const id = extractRecordId(record);
+    if (!id) {
+      console.warn(`  [${type}] 跳过记录：id 缺失（字段名异常），记录键:`, Object.keys(record));
       continue;
     }
-    const id = rawId;
     try {
       // 1. 查询操作链
       const operations = await d1Query<Record<string, unknown>>(
