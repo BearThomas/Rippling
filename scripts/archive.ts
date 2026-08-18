@@ -176,7 +176,7 @@ async function archiveType(
 
   // 查询待归档记录：isArchived = 0 且 updatedAt 早于截止日期
   // （post / confession / timeline_event 均有 updatedAt 字段）
-  const sql = `SELECT * FROM ${table} WHERE isArchived = 0 AND updatedAt < ?`;
+  const sql = `SELECT * FROM ${table} WHERE isArchived = 0 AND updatedAt < '${cutoff}'`;
 
   let records = await d1Query<Record<string, unknown>>(sql, [cutoff]);
 
