@@ -75,6 +75,9 @@ async function d1Query<T = Record<string, unknown>>(
   sql: string,
   params: unknown[] = []
 ): Promise<T[]> {
+  console.log("DEBUG SQL:", sql);
+  console.log("DEBUG params:", JSON.stringify(params));
+
   const resp = await fetch(`${CF_API_BASE}/raw`, {
     method: "POST",
     headers: {
