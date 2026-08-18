@@ -75,9 +75,6 @@ async function d1Query<T = Record<string, unknown>>(
   sql: string,
   params: unknown[] = []
 ): Promise<T[]> {
-  console.log("DEBUG SQL:", sql);
-  console.log("DEBUG params:", JSON.stringify(params));
-
   const resp = await fetch(`${CF_API_BASE}/raw`, {
     method: "POST",
     headers: {
@@ -94,27 +91,48 @@ async function d1Query<T = Record<string, unknown>>(
 
   const raw = (await resp.json()) as unknown;
 
-  // Cloudflare D1 /raw 可能返回数组，也可能返回对象，需要兼容处理
-  let resultArray: T[] = [];
+  // Cloudflare D1 /raw 的 SELECT 返回结构：
+  // {
+  //   success: true,
+  //   result: [
+  //     {
+  //       results: { columns: string[], rows: unknown[][] },
+  //       success: true,
+  //       meta: {}
+  //     }
+  //   ]
+  // }
+  let records: T[] = [];
 
-  if (Array.isArray(raw)) {
-    const firstStatement = raw[0] as { results?: T[] } | undefined;
-    if (firstStatement && Array.isArray(firstStatement.results)) {
-      resultArray = firstStatement.results;
-    }
-  } else if (raw && typeof raw === "object") {
-    const maybe = raw as { result?: { results?: T[] }[] | { results?: T[] } | T[] };
-    if (Array.isArray(maybe.result)) {
-      const first = maybe.result[0] as { results?: T[] } | undefined;
-      if (first && Array.isArray(first.results)) {
-        resultArray = first.results;
-      }
-    } else if (maybe.result && typeof maybe.result === "object" && Array.isArray((maybe.result as { results?: T[] }).results)) {
-      resultArray = (maybe.result as { results?: T[] }).results as T[];
+  const maybe = raw as {
+    result?: {
+      results?: unknown;
+    }[];
+  };
+
+  const first = maybe.result?.[0];
+  const resultsRaw = first?.results;
+
+  if (Array.isArray(resultsRaw)) {
+    records = resultsRaw as T[];
+  } else if (resultsRaw && typeof resultsRaw === "object") {
+    const { columns, rows } = resultsRaw as {
+      columns?: string[];
+      rows?: unknown[][];
+    };
+
+    if (Array.isArray(columns) && Array.isArray(rows)) {
+      records = rows.map((row) => {
+        const obj: Record<string, unknown> = {};
+        columns.forEach((col, i) => {
+          obj[col] = row[i];
+        });
+        return obj as T;
+      });
     }
   }
 
-  return resultArray;
+  return records;
 }
 
 /** 执行 D1 SQL 写入（UPDATE / INSERT） */
@@ -244,6 +262,17 @@ async function archiveType(
 // ============================================================
 
 async function main(): Promise<void> {
+  console.log("D1_DATABASE_ID =", D1_DATABASE_ID);
+  console.log("CLOUDFLARE_ACCOUNT_ID =", CF_ACCOUNT_ID);
+  console.log("CLOUDFLARE_API_TOKEN 前8位 =", CF_API_TOKEN.slice(0, 8) + "...");
+
+  console.log("=== Rippling 每日归档 ===");
+  const testCount = await d1Query("SELECT COUNT(*) AS n FROM post");
+  console.log("TEST post count:", JSON.stringify(testCount));
+
+  const testFirstPost = await d1Query("SELECT id, updatedAt FROM post ORDER BY updatedAt ASC LIMIT 1");
+  console.log("TEST first post:", JSON.stringify(testFirstPost));
+
   console.log("=== Rippling 每日归档 ===");
   console.log(`归档阈值: ${ARCHIVE_DAYS} 天`);
   console.log(`截止日期: ${getArchiveCutoff()}`);
