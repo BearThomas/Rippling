@@ -16,6 +16,7 @@ import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
 import UserCard from "../components/user/UserCard.vue";
 import PostCard from "../components/post/PostCard.vue";
 import { getUserProfile, getUserPosts, getUserComments } from "../api/user";
+import { getMyVerification } from "../api/ticket";
 import { useAuthStore } from "../stores/auth";
 import { getMyPermissions, clearPermissionCache } from "../utils/myPermissions";
 import { hasPermission, PERM_ACCESS_ADMIN_PANEL } from "../utils/permission";
@@ -52,18 +53,56 @@ const profile = ref<UserPublicProfile | null>(null);
 /** 管理面板入口可见性（本人 + access_admin_panel 权限） */
 const canAdmin = ref(false);
 
+/** 我的认证工单状态（用于"申请认证"入口智能跳转） */
+const verificationStatus = ref<{
+  exists: boolean;
+  status: "pending" | "approved" | "rejected" | null;
+  ticketId: string | null;
+} | null>(null);
+
+/** 点击"申请认证"入口的处理 */
+function handleVerificationClick(): void {
+  if (!verificationStatus.value) return;
+  const { exists, status, ticketId } = verificationStatus.value;
+
+  if (!exists || status === "rejected") {
+    // 无认证工单或已被拒绝 → 跳转创建
+    router.push("/ticket/create?type=verification");
+    return;
+  }
+
+  if (status === "approved" && ticketId) {
+    // 已通过 → 跳转工单详情
+    router.push(`/ticket/${ticketId}`);
+    return;
+  }
+
+  if (status === "pending") {
+    // 审核中 → 提示等待
+    showToast("认证审核中，请耐心等待", "info");
+    return;
+  }
+}
+
 async function loadProfile(): Promise<void> {
   loading.value = true;
   error.value = false;
   profile.value = null;
   try {
     profile.value = await getUserProfile(targetUserId.value);
-    // 本人时探测管理面板权限（静默）
+    // 本人时探测管理面板权限（静默）+ 加载认证状态
     if (isSelf.value) {
       const mask = await getMyPermissions();
       canAdmin.value = hasPermission(mask, PERM_ACCESS_ADMIN_PANEL);
+      // 加载认证工单状态（失败不影响主流程）
+      try {
+        verificationStatus.value = await getMyVerification();
+      } catch {
+        verificationStatus.value = null;
+      }
     } else {
       canAdmin.value = false;
+      verificationStatus.value = null;
     }
   } catch {
     error.value = true; // client.ts 已自动 Toast
@@ -223,14 +262,15 @@ onMounted(() => {
           <AppSvgIcon name="back" :size="16" class="rotate-180 text-ink-soft" />
         </RouterLink>
         <!-- 申请认证入口（仅登录后可见，isSelf 已保证已登录） -->
-        <RouterLink
-          to="/ticket/create?type=verification"
+        <button
+          type="button"
           class="card-base flex items-center gap-3 py-3 transition-opacity active:opacity-80"
+          @click="handleVerificationClick"
         >
           <AppSvgIcon name="check" :size="18" class="text-ink-soft" />
           <span class="flex-1 text-sm">申请认证</span>
           <AppSvgIcon name="back" :size="16" class="rotate-180 text-ink-soft" />
-        </RouterLink>
+        </button>
         <RouterLink
           v-if="canAdmin"
           to="/admin"

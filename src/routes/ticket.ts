@@ -2,11 +2,12 @@
  * 工单 API 路由
  *
  * 路由表（挂载前缀 /api/ticket）：
- *   POST /        创建工单（按类型检查提交权限）
- *   GET  /my      我的工单列表
- *   GET  /list    工单列表（view_ticket，可按 status / type 筛选）
- *   GET  /        工单详情（本人或 view_ticket）
- *   POST /handle  处理工单（handle_ticket）
+ *   POST /                创建工单（按类型检查提交权限）
+ *   GET  /my              我的工单列表
+ *   GET  /my-verification 我的认证工单状态
+ *   GET  /list            工单列表（view_ticket，可按 status / type 筛选）
+ *   GET  /                工单详情（本人或 view_ticket）
+ *   POST /handle          处理工单（handle_ticket）
  *
  * 工单类型：
  *   permission_request / report / appeal / verification /
@@ -27,6 +28,7 @@ import type { TicketInfo } from "../db/ticket";
 import {
   createTicket,
   getMyTickets,
+  getMyVerificationTicket,
   listTickets,
   listTicketsByType,
   getTicketById,
@@ -529,6 +531,29 @@ ticketRoutes.get("/my", async (c) => {
   const tickets = await getMyTickets(c.env.DB, user.id, limit, offset);
 
   return c.json({ success: true, data: tickets });
+});
+
+// ------------------------------------------------------------
+//  GET /my-verification  — 我的认证工单状态
+// ------------------------------------------------------------
+
+ticketRoutes.get("/my-verification", async (c) => {
+  const user = c.get("user");
+  if (!user) return errorResponse(c, UNAUTHORIZED);
+
+  const ticket = await getMyVerificationTicket(c.env.DB, user.id);
+
+  if (!ticket) {
+    return c.json({
+      success: true,
+      data: { exists: false, status: null, ticketId: null },
+    });
+  }
+
+  return c.json({
+    success: true,
+    data: { exists: true, status: ticket.status, ticketId: ticket.id },
+  });
 });
 
 // ------------------------------------------------------------

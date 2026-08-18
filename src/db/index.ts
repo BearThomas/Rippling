@@ -130,6 +130,7 @@ export {
   listTickets,
   listTicketsByType,
   getMyTickets,
+  getMyVerificationTicket,
   getRecentTickets,
   getTicketById,
   updateTicketStatus,

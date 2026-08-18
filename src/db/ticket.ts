@@ -209,6 +209,27 @@ export async function getMyTickets(
 }
 
 /**
+ * 获取用户最近一条认证工单
+ *
+ * 用于前端"申请认证"入口的智能跳转：
+ * - 已通过：跳转工单详情
+ * - 审核中：提示等待
+ * - 被拒绝：跳转创建
+ */
+export async function getMyVerificationTicket(
+  db: D1Database,
+  userId: string
+): Promise<TicketInfo | null> {
+  const row = await db
+    .prepare(
+      `SELECT * FROM ticket WHERE submittedBy = ? AND type = 'verification' ORDER BY createdAt DESC LIMIT 1`
+    )
+    .bind(userId)
+    .first<TicketRow>();
+  return row || null;
+}
+
+/**
  * 列出最近提交的工单（管理面板聚合信息用）
  *
  * 不做权限检查，由路由层确认 access_admin_panel 后调用。

@@ -29,6 +29,17 @@ export function getMyTickets(limit = 50, offset = 0): Promise<TicketInfo[]> {
   return apiGet<TicketInfo[]>("/api/ticket/my", { params: { limit, offset } });
 }
 
+/** 我的认证工单状态（用于"申请认证"入口智能跳转） */
+export interface MyVerificationStatus {
+  exists: boolean;
+  status: "pending" | "approved" | "rejected" | null;
+  ticketId: string | null;
+}
+
+export function getMyVerification(): Promise<MyVerificationStatus> {
+  return apiGet<MyVerificationStatus>("/api/ticket/my-verification");
+}
+
 /** 工单列表（view_ticket 权限，可按类型/状态筛选） */
 export function listTickets(params: {
   type?: string;
