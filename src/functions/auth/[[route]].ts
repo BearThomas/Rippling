@@ -44,11 +44,13 @@ function parseRegisterQuestions(raw?: string): RegisterQuestion[] {
 }
 
 // ============================================================
-//  onRequest：Cloudflare Pages Functions 入口
+//  认证请求核心处理（/auth 与 /api/auth 两个入口共用）
 // ============================================================
 
-export const onRequest: PagesFunction<CloudflareEnv> = async (context) => {
-  const { request, env } = context;
+export async function handleAuthRequest(
+  request: Request,
+  env: CloudflareEnv
+): Promise<Response> {
   const url = new URL(request.url);
   const path = url.pathname;
 
@@ -277,4 +279,11 @@ export const onRequest: PagesFunction<CloudflareEnv> = async (context) => {
   }
 
   return response;
-};
+}
+
+// ============================================================
+//  onRequest：Cloudflare Pages Functions 入口
+// ============================================================
+
+export const onRequest: PagesFunction<CloudflareEnv> = (context) =>
+  handleAuthRequest(context.request, context.env);
