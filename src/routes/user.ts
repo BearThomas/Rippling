@@ -7,6 +7,7 @@
  *   GET  /comments   用户的评论列表（公开，带权限过滤 + enrichment）
  *   PUT  /username   修改用户名（modify_own_username，每月最多 4 次）
  *   PUT  /avatar     修改头像（登录即可，URL 写入 user.image）
+ *   PUT  /badge      修改名字牌子（set_name_badge，0-7 字，无换行与控制字符）
  *   POST /password   修改密码（modify_password，Better Auth changePassword）
  *
  * 敏感信息（学号 / email / permissions）不在本模块返回。
@@ -18,7 +19,11 @@ import type { CloudflareEnv } from "../auth";
 import { createAuth } from "../auth";
 import type { AppContextVars } from "../middleware/auth";
 import { requirePermission } from "../middleware/permission";
-import { PERM_MODIFY_OWN_USERNAME, PERM_MODIFY_PASSWORD } from "../shared/permissions";
+import {
+  PERM_MODIFY_OWN_USERNAME,
+  PERM_MODIFY_PASSWORD,
+  PERM_SET_NAME_BADGE,
+} from "../shared/permissions";
 import { UNAUTHORIZED, VALIDATION_ERROR, NOT_FOUND, RATE_LIMITED } from "../utils/errors";
 import {
   getUserPublicProfile,
@@ -48,6 +53,8 @@ const USERNAME_MAX = 50;
 const USERNAME_CHANGE_LIMIT = 4;
 /** 头像 URL 长度上限（防超长输入） */
 const AVATAR_URL_MAX = 500;
+/** 名字牌子长度上限 */
+const BADGE_MAX = 7;
 
 /**
  * 头像 URL 合法性判断
@@ -266,6 +273,52 @@ userRoutes.post("/password", requirePermission(PERM_MODIFY_PASSWORD), async (c) 
     .run();
 
   return c.json({ success: true });
+});
+
+// ============================================================
+//  PUT /badge  — 修改名字牌子（set_name_badge，0-7 字）
+// ============================================================
+
+userRoutes.put("/badge", requirePermission(PERM_SET_NAME_BADGE), async (c) => {
+  const user = c.get("user")!;
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await c.req.json()) as Record<string, unknown>;
+  } catch {
+    return badRequest(c, "请求体格式错误");
+  }
+
+  const badge = typeof body.badge === "string" ? body.badge.trim() : "";
+
+  // 长度校验：0-7 字
+  if (badge.length > BADGE_MAX) {
+    return badRequest(c, `名字牌子最多 ${BADGE_MAX} 字`);
+  }
+  // 字符校验：不含换行与控制字符（\x00-\x1F、\x7F）
+  if (/[\x00-\x1F\x7F]/.test(badge)) {
+    return badRequest(c, "名字牌子不能包含换行或控制字符");
+  }
+
+  const now = nowISO();
+
+  // 更新 user_profile.badge
+  const result = await c.env.DB
+    .prepare("UPDATE user_profile SET badge = ?, updatedAt = ? WHERE userId = ?")
+    .bind(badge || null, now, user.id)
+    .run();
+
+  if (!result.meta.changes) return notFound(c);
+
+  // 写 user_log
+  await c.env.DB
+    .prepare(
+      "INSERT INTO user_log (id, userId, action, detail, createdAt) VALUES (?, ?, 'change_badge', ?, ?)"
+    )
+    .bind(generateUUID(), user.id, JSON.stringify({ badge }), now)
+    .run();
+
+  return c.json({ success: true, data: { badge } });
 });
 
 export default userRoutes;

@@ -11,14 +11,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
-import { updateUsername, updateAvatar, updatePassword } from "../api/user";
+import { updateUsername, updateAvatar, updatePassword, updateBadge } from "../api/user";
 import { uploadImage } from "../api/upload";
 import { getAdminSiteConfig, updateAdminSiteConfig } from "../api/admin";
 import { getQuestionBox, updateQuestionBox } from "../api/question";
 import { useAuthStore } from "../stores/auth";
 import { useThemeStore } from "../stores/theme";
 import { getMyPermissions } from "../utils/myPermissions";
-import { hasPermission, PERM_EDIT_DATABASE } from "../utils/permission";
+import { hasPermission, PERM_EDIT_DATABASE, PERM_SET_NAME_BADGE } from "../utils/permission";
 import { compressImage } from "../utils/compressImage";
 import { showToast } from "../utils/toast";
 import type { QuestionBoxInfo, SiteConfigTheme } from "../types";
@@ -31,10 +31,12 @@ const theme = useThemeStore();
 // ============================================================
 
 const isSuperAdmin = ref(false);
+const canSetBadge = ref(false);
 
 onMounted(async () => {
   const mask = await getMyPermissions();
   isSuperAdmin.value = hasPermission(mask, PERM_EDIT_DATABASE);
+  canSetBadge.value = hasPermission(mask, PERM_SET_NAME_BADGE);
   await loadQuestionBox();
 });
 
@@ -105,6 +107,42 @@ async function onAvatarPicked(event: Event): Promise<void> {
     }
   } finally {
     avatarUploading.value = false;
+  }
+}
+
+// ============================================================
+//  修改名字牌子（0-7 字，无换行与控制字符）
+// ============================================================
+
+const badgeSheet = ref(false);
+const badgeDraft = ref("");
+const badgeSubmitting = ref(false);
+
+function openBadgeSheet(): void {
+  badgeDraft.value = auth.session?.user?.userProfile?.badge ?? "";
+  badgeSheet.value = true;
+}
+
+async function submitBadge(): Promise<void> {
+  const badge = badgeDraft.value.trim();
+  if (badge.length > 7) {
+    showToast("名字牌子最多 7 个字", "error");
+    return;
+  }
+  if (/[\n\r\t]/.test(badge)) {
+    showToast("名字牌子不能包含换行或控制字符", "error");
+    return;
+  }
+  badgeSubmitting.value = true;
+  try {
+    await updateBadge(badge);
+    showToast("名字牌子已更新", "success");
+    badgeSheet.value = false;
+    await auth.fetchSession();
+  } catch {
+    // client.ts 已自动 Toast
+  } finally {
+    badgeSubmitting.value = false;
   }
 }
 
@@ -344,6 +382,19 @@ const currentAvatar = computed(() => auth.session?.user?.image ?? null);
         @change="onAvatarPicked"
       />
 
+      <!-- 名字牌子（set_name_badge 权限） -->
+      <button
+        v-if="canSetBadge"
+        type="button"
+        class="flex w-full items-center justify-between border-b border-line py-3 text-sm"
+        @click="openBadgeSheet"
+      >
+        <span>名字牌子</span>
+        <span class="text-ink-soft">
+          {{ auth.session?.user?.userProfile?.badge || "未设置" }}
+        </span>
+      </button>
+
       <!-- 注销账号 -->
       <RouterLink
         to="/ticket/create?type=account_deletion"
@@ -562,6 +613,47 @@ const currentAvatar = computed(() => auth.session?.user?.image ?? null);
           @click="submitUsername"
         >
           {{ usernameSubmitting ? "提交中…" : "确认修改" }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 修改名字牌子底部弹层 -->
+  <div
+    v-if="badgeSheet"
+    class="fixed inset-0 z-50 flex items-end bg-black/40"
+    @click.self="badgeSheet = false"
+  >
+    <div class="mx-auto w-full max-w-app rounded-t-2xl bg-surface p-4" style="padding-bottom: calc(1rem + env(safe-area-inset-bottom))">
+      <h3 class="mb-1 font-semibold">名字牌子</h3>
+      <p class="mb-3 text-xs text-ink-soft">
+        最多 7 个字，不能包含换行或控制字符。
+      </p>
+      <input
+        v-model="badgeDraft"
+        type="text"
+        class="input-base"
+        maxlength="7"
+        placeholder="留空则移除名字牌子"
+      />
+      <p class="mt-2 text-right text-xs text-ink-soft">
+        {{ badgeDraft.length }}/7
+      </p>
+      <div class="mt-3 flex gap-3">
+        <button
+          type="button"
+          class="btn-secondary flex-1"
+          @click="badgeSheet = false"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          class="btn-primary flex-1"
+          :disabled="badgeSubmitting"
+          @click="submitBadge"
+        >
+          {{ badgeSubmitting ? "提交中…" : "确认修改" }}
         </button>
       </div>
     </div>

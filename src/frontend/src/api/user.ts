@@ -66,6 +66,11 @@ export function updateAvatar(avatarUrl: string): Promise<{ avatarUrl: string }> 
   return apiPut<{ avatarUrl: string }>("/api/user/avatar", { avatarUrl });
 }
 
+/** 修改名字牌子（set_name_badge，0-7 字，无换行与控制字符） */
+export function updateBadge(badge: string): Promise<{ badge: string }> {
+  return apiPut<{ badge: string }>("/api/user/badge", { badge });
+}
+
 /** 修改密码（modify_password 权限；新密码至少 8 位） */
 export function updatePassword(
   currentPassword: string,
