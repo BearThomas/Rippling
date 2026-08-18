@@ -222,6 +222,15 @@ onMounted(() => {
           <span class="flex-1 text-sm">我的工单</span>
           <AppSvgIcon name="back" :size="16" class="rotate-180 text-ink-soft" />
         </RouterLink>
+        <!-- 申请认证入口（仅登录后可见，isSelf 已保证已登录） -->
+        <RouterLink
+          to="/ticket/create?type=verification"
+          class="card-base flex items-center gap-3 py-3 transition-opacity active:opacity-80"
+        >
+          <AppSvgIcon name="check" :size="18" class="text-ink-soft" />
+          <span class="flex-1 text-sm">申请认证</span>
+          <AppSvgIcon name="back" :size="16" class="rotate-180 text-ink-soft" />
+        </RouterLink>
         <RouterLink
           v-if="canAdmin"
           to="/admin"

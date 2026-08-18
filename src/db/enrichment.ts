@@ -13,6 +13,7 @@
 import type { CurrentUser } from "../utils/permission";
 import { can } from "../utils/permission";
 import { PERM_VIEW_ANONYMOUS_IDENTITY } from "../shared/permissions";
+import { computeNameColor, loadNameColors, type UserLevel } from "../utils/userLevel";
 import type { PostInfo } from "./post";
 
 // ============================================================
@@ -54,20 +55,22 @@ function chunk<T>(list: T[], size: number): T[][] {
   return result;
 }
 
-/** 批量查询作者资料（username / nameColor / badge / avatar） */
+/** 批量查询作者资料（username / badge / avatar；nameColor 按用户等级动态计算） */
 async function batchGetAuthors(
   db: D1Database,
-  authorIds: string[]
+  authorIds: string[],
+  nameColors: Record<UserLevel, string>
 ): Promise<Map<string, PostAuthorBrief>> {
   const map = new Map<string, PostAuthorBrief>();
   const unique = [...new Set(authorIds)];
 
   for (const batch of chunk(unique, BATCH_SIZE)) {
     const placeholders = batch.map(() => "?").join(",");
-    // 头像存于 Better Auth 的 user 表 image 字段，左连接一并查出
+    // 头像存于 Better Auth 的 user 表 image 字段，左连接一并查出；
+    // permissions 用于按等级计算 nameColor
     const rows = await db
       .prepare(
-        `SELECT p.userId, p.username, p.nameColor, p.badge, u.image AS avatar
+        `SELECT p.userId, p.username, p.permissions, p.badge, u.image AS avatar
          FROM user_profile p
          LEFT JOIN user u ON u.id = p.userId
          WHERE p.userId IN (${placeholders})`
@@ -76,7 +79,7 @@ async function batchGetAuthors(
       .all<{
         userId: string;
         username: string;
-        nameColor: string | null;
+        permissions: number;
         badge: string | null;
         avatar: string | null;
       }>();
@@ -85,7 +88,8 @@ async function batchGetAuthors(
       map.set(row.userId, {
         id: row.userId,
         username: row.username,
-        nameColor: row.nameColor,
+        // nameColor 不再取 user_profile.nameColor，按用户等级动态计算
+        nameColor: computeNameColor(BigInt(row.permissions), nameColors),
         badge: row.badge,
         avatar: row.avatar,
       });
@@ -198,7 +202,11 @@ export async function enrichPosts(
   const postIds = posts.map((p) => p.id);
 
   const [authors, likeCounts, childCounts, likedIds] = await Promise.all([
-    batchGetAuthors(db, authorIds),
+    (async () => {
+      // 等级颜色配置每次批量附加只加载一次
+      const nameColors = await loadNameColors(db);
+      return batchGetAuthors(db, authorIds, nameColors);
+    })(),
     batchGetTargetLikeCounts(db, "post", postIds),
     batchGetChildCounts(db, postIds),
     batchGetLikedIds(db, "post", postIds, user?.id ?? null),
@@ -238,10 +246,11 @@ export async function getPostAuthorBrief(
   const showAuthor = authorVisible || can(user, PERM_VIEW_ANONYMOUS_IDENTITY);
   if (!showAuthor) return null;
 
-  // 头像存于 Better Auth 的 user 表 image 字段，左连接一并查出
+  // 头像存于 Better Auth 的 user 表 image 字段，左连接一并查出；
+  // permissions 用于按等级计算 nameColor
   const row = await db
     .prepare(
-      `SELECT p.userId, p.username, p.nameColor, p.badge, u.image AS avatar
+      `SELECT p.userId, p.username, p.permissions, p.badge, u.image AS avatar
        FROM user_profile p
        LEFT JOIN user u ON u.id = p.userId
        WHERE p.userId = ?`
@@ -250,17 +259,20 @@ export async function getPostAuthorBrief(
     .first<{
       userId: string;
       username: string;
-      nameColor: string | null;
+      permissions: number;
       badge: string | null;
       avatar: string | null;
     }>();
 
   if (!row) return null;
 
+  const nameColors = await loadNameColors(db);
+
   return {
     id: row.userId,
     username: row.username,
-    nameColor: row.nameColor,
+    // nameColor 不再取 user_profile.nameColor，按用户等级动态计算
+    nameColor: computeNameColor(BigInt(row.permissions), nameColors),
     badge: row.badge,
     avatar: row.avatar,
   };

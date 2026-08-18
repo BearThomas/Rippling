@@ -534,6 +534,22 @@ export interface SiteConfigRecommendWeights {
   random: number;
 }
 
+/** 用户等级名称颜色 */
+export interface SiteConfigNameColors {
+  /** 普通用户 */
+  normal: string;
+  /** 活跃用户 */
+  active: string;
+  /** 认证用户 */
+  verified: string;
+  /** 管理员 */
+  admin: string;
+  /** 板块长 */
+  owner: string;
+  /** 站长/超级管理员 */
+  superadmin: string;
+}
+
 /** 站点配置（/api/config 返回） */
 export interface SiteConfig {
   siteName: string;
@@ -544,5 +560,7 @@ export interface SiteConfig {
   archiveDays: number;
   theme: SiteConfigTheme;
   recommendWeights: SiteConfigRecommendWeights;
+  /** 用户等级颜色（旧配置可能缺失） */
+  nameColors: SiteConfigNameColors;
 }
 

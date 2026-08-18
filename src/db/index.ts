@@ -56,6 +56,7 @@ export type {
   SiteConfig,
   SiteConfigTheme,
   SiteConfigRecommendWeights,
+  SiteConfigNameColors,
 } from "./siteConfig";
 
 // 归档查看器

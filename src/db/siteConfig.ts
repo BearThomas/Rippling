@@ -38,6 +38,22 @@ export interface SiteConfigRecommendWeights {
   random: number;
 }
 
+/** 用户等级名称颜色配置（key 与 utils/userLevel.ts 的 UserLevel 一致） */
+export interface SiteConfigNameColors {
+  /** 普通用户 */
+  normal: string;
+  /** 活跃用户 */
+  active: string;
+  /** 认证用户 */
+  verified: string;
+  /** 管理员 */
+  admin: string;
+  /** 板块长 */
+  owner: string;
+  /** 站长/超级管理员 */
+  superadmin: string;
+}
+
 /** 站点配置 */
 export interface SiteConfig {
   siteName: string;
@@ -48,6 +64,8 @@ export interface SiteConfig {
   archiveDays: number;
   theme: SiteConfigTheme;
   recommendWeights: SiteConfigRecommendWeights;
+  /** 用户等级名称颜色 */
+  nameColors: SiteConfigNameColors;
 }
 
 /** site_config 表中存储整份配置的 key */
@@ -98,7 +116,8 @@ function isValidSiteConfig(config: unknown): config is SiteConfig {
     typeof c.defaultPermissions === "number" &&
     typeof c.archiveDays === "number" &&
     !!c.theme && typeof c.theme === "object" &&
-    !!c.recommendWeights && typeof c.recommendWeights === "object"
+    !!c.recommendWeights && typeof c.recommendWeights === "object" &&
+    !!c.nameColors && typeof c.nameColors === "object"
   );
 }
 

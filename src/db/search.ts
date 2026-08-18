@@ -15,6 +15,7 @@
 import type { CurrentUser } from "../utils/permission";
 import { can } from "../utils/permission";
 import { PERM_MANAGE_BLOCK } from "../shared/permissions";
+import { computeNameColor, loadNameColors } from "../utils/userLevel";
 
 // ============================================================
 //  返回类型
@@ -299,10 +300,12 @@ export async function searchUsers(
   const likeContains = `%${escaped}%`;
   const likePrefix = `${escaped}%`;
 
-  // 头像存于 Better Auth 的 user 表 image 字段，左连接一并查出
+  // 头像存于 Better Auth 的 user 表 image 字段，左连接一并查出；
+  // permissions 用于按等级计算 nameColor
+  const nameColors = await loadNameColors(db);
   const rows = await db
     .prepare(
-      `SELECT p.userId, p.username, p.nameColor, p.badge, u.image AS avatar,
+      `SELECT p.userId, p.username, p.permissions, p.badge, u.image AS avatar,
          CASE
            WHEN p.username = ? THEN 0
            WHEN p.username LIKE ? ESCAPE '\\' THEN 1
@@ -318,7 +321,7 @@ export async function searchUsers(
     .all<{
       userId: string;
       username: string;
-      nameColor: string | null;
+      permissions: number;
       badge: string | null;
       avatar: string | null;
       rank: number;
@@ -327,7 +330,8 @@ export async function searchUsers(
   return rows.results.map((row) => ({
     userId: row.userId,
     username: row.username,
-    nameColor: row.nameColor,
+    // nameColor 不再取 user_profile.nameColor，按用户等级动态计算
+    nameColor: computeNameColor(BigInt(row.permissions), nameColors),
     badge: row.badge,
     avatar: row.avatar,
   }));

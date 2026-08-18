@@ -19,5 +19,13 @@
     "block": 2.0,
     "time": 2.0,
     "random": 0.5
+  },
+  "nameColors": {
+    "normal": "#64748B",
+    "active": "#10B981",
+    "verified": "#3B82F6",
+    "admin": "#F59E0B",
+    "owner": "#8B5CF6",
+    "superadmin": "#EF4444"
   }
 }

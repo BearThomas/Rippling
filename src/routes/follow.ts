@@ -29,6 +29,7 @@ import {
   NOT_FOUND,
   VALIDATION_ERROR,
 } from "../utils/errors";
+import { computeNameColor, loadNameColors } from "../utils/userLevel";
 
 // ============================================================
 //  类型定义
@@ -55,8 +56,9 @@ interface FollowUserInfo {
 /**
  * 批量解析关注列表中的用户信息
  *
- * 从 user_profile 批量查询 username、nameColor、badge，
+ * 从 user_profile 批量查询 username、badge，
  * 左连接 user 表取头像（image 字段），
+ * nameColor 按用户等级动态计算，
  * 并检查当前登录用户是否关注了列表中的每个用户。
  * 避免 N+1 查询。
  */
@@ -67,11 +69,12 @@ async function resolveFollowUsers(
 ): Promise<FollowUserInfo[]> {
   if (!userIds.length) return [];
 
-  // 批量查询用户资料（头像存于 Better Auth 的 user 表 image 字段，左连接一并查出）
+  // 批量查询用户资料（头像存于 Better Auth 的 user 表 image 字段，左连接一并查出；
+  // permissions 用于按等级计算 nameColor）
   const placeholders = userIds.map(() => "?").join(",");
   const profiles = await db
     .prepare(
-      `SELECT p.userId, p.username, p.nameColor, p.badge, u.image AS avatar
+      `SELECT p.userId, p.username, p.permissions, p.badge, u.image AS avatar
        FROM user_profile p
        LEFT JOIN user u ON u.id = p.userId
        WHERE p.userId IN (${placeholders})`
@@ -80,7 +83,7 @@ async function resolveFollowUsers(
     .all<{
       userId: string;
       username: string;
-      nameColor: string | null;
+      permissions: number;
       badge: string | null;
       avatar: string | null;
     }>();
@@ -101,6 +104,7 @@ async function resolveFollowUsers(
   }
 
   // 组装结果（保持原始顺序）
+  const nameColors = await loadNameColors(db);
   return userIds
     .filter((id) => profileMap.has(id))
     .map((id) => {
@@ -108,7 +112,8 @@ async function resolveFollowUsers(
       return {
         id: profile.userId,
         username: profile.username,
-        nameColor: profile.nameColor,
+        // nameColor 不再取 user_profile.nameColor，按用户等级动态计算
+        nameColor: computeNameColor(BigInt(profile.permissions), nameColors),
         badge: profile.badge,
         avatar: profile.avatar,
         isFollowedByMe: followingSet.has(id),

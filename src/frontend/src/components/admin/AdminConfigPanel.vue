@@ -2,7 +2,7 @@
   管理面板 — 站点配置子面板
 
   - GET /api/admin/config 拉取当前配置（无 D1 配置时后端回退静态文件）
-  - 可编辑：站点名称、学号格式正则 / 提示、归档天数、推荐流权重、主题预设与颜色变量
+  - 可编辑：站点名称、学号格式正则 / 提示、归档天数、推荐流权重、主题预设与颜色变量、用户等级颜色
   - 保存（edit_database 权限）：PUT /api/admin/config 提交完整结构
 -->
 <script setup lang="ts">
@@ -43,6 +43,26 @@ const THEME_FIELDS = [
   { key: "accentColor", label: "强调色" },
 ] as const;
 
+/** 用户等级颜色字段（与后端 SiteConfigNameColors 一致） */
+const LEVEL_FIELDS = [
+  { key: "normal", label: "普通用户" },
+  { key: "active", label: "活跃用户" },
+  { key: "verified", label: "认证用户" },
+  { key: "admin", label: "管理员" },
+  { key: "owner", label: "板块长" },
+  { key: "superadmin", label: "站长/超级管理员" },
+] as const;
+
+/** 等级颜色内置默认值（旧配置缺 nameColors 时初始化用，与后端 DEFAULT_NAME_COLORS 一致） */
+const DEFAULT_NAME_COLORS = {
+  normal: "#64748B",
+  active: "#10B981",
+  verified: "#3B82F6",
+  admin: "#F59E0B",
+  owner: "#8B5CF6",
+  superadmin: "#EF4444",
+} as const;
+
 async function load(): Promise<void> {
   loading.value = true;
   error.value = false;
@@ -50,6 +70,10 @@ async function load(): Promise<void> {
     const config = await getAdminSiteConfig();
     // JSON 深拷贝隔离表单与响应数据
     form.value = JSON.parse(JSON.stringify(config)) as SiteConfig;
+    // 兼容旧配置：缺 nameColors 时用默认色初始化，保证编辑区可渲染
+    if (!form.value.nameColors) {
+      form.value.nameColors = { ...DEFAULT_NAME_COLORS };
+    }
   } catch {
     error.value = true;
   } finally {
@@ -159,6 +183,38 @@ onMounted(load);
                 />
                 <input
                   v-model="form.theme[field.key]"
+                  type="text"
+                  class="input-base w-full font-mono text-xs"
+                />
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 用户等级颜色 -->
+        <div class="card-base space-y-3">
+          <h3 class="text-sm font-semibold text-ink-soft">用户等级颜色</h3>
+          <p class="text-xs text-ink-soft">
+            用户名颜色按用户等级动态计算，此处配置各等级的展示颜色
+          </p>
+          <div class="grid grid-cols-2 gap-3">
+            <label v-for="field in LEVEL_FIELDS" :key="field.key" class="block">
+              <span class="mb-1 flex items-center gap-1.5 text-xs text-ink-soft">
+                <!-- 颜色预览：实时展示当前配置色 -->
+                <span
+                  class="inline-block h-3 w-3 shrink-0 rounded-full border border-line"
+                  :style="{ backgroundColor: form.nameColors[field.key] }"
+                />
+                {{ field.label }}
+              </span>
+              <div class="flex items-center gap-2">
+                <input
+                  v-model="form.nameColors[field.key]"
+                  type="color"
+                  class="h-9 w-9 shrink-0 cursor-pointer rounded border border-line bg-surface"
+                />
+                <input
+                  v-model="form.nameColors[field.key]"
                   type="text"
                   class="input-base w-full font-mono text-xs"
                 />

@@ -22,6 +22,7 @@ import type { CurrentUser } from "../utils/permission";
 import { can } from "../utils/permission";
 import { PERM_MANAGE_BLOCK, PERM_VIEW_ANONYMOUS_IDENTITY } from "../shared/permissions";
 import { nowISO } from "../utils/time";
+import { computeNameColor, loadNameColors, type UserLevel } from "../utils/userLevel";
 
 // ============================================================
 //  配置常量
@@ -231,7 +232,11 @@ export async function listRecommendations(
     ]),
     batchGetCommentCounts(db, allPostIds),
     batchGetFollowStatus(db, user?.id ?? null, filteredPosts.map((p) => p.authorId)),
-    batchGetAuthors(db, filteredPosts.map((p) => p.authorId)),
+    // 等级颜色配置加载一次后传入批量作者查询
+    (async () => {
+      const nameColors = await loadNameColors(db);
+      return batchGetAuthors(db, filteredPosts.map((p) => p.authorId), nameColors);
+    })(),
   ]);
 
   // 板块成员集合（用于 block 权重）
@@ -543,10 +548,11 @@ async function batchGetFollowStatus(
   return set;
 }
 
-/** 批量查询作者资料（username / nameColor / badge / avatar） */
+/** 批量查询作者资料（username / badge / avatar；nameColor 按用户等级动态计算） */
 async function batchGetAuthors(
   db: D1Database,
-  authorIds: string[]
+  authorIds: string[],
+  nameColors: Record<UserLevel, string>
 ): Promise<Map<string, RecommendPostAuthor>> {
   const map = new Map<string, RecommendPostAuthor>();
   const unique = [...new Set(authorIds)];
@@ -556,10 +562,11 @@ async function batchGetAuthors(
   for (let i = 0; i < unique.length; i += batchSize) {
     const batch = unique.slice(i, i + batchSize);
     const placeholders = batch.map(() => "?").join(",");
-    // 头像存于 Better Auth 的 user 表 image 字段，左连接一并查出
+    // 头像存于 Better Auth 的 user 表 image 字段，左连接一并查出；
+    // permissions 用于按等级计算 nameColor
     const rows = await db
       .prepare(
-        `SELECT p.userId, p.username, p.nameColor, p.badge, u.image AS avatar
+        `SELECT p.userId, p.username, p.permissions, p.badge, u.image AS avatar
          FROM user_profile p
          LEFT JOIN user u ON u.id = p.userId
          WHERE p.userId IN (${placeholders})`
@@ -568,7 +575,7 @@ async function batchGetAuthors(
       .all<{
         userId: string;
         username: string;
-        nameColor: string | null;
+        permissions: number;
         badge: string | null;
         avatar: string | null;
       }>();
@@ -577,7 +584,8 @@ async function batchGetAuthors(
       map.set(row.userId, {
         id: row.userId,
         username: row.username,
-        nameColor: row.nameColor,
+        // nameColor 不再取 user_profile.nameColor，按用户等级动态计算
+        nameColor: computeNameColor(BigInt(row.permissions), nameColors),
         badge: row.badge,
         avatar: row.avatar,
       });

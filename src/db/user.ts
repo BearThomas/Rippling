@@ -16,6 +16,7 @@ import {
 import { generateUUID } from "../utils/uuid";
 import { nowISO } from "../utils/time";
 import { writeAdminLog } from "./adminLog";
+import { computeNameColor, loadNameColors, type UserLevel } from "../utils/userLevel";
 
 // ============================================================
 //  返回类型
@@ -95,10 +96,13 @@ export async function getUserProfileById(
   const isSelf = user?.id === userId;
   const hasDbView = can(user, PERM_VIEW_DATABASE);
 
+  // nameColor 不再取 user_profile.nameColor，按用户等级动态计算
+  const nameColors = await loadNameColors(db);
+
   const base: PublicUserProfile = {
     userId: row.userId,
     username: row.username,
-    nameColor: row.nameColor,
+    nameColor: computeNameColor(BigInt(row.permissions), nameColors),
     badge: row.badge,
     questionBoxEnabled: !!row.questionBoxEnabled,
     followingCount: followingRow?.count ?? 0,
@@ -130,14 +134,14 @@ export async function getUserProfileByUsername(
 ): Promise<PublicUserProfile | null> {
   const row = await db
     .prepare(
-      `SELECT userId, username, nameColor, badge, questionBoxEnabled, createdAt
+      `SELECT userId, username, permissions, badge, questionBoxEnabled, createdAt
        FROM user_profile WHERE username = ?`
     )
     .bind(username)
     .first<{
       userId: string;
       username: string;
-      nameColor: string | null;
+      permissions: number;
       badge: string | null;
       questionBoxEnabled: number;
       createdAt: string;
@@ -155,10 +159,13 @@ export async function getUserProfileByUsername(
     .bind(row.userId)
     .first<{ count: number }>();
 
+  // nameColor 不再取 user_profile.nameColor，按用户等级动态计算
+  const nameColors = await loadNameColors(db);
+
   return {
     userId: row.userId,
     username: row.username,
-    nameColor: row.nameColor,
+    nameColor: computeNameColor(BigInt(row.permissions), nameColors),
     badge: row.badge,
     questionBoxEnabled: !!row.questionBoxEnabled,
     followingCount: followingRow?.count ?? 0,
@@ -195,7 +202,7 @@ export async function getUserPublicProfile(
   // user_profile 与 user 表左连接，一次查出基础资料 + 头像
   const row = await db
     .prepare(
-      `SELECT p.userId, p.username, p.nameColor, p.badge, p.questionBoxEnabled,
+      `SELECT p.userId, p.username, p.permissions, p.badge, p.questionBoxEnabled,
               p.createdAt, u.image AS avatar
        FROM user_profile p
        LEFT JOIN user u ON u.id = p.userId
@@ -205,7 +212,7 @@ export async function getUserPublicProfile(
     .first<{
       userId: string;
       username: string;
-      nameColor: string | null;
+      permissions: number;
       badge: string | null;
       questionBoxEnabled: number;
       createdAt: string;
@@ -236,10 +243,13 @@ export async function getUserPublicProfile(
     isFollowedByMe = !!rel;
   }
 
+  // nameColor 不再取 user_profile.nameColor，按用户等级动态计算
+  const nameColors = await loadNameColors(db);
+
   return {
     userId: row.userId,
     username: row.username,
-    nameColor: row.nameColor,
+    nameColor: computeNameColor(BigInt(row.permissions), nameColors),
     badge: row.badge,
     avatar: row.avatar,
     questionBoxEnabled: !!row.questionBoxEnabled,
@@ -638,14 +648,17 @@ interface AdminUserRow {
   createdAt: string;
 }
 
-/** 行 → AdminUserInfo 转换 */
-function toAdminUserInfo(row: AdminUserRow): AdminUserInfo {
+/** 行 → AdminUserInfo 转换（nameColor 按用户等级动态计算） */
+function toAdminUserInfo(
+  row: AdminUserRow,
+  nameColors: Record<UserLevel, string>
+): AdminUserInfo {
   return {
     id: row.userId,
     username: row.username,
     studentId: row.studentId,
     permissions: BigInt(row.permissions),
-    nameColor: row.nameColor,
+    nameColor: computeNameColor(BigInt(row.permissions), nameColors),
     badge: row.badge,
     violationCount: row.violationCount,
     isDeactivated: !!row.isDeactivated,
@@ -682,7 +695,8 @@ export async function getAdminUserInfo(
 
   if (!row) return null;
 
-  return toAdminUserInfo(row);
+  const nameColors = await loadNameColors(db);
+  return toAdminUserInfo(row, nameColors);
 }
 
 /**
@@ -717,7 +731,8 @@ export async function listUsersForAdmin(
 
   const rows = await db.prepare(sql).bind(...params).all<AdminUserRow>();
 
-  return rows.results.map(toAdminUserInfo);
+  const nameColors = await loadNameColors(db);
+  return rows.results.map((row) => toAdminUserInfo(row, nameColors));
 }
 
 /**
