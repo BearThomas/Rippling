@@ -89,14 +89,29 @@ async function d1Query<T = Record<string, unknown>>(
     throw new Error(`D1 query failed (${resp.status}): ${text}`);
   }
 
-  const json = (await resp.json()) as D1QueryResponse<T>;
-  if (!json.success) {
-    throw new Error(`D1 query error: ${JSON.stringify(json)}`);
+  const raw = (await resp.json()) as unknown;
+
+  // Cloudflare D1 /raw 可能返回数组，也可能返回对象，需要兼容处理
+  let resultArray: T[] = [];
+
+  if (Array.isArray(raw)) {
+    const firstStatement = raw[0] as { results?: T[] } | undefined;
+    if (firstStatement && Array.isArray(firstStatement.results)) {
+      resultArray = firstStatement.results;
+    }
+  } else if (raw && typeof raw === "object") {
+    const maybe = raw as { result?: { results?: T[] }[] | { results?: T[] } | T[] };
+    if (Array.isArray(maybe.result)) {
+      const first = maybe.result[0] as { results?: T[] } | undefined;
+      if (first && Array.isArray(first.results)) {
+        resultArray = first.results;
+      }
+    } else if (maybe.result && typeof maybe.result === "object" && Array.isArray((maybe.result as { results?: T[] }).results)) {
+      resultArray = (maybe.result as { results?: T[] }).results as T[];
+    }
   }
 
-  // 取第一条语句的 results：真正的行数据在这里
-  // （UPDATE / INSERT 的 results 为空数组，d1Execute 忽略返回值）
-  return json.result[0]?.results ?? [];
+  return resultArray;
 }
 
 /** 执行 D1 SQL 写入（UPDATE / INSERT） */
@@ -160,7 +175,13 @@ async function archiveType(
   // （post / confession / timeline_event 均有 updatedAt 字段）
   const sql = `SELECT * FROM ${table} WHERE isArchived = 0 AND updatedAt < ?`;
 
-  const records = await d1Query<Record<string, unknown>>(sql, [cutoff]);
+  let records = await d1Query<Record<string, unknown>>(sql, [cutoff]);
+
+  if (!Array.isArray(records)) {
+    console.warn(`  [${type}] 查询结果不是数组，已强制置空，records:`, records);
+    records = [];
+  }
+
   console.log(`  [${type}] 找到 ${records.length} 条待归档记录`);
 
   for (const record of records) {
