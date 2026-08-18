@@ -178,7 +178,7 @@ async function archiveType(
   // （post / confession / timeline_event 均有 updatedAt 字段）
   const sql = `SELECT * FROM ${table} WHERE isArchived = 0 AND updatedAt < '${cutoff}'`;
 
-  let records = await d1Query<Record<string, unknown>>(sql, [cutoff]);
+  let records = await d1Query<Record<string, unknown>>(sql);
 
   if (!Array.isArray(records)) {
     console.warn(`  [${type}] 查询结果不是数组，已强制置空，records:`, records);
