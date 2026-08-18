@@ -97,7 +97,7 @@
                 @click="showPassword = !showPassword"
                 class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
               >
-                <AppSvgIcon :name="showPassword ? 'eye-off' : 'eye'" :size="16" />
+                <AppSvgIcon name="lock" :size="16" />
               </button>
             </div>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
@@ -145,11 +145,9 @@
                 >
                   <div class="flex items-center space-x-3">
                     <div
-                      class="w-8 h-8 rounded-lg flex items-center justify-center text-white"
+                      class="w-8 h-8 rounded-full flex items-center justify-center"
                       :style="{ backgroundColor: theme.color }"
-                    >
-                      <AppSvgIcon :name="theme.icon" :size="16" />
-                    </div>
+                    ></div>
                     <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
                       {{ theme.label }}
                     </span>
@@ -166,12 +164,6 @@
               :disabled="loading || !isFormValid"
               class="btn-primary w-full flex items-center justify-center space-x-2"
             >
-              <AppSvgIcon
-                v-if="loading"
-                name="loader"
-                :size="16"
-                class="animate-spin"
-              />
               <span>{{ loading ? "初始化中..." : "开始初始化" }}</span>
             </button>
           </div>
@@ -191,8 +183,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
-import { showToast } from "../components/ui/toast";
-import { apiPost } from "../utils/api";
+import { showToast } from "../utils/toast";
+import { apiGet, apiPost } from "../api/client";
+import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
 
 interface SetupFormData {
   siteName: string;
@@ -220,25 +213,21 @@ const themes = [
     value: "light",
     label: "明亮",
     color: "#3B82F6",
-    icon: "sun",
   },
   {
     value: "dark",
     label: "深色",
     color: "#1F2937",
-    icon: "moon",
   },
   {
     value: "campus",
     label: "校园",
     color: "#10B981",
-    icon: "graduation-cap",
   },
   {
     value: "warm",
     label: "温暖",
     color: "#F59E0B",
-    icon: "heart",
   },
 ];
 
@@ -278,20 +267,15 @@ async function handleSubmit() {
 
   loading.value = true;
   try {
-    const response = await apiPost("/api/setup/initialize", form.value);
-    
-    if (response.success) {
-      showToast("初始化成功，请使用超级管理员账号登录", "success");
-      // 跳转到登录页
-      setTimeout(() => {
-        router.push("/login");
-      }, 2000);
-    } else {
-      showToast(response.error?.message || "初始化失败", "error");
-    }
+    await apiPost("/api/setup/initialize", { ...form.value });
+    showToast("初始化成功，请使用超级管理员账号登录", "success");
+    // 跳转到登录页
+    setTimeout(() => {
+      router.push("/login");
+    }, 2000);
   } catch (error) {
     console.error("初始化失败:", error);
-    showToast("初始化失败，请检查网络连接", "error");
+    showToast(error instanceof Error ? error.message : "初始化失败，请检查网络连接", "error");
   } finally {
     loading.value = false;
   }
@@ -300,10 +284,11 @@ async function handleSubmit() {
 onMounted(async () => {
   // 检查是否已经初始化
   try {
-    const response = await fetch("/api/setup/status");
-    const data = await response.json();
-    
-    if (data.success && data.data.initialized) {
+    const data = await apiGet<{ initialized: boolean }>("/api/setup/status", {
+      silentError: true,
+    });
+
+    if (data.initialized) {
       showToast("站点已初始化，正在跳转到首页...", "info");
       setTimeout(() => {
         router.push("/");

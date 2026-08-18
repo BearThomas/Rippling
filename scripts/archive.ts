@@ -134,7 +134,13 @@ async function archiveType(
   console.log(`  [${type}] 找到 ${records.length} 条待归档记录`);
 
   for (const record of records) {
-    const id = record.id as string;
+    // 必须能取到字符串 id，否则跳过（避免生成 undefined.json）
+    const rawId = record.id;
+    if (typeof rawId !== "string" || !rawId) {
+      console.warn(`  [${type}] 跳过记录：id 缺失，记录内容:`, record);
+      continue;
+    }
+    const id = rawId;
     try {
       // 1. 查询操作链
       const operations = await d1Query<Record<string, unknown>>(
