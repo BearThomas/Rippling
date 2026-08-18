@@ -9,6 +9,10 @@
  *   - 仅允许 jpeg / png / webp / gif
  *   - 大小上限 2MB（超过提示前端压缩后再传）
  *   - 内存频率限制：每用户每小时 50 次
+ *
+ * 返回地址说明：
+ *   B2 Bucket 为 Private，上传成功后返回代理地址 /api/image?key=对象key，
+ *   而非 B2 直连 URL（见 src/routes/image.ts）。
  */
 
 import { Hono } from "hono";
@@ -88,9 +92,9 @@ uploadRoutes.post("/image", requirePermission(PERM_UPLOAD_IMAGE), async (c) => {
   }
 
   // 上传到 B2
-  let url: string;
+  let result: { url: string; key: string };
   try {
-    url = await uploadImageToB2(file, c.env);
+    result = await uploadImageToB2(file, c.env);
   } catch (err) {
     console.error("[Upload] B2 upload failed:", err);
     // 调试期：向客户端暴露具体错误信息与堆栈，定位后改回通用提示
@@ -107,6 +111,9 @@ uploadRoutes.post("/image", requirePermission(PERM_UPLOAD_IMAGE), async (c) => {
       INTERNAL_ERROR.statusCode as any
     );
   }
+
+  // B2 Bucket 私有，直连 URL 无法公开访问，统一返回同域代理地址
+  const url = `/api/image?key=${encodeURIComponent(result.key)}`;
 
   // 记录到 user_log（可选审计项，不阻塞主流程）
   await c.env.DB.prepare(

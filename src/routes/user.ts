@@ -49,6 +49,27 @@ const USERNAME_CHANGE_LIMIT = 4;
 /** 头像 URL 长度上限（防超长输入） */
 const AVATAR_URL_MAX = 500;
 
+/**
+ * 头像 URL 合法性判断
+ *
+ * 接受两种形式：
+ *   1. http(s) 绝对 URL（兼容历史数据 / 外链头像）
+ *   2. 同域图片代理地址 /api/image?key=...（B2 私有 Bucket 上传后的返回地址，
+ *      key 经 encodeURIComponent 编码，此处解码后按与图片代理一致的规则校验）
+ */
+function isValidAvatarUrl(url: string): boolean {
+  if (/^https?:\/\/.+/.test(url)) return true;
+
+  if (!url.startsWith("/api/image?key=")) return false;
+  try {
+    const key = decodeURIComponent(url.slice("/api/image?key=".length));
+    return key.startsWith("images/") && !key.includes("..") && !key.includes("\\");
+  } catch {
+    // 非法的百分号编码序列
+    return false;
+  }
+}
+
 const userRoutes = new Hono<E>();
 
 // ============================================================
@@ -193,9 +214,9 @@ userRoutes.put("/avatar", async (c) => {
 
   const avatarUrl = typeof body.avatarUrl === "string" ? body.avatarUrl.trim() : "";
 
-  // URL 校验：仅接受 http/https 开头（前端一般先经 /api/upload/image 上传）
-  if (!avatarUrl || avatarUrl.length > AVATAR_URL_MAX || !/^https?:\/\/.+/.test(avatarUrl)) {
-    return badRequest(c, "头像地址无效，需为 http/https URL");
+  // URL 校验：接受 http(s) 绝对 URL 或 /api/image 代理地址（前端一般先经 /api/upload/image 上传）
+  if (!avatarUrl || avatarUrl.length > AVATAR_URL_MAX || !isValidAvatarUrl(avatarUrl)) {
+    return badRequest(c, "头像地址无效，需为 http/https URL 或 /api/image 代理地址");
   }
 
   const ok = await updateAvatar(c.env.DB, user.id, avatarUrl);

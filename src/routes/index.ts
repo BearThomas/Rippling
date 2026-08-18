@@ -20,4 +20,5 @@ export { default as adminRoutes } from "./admin";
 export { default as adminLogRoutes } from "./adminLog";
 export { default as permissionRoutes } from "./permission";
 export { default as uploadRoutes } from "./upload";
+export { default as imageRoutes } from "./image";
 export { default as userRoutes } from "./user";

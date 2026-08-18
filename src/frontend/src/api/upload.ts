@@ -17,7 +17,7 @@ export const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
  * 上传图片到 B2
  *
  * @param file 图片文件（jpeg / png / webp / gif，≤2MB）
- * @returns 上传后的公网 URL
+ * @returns 上传后的图片地址（同域代理地址 /api/image?key=...，可直接用于 img src）
  * @throws ApiError 业务错误（已自动 Toast 提示）
  */
 export async function uploadImage(file: File): Promise<{ url: string }> {
