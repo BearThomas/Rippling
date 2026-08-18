@@ -227,7 +227,7 @@ export async function handleAuthRequest(
             userId,
             username,
             userDisplayName,
-            Number(DEFAULT_USER_PERMISSIONS),
+            siteConfig.defaultPermissions,
             now,
             now
           )
