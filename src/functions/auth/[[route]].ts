@@ -219,12 +219,13 @@ export async function handleAuthRequest(
         const now = nowISO();
         await env.DB
           .prepare(
-            `INSERT INTO user_profile (id, userId, username, permissions, createdAt, updatedAt)
-             VALUES (?, ?, ?, ?, ?, ?)`
+            `INSERT INTO user_profile (id, userId, studentId, username, permissions, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
           )
           .bind(
             generateUUID(),
             userId,
+            username,
             userDisplayName,
             Number(DEFAULT_USER_PERMISSIONS),
             now,

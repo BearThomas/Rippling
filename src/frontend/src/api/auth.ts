@@ -65,7 +65,9 @@ export async function signUp(input: SignUpInput): Promise<SessionInfo> {
 
 /** 登出（清除会话 Cookie） */
 export async function signOut(): Promise<void> {
-  await requestRaw("/api/auth/sign-out", "POST", {});
+  // Better Auth 对 POST 强制要求 JSON Content-Type，
+  // 因此必须传 body（空对象），否则返回 415
+  await requestRaw("/api/auth/sign-out", "POST", { body: {} });
 }
 
 /**
