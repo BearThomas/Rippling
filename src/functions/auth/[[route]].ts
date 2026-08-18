@@ -36,9 +36,43 @@ interface RegisterQuestion {
 
 function parseRegisterQuestions(raw?: string): RegisterQuestion[] {
   if (!raw) return [];
+
+  // 环境变量面板 / dotenv 可能保留首尾引号或空白，先清理再解析
+  let text = raw.trim();
+  if (
+    text.length >= 2 &&
+    ((text.startsWith('"') && text.endsWith('"')) ||
+      (text.startsWith("'") && text.endsWith("'")))
+  ) {
+    text = text.slice(1, -1);
+  }
+
   try {
-    return JSON.parse(raw) as RegisterQuestion[];
-  } catch {
+    const parsed = JSON.parse(text) as unknown;
+    if (!Array.isArray(parsed)) {
+      console.error(
+        "[Auth] REGISTER_QUESTIONS 解析结果不是 JSON 数组:",
+        raw
+      );
+      return [];
+    }
+    // 过滤缺 question / answer 的无效项，避免返回空题 / 无效题
+    return parsed.filter(
+      (item): item is RegisterQuestion =>
+        typeof item === "object" &&
+        item !== null &&
+        typeof (item as RegisterQuestion).question === "string" &&
+        (item as RegisterQuestion).question.trim() !== "" &&
+        typeof (item as RegisterQuestion).answer === "string"
+    );
+  } catch (err) {
+    // 不再静默吞掉：打印原始值与错误，方便定位配置问题
+    console.error(
+      "[Auth] REGISTER_QUESTIONS JSON 解析失败:",
+      err,
+      "raw:",
+      raw
+    );
     return [];
   }
 }
@@ -64,7 +98,10 @@ export async function handleAuthRequest(
   //  注册验证问题：随机返回 2 道题（index 为原数组下标，前端提交时回传）
   // ----------------------------------------------------------
   if (request.method === "GET" && path.endsWith("/register-questions")) {
+    // 临时调试日志：定位是环境变量未注入，还是 JSON 解析失败
+    console.log("REGISTER_QUESTIONS raw:", env.REGISTER_QUESTIONS);
     const registerQuestions = parseRegisterQuestions(env.REGISTER_QUESTIONS);
+    console.log("Parsed questions:", registerQuestions);
 
     // Fisher-Yates 洗牌后取前 2 道（不足 2 道时返回全部）
     const indices = registerQuestions.map((_, i) => i);
