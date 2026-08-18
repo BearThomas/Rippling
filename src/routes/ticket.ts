@@ -91,7 +91,7 @@ const TICKET_TYPE_PERMISSIONS: Record<string, number | null> = {
   permission_request: PERM_SUBMIT_PERMISSION_REQUEST,
   report: PERM_SUBMIT_REPORT,
   appeal: PERM_SUBMIT_APPEAL,
-  verification: PERM_SUBMIT_VERIFICATION,
+  verification: null, // 认证申请允许所有已登录用户提交
   block_create: PERM_SUBMIT_BLOCK_CREATE,
   account_deletion: null,
   timeline_submit: PERM_SUBMIT_TIMELINE,
