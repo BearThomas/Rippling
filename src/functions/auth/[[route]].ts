@@ -54,14 +54,22 @@ export async function handleAuthRequest(
   const url = new URL(request.url);
   const path = url.pathname;
 
+  // 前端注册/登录走 email 通道（学号拼进占位邮箱），username 通道保留兼容
+  const isSignUp =
+    path.endsWith("/sign-up/username") || path.endsWith("/sign-up/email");
+  const isSignIn =
+    path.endsWith("/sign-in/username") || path.endsWith("/sign-in/email");
+
   // ----------------------------------------------------------
   //  注册：前置验证（在 Better Auth 处理前拦截）
   // ----------------------------------------------------------
-  if (path.endsWith("/sign-up/username")) {
+  if (isSignUp) {
     const body = await request.clone().json().catch(() => null) as Record<string, unknown> | null;
 
     if (body) {
-      const username = (body.username as string) ?? "";
+      // email 通道时学号存放在邮箱前缀（学号@rippling.local）
+      const emailValue = (body.email as string) ?? "";
+      const username = (body.username as string) ?? emailValue.split("@")[0];
       const password = (body.password as string) ?? "";
       const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
       const studentIdRegex = new RegExp(siteConfig.studentIdPattern);
@@ -90,7 +98,10 @@ export async function handleAuthRequest(
       }
 
       // 3. 验证问题（如果配置了）
-      if (registerQuestions.length >= 2) {
+      // ⚠️ 前端注册页暂无验证问题 UI（不会携带问题字段），
+      //   此处仅在前端显式提交问题字段时校验；验证问题 UI 待开发
+      const hasQuestionFields = body.questionIndex1 !== undefined;
+      if (registerQuestions.length >= 2 && hasQuestionFields) {
         const q1 = Number(body.questionIndex1);
         const q2 = Number(body.questionIndex2);
         const a1 = (body.answer1 as string) ?? "";
@@ -149,9 +160,12 @@ export async function handleAuthRequest(
   // ----------------------------------------------------------
   //  登录：锁定检查
   // ----------------------------------------------------------
-  if (path.endsWith("/sign-in/username")) {
+  if (isSignIn) {
     const body = await request.clone().json().catch(() => null) as Record<string, unknown> | null;
-    const username = (body?.username as string) ?? "";
+    // email 通道时从邮箱前缀提取学号
+    const username =
+      (body?.username as string) ??
+      (((body?.email as string) ?? "").split("@")[0]);
 
     if (username) {
       // 检查是否处于锁定状态（maxCount=0 意味着任何计数都超限）
@@ -187,7 +201,7 @@ export async function handleAuthRequest(
   // ----------------------------------------------------------
   //  注册成功后：创建 user_profile（后处理）
   // ----------------------------------------------------------
-  if (path.endsWith("/sign-up/username") && response.status < 300) {
+  if (isSignUp && response.status < 300) {
     try {
       const body = await request.clone().json().catch(() => null) as Record<string, unknown> | null;
       const data = (await response.clone().json()) as { user?: { id?: string } };
@@ -195,7 +209,10 @@ export async function handleAuthRequest(
 
       if (userId) {
         // 用户昵称：优先使用 body.name，为空则用学号作为默认昵称
-        const username = (body?.username as string) ?? "";
+        // email 通道时学号存放在邮箱前缀
+        const username =
+          (body?.username as string) ??
+          (((body?.email as string) ?? "").split("@")[0]);
         const name = (body?.name as string) ?? "";
         const userDisplayName = name.trim() || username;
 
@@ -223,12 +240,15 @@ export async function handleAuthRequest(
   // ----------------------------------------------------------
   //  登录成功后：绑定设备 + 重置失败计数与锁定
   // ----------------------------------------------------------
-  if (path.endsWith("/sign-in/username") && response.status < 300) {
+  if (isSignIn && response.status < 300) {
     try {
       const body = await request.clone().json().catch(() => null) as Record<string, unknown> | null;
       const data = (await response.clone().json()) as { user?: { id?: string } };
       const userId = data?.user?.id;
-      const username = (body?.username as string) ?? "";
+      // email 通道时从邮箱前缀提取学号
+      const username =
+        (body?.username as string) ??
+        (((body?.email as string) ?? "").split("@")[0]);
 
       if (userId) {
         // 从请求 Header 读取设备 ID，无则生成新的
@@ -263,9 +283,12 @@ export async function handleAuthRequest(
   // ----------------------------------------------------------
   //  登录失败后：记录失败次数，达到上限则锁定
   // ----------------------------------------------------------
-  if (path.endsWith("/sign-in/username") && response.status >= 400) {
+  if (isSignIn && response.status >= 400) {
     const body = await request.clone().json().catch(() => null) as Record<string, unknown> | null;
-    const username = (body?.username as string) ?? "";
+    // email 通道时从邮箱前缀提取学号
+    const username =
+      (body?.username as string) ??
+      (((body?.email as string) ?? "").split("@")[0]);
 
     if (username) {
       // 记录失败：30 分钟内 5 次触发锁定

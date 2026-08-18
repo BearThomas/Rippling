@@ -8,6 +8,22 @@
 import { requestRaw } from "./client";
 import type { SessionInfo } from "../types";
 
+// ============================================================
+//  学号 → 占位邮箱
+//
+//  Better Auth 走 email 通道并严格校验邮箱格式，
+//  学号本身不是合法邮箱，因此拼接虚拟域名后传输；
+//  注册与登录使用同一规则，保证能匹配到同一账号。
+// ============================================================
+
+/** 占位邮箱域名（仅用于格式满足，不会发送邮件） */
+const STUDENT_EMAIL_DOMAIN = "rippling.local";
+
+/** 学号 → 占位邮箱，如 20240101 → 20240101@rippling.local */
+function toStudentEmail(studentId: string): string {
+  return `${studentId}@${STUDENT_EMAIL_DOMAIN}`;
+}
+
 /** 登录凭证 */
 export interface SignInInput {
   /** 学号（注册时即学号） */
@@ -30,7 +46,7 @@ export interface SignUpInput {
  */
 export async function signIn(input: SignInInput): Promise<SessionInfo> {
   return requestRaw<SessionInfo>("/api/auth/sign-in/email", "POST", {
-    body: { email: input.email, password: input.password },
+    body: { email: toStudentEmail(input.email), password: input.password },
   });
 }
 
@@ -39,7 +55,11 @@ export async function signIn(input: SignInInput): Promise<SessionInfo> {
  */
 export async function signUp(input: SignUpInput): Promise<SessionInfo> {
   return requestRaw<SessionInfo>("/api/auth/sign-up/email", "POST", {
-    body: { name: input.name, email: input.email, password: input.password },
+    body: {
+      name: input.name,
+      email: toStudentEmail(input.email),
+      password: input.password,
+    },
   });
 }
 
