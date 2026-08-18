@@ -148,4 +148,14 @@ app.all("*", (c) => {
   );
 });
 
-export default app;
+// ============================================================
+//  Pages Functions 入口
+//
+//  Cloudflare Pages 只识别 onRequest 导出（不认 export default），
+//  因此将 Hono app 包装为 PagesFunction 后导出。
+// ============================================================
+
+export const onRequest: PagesFunction<CloudflareEnv> = async (context) => {
+  // 项目内无 waitUntil 需求，省略 executionCtx 参数
+  return app.fetch(context.request, context.env);
+};
