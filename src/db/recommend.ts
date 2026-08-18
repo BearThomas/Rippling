@@ -76,6 +76,8 @@ export interface RecommendPostAuthor {
   username: string;
   nameColor: string | null;
   badge: string | null;
+  /** 头像 URL（user 表 image 字段，无头像为 null） */
+  avatar: string | null;
 }
 
 // ============================================================
@@ -541,7 +543,7 @@ async function batchGetFollowStatus(
   return set;
 }
 
-/** 批量查询作者资料（username / nameColor / badge） */
+/** 批量查询作者资料（username / nameColor / badge / avatar） */
 async function batchGetAuthors(
   db: D1Database,
   authorIds: string[]
@@ -554,10 +556,13 @@ async function batchGetAuthors(
   for (let i = 0; i < unique.length; i += batchSize) {
     const batch = unique.slice(i, i + batchSize);
     const placeholders = batch.map(() => "?").join(",");
+    // 头像存于 Better Auth 的 user 表 image 字段，左连接一并查出
     const rows = await db
       .prepare(
-        `SELECT userId, username, nameColor, badge
-         FROM user_profile WHERE userId IN (${placeholders})`
+        `SELECT p.userId, p.username, p.nameColor, p.badge, u.image AS avatar
+         FROM user_profile p
+         LEFT JOIN user u ON u.id = p.userId
+         WHERE p.userId IN (${placeholders})`
       )
       .bind(...batch)
       .all<{
@@ -565,6 +570,7 @@ async function batchGetAuthors(
         username: string;
         nameColor: string | null;
         badge: string | null;
+        avatar: string | null;
       }>();
 
     for (const row of rows.results) {
@@ -573,6 +579,7 @@ async function batchGetAuthors(
         username: row.username,
         nameColor: row.nameColor,
         badge: row.badge,
+        avatar: row.avatar,
       });
     }
   }

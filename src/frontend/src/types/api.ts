@@ -124,6 +124,8 @@ export interface PostAuthor {
   username: string;
   nameColor: string | null;
   badge: string | null;
+  /** 头像 URL（无头像为 null） */
+  avatar: string | null;
 }
 
 /** 帖子（含评论，post 表 parentId 区分） */
@@ -250,6 +252,8 @@ export interface SearchUserResult {
   username: string;
   nameColor: string | null;
   badge: string | null;
+  /** 头像 URL（无头像为 null） */
+  avatar: string | null;
 }
 
 /** 搜索结果中的板块 */
@@ -469,6 +473,8 @@ export interface FollowUserInfo {
   username: string;
   nameColor: string | null;
   badge: string | null;
+  /** 头像 URL（无头像为 null） */
+  avatar: string | null;
   /** 当前登录用户是否关注了 TA */
   isFollowedByMe: boolean;
 }

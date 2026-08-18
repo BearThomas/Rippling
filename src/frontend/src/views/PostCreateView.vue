@@ -268,7 +268,15 @@ onMounted(() => {
             class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors active:bg-[color-mix(in_srgb,var(--c-primary)_8%,transparent)]"
             @click="addUser(user)"
           >
+            <!-- 头像（有头像显示图片，否则首字占位） -->
+            <img
+              v-if="user.avatar"
+              :src="user.avatar"
+              :alt="user.username"
+              class="h-6 w-6 shrink-0 rounded-full object-cover"
+            />
             <span
+              v-else
               class="flex h-6 w-6 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] text-[10px] font-semibold"
               :style="{ color: user.nameColor ?? undefined }"
             >

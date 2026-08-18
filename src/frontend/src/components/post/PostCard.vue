@@ -73,8 +73,15 @@ function openDetail(): void {
   >
     <!-- 作者行 -->
     <div class="mb-2 flex items-center gap-2">
-      <!-- 头像占位（首字圆形；匿名用灰色） -->
+      <!-- 头像（有头像显示图片，否则首字占位；匿名用灰色） -->
+      <img
+        v-if="post.author?.avatar"
+        :src="post.author.avatar"
+        :alt="authorName"
+        class="h-7 w-7 shrink-0 rounded-full object-cover"
+      />
       <span
+        v-else
         class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
         :style="
           post.author?.nameColor

@@ -43,6 +43,8 @@ interface FollowUserInfo {
   username: string;
   nameColor: string | null;
   badge: string | null;
+  /** 头像 URL（user 表 image 字段，无头像为 null） */
+  avatar: string | null;
   isFollowedByMe: boolean;
 }
 
@@ -54,6 +56,7 @@ interface FollowUserInfo {
  * 批量解析关注列表中的用户信息
  *
  * 从 user_profile 批量查询 username、nameColor、badge，
+ * 左连接 user 表取头像（image 字段），
  * 并检查当前登录用户是否关注了列表中的每个用户。
  * 避免 N+1 查询。
  */
@@ -64,12 +67,14 @@ async function resolveFollowUsers(
 ): Promise<FollowUserInfo[]> {
   if (!userIds.length) return [];
 
-  // 批量查询用户资料
+  // 批量查询用户资料（头像存于 Better Auth 的 user 表 image 字段，左连接一并查出）
   const placeholders = userIds.map(() => "?").join(",");
   const profiles = await db
     .prepare(
-      `SELECT userId, username, nameColor, badge
-       FROM user_profile WHERE userId IN (${placeholders})`
+      `SELECT p.userId, p.username, p.nameColor, p.badge, u.image AS avatar
+       FROM user_profile p
+       LEFT JOIN user u ON u.id = p.userId
+       WHERE p.userId IN (${placeholders})`
     )
     .bind(...userIds)
     .all<{
@@ -77,6 +82,7 @@ async function resolveFollowUsers(
       username: string;
       nameColor: string | null;
       badge: string | null;
+      avatar: string | null;
     }>();
 
   const profileMap = new Map(profiles.results.map((p) => [p.userId, p]));
@@ -104,6 +110,7 @@ async function resolveFollowUsers(
         username: profile.username,
         nameColor: profile.nameColor,
         badge: profile.badge,
+        avatar: profile.avatar,
         isFollowedByMe: followingSet.has(id),
       };
     });

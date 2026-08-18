@@ -25,6 +25,8 @@ export interface PostAuthorBrief {
   username: string;
   nameColor: string | null;
   badge: string | null;
+  /** 头像 URL（user 表 image 字段，无头像为 null） */
+  avatar: string | null;
 }
 
 /** 附加展示信息后的帖子 / 评论 */
@@ -52,7 +54,7 @@ function chunk<T>(list: T[], size: number): T[][] {
   return result;
 }
 
-/** 批量查询作者资料（username / nameColor / badge） */
+/** 批量查询作者资料（username / nameColor / badge / avatar） */
 async function batchGetAuthors(
   db: D1Database,
   authorIds: string[]
@@ -62,10 +64,13 @@ async function batchGetAuthors(
 
   for (const batch of chunk(unique, BATCH_SIZE)) {
     const placeholders = batch.map(() => "?").join(",");
+    // 头像存于 Better Auth 的 user 表 image 字段，左连接一并查出
     const rows = await db
       .prepare(
-        `SELECT userId, username, nameColor, badge
-         FROM user_profile WHERE userId IN (${placeholders})`
+        `SELECT p.userId, p.username, p.nameColor, p.badge, u.image AS avatar
+         FROM user_profile p
+         LEFT JOIN user u ON u.id = p.userId
+         WHERE p.userId IN (${placeholders})`
       )
       .bind(...batch)
       .all<{
@@ -73,6 +78,7 @@ async function batchGetAuthors(
         username: string;
         nameColor: string | null;
         badge: string | null;
+        avatar: string | null;
       }>();
 
     for (const row of rows.results) {
@@ -81,6 +87,7 @@ async function batchGetAuthors(
         username: row.username,
         nameColor: row.nameColor,
         badge: row.badge,
+        avatar: row.avatar,
       });
     }
   }
@@ -231,14 +238,21 @@ export async function getPostAuthorBrief(
   const showAuthor = authorVisible || can(user, PERM_VIEW_ANONYMOUS_IDENTITY);
   if (!showAuthor) return null;
 
+  // 头像存于 Better Auth 的 user 表 image 字段，左连接一并查出
   const row = await db
-    .prepare("SELECT userId, username, nameColor, badge FROM user_profile WHERE userId = ?")
+    .prepare(
+      `SELECT p.userId, p.username, p.nameColor, p.badge, u.image AS avatar
+       FROM user_profile p
+       LEFT JOIN user u ON u.id = p.userId
+       WHERE p.userId = ?`
+    )
     .bind(authorId)
     .first<{
       userId: string;
       username: string;
       nameColor: string | null;
       badge: string | null;
+      avatar: string | null;
     }>();
 
   if (!row) return null;
@@ -248,6 +262,7 @@ export async function getPostAuthorBrief(
     username: row.username,
     nameColor: row.nameColor,
     badge: row.badge,
+    avatar: row.avatar,
   };
 }
 

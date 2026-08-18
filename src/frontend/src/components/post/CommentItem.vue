@@ -126,7 +126,15 @@ function openCommentDetail(): void {
   <div class="py-2.5" :class="depth > 1 ? 'border-l-2 border-line pl-3' : ''">
     <!-- 作者行 -->
     <div class="mb-1 flex items-center gap-2">
+      <!-- 头像（有头像显示图片，否则首字占位；匿名用灰色） -->
+      <img
+        v-if="comment.author?.avatar"
+        :src="comment.author.avatar"
+        :alt="authorName"
+        class="h-6 w-6 shrink-0 rounded-full object-cover"
+      />
       <span
+        v-else
         class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
         :style="
           comment.author?.nameColor

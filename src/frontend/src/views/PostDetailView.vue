@@ -343,7 +343,15 @@ onMounted(load);
       <article class="card-base">
         <!-- 作者行 -->
         <div class="mb-3 flex items-center gap-2">
+          <!-- 头像（有头像显示图片，否则首字占位；匿名用灰色） -->
+          <img
+            v-if="post.author?.avatar"
+            :src="post.author.avatar"
+            :alt="authorName"
+            class="h-9 w-9 shrink-0 rounded-full object-cover"
+          />
           <span
+            v-else
             class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
             :style="
               post.author?.nameColor

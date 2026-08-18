@@ -271,7 +271,15 @@ async function onFollow(user: SearchUserResult): Promise<void> {
           <h3 class="mb-2 px-1 text-sm font-semibold text-ink-soft">用户</h3>
           <div class="card-base divide-y divide-line !py-1">
             <div v-for="user in users" :key="user.userId" class="flex items-center gap-2 py-2.5">
+              <!-- 头像（有头像显示图片，否则首字占位） -->
+              <img
+                v-if="user.avatar"
+                :src="user.avatar"
+                :alt="user.username"
+                class="h-8 w-8 shrink-0 rounded-full object-cover"
+              />
               <span
+                v-else
                 class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] text-xs font-semibold"
                 :style="{ color: user.nameColor ?? undefined }"
               >

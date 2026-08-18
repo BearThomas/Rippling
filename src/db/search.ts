@@ -37,6 +37,8 @@ export interface SearchUserResult {
   username: string;
   nameColor: string | null;
   badge: string | null;
+  /** 头像 URL（user 表 image 字段，无头像为 null） */
+  avatar: string | null;
 }
 
 /** 搜索结果中的板块 */
@@ -297,17 +299,19 @@ export async function searchUsers(
   const likeContains = `%${escaped}%`;
   const likePrefix = `${escaped}%`;
 
+  // 头像存于 Better Auth 的 user 表 image 字段，左连接一并查出
   const rows = await db
     .prepare(
-      `SELECT userId, username, nameColor, badge,
+      `SELECT p.userId, p.username, p.nameColor, p.badge, u.image AS avatar,
          CASE
-           WHEN username = ? THEN 0
-           WHEN username LIKE ? ESCAPE '\\' THEN 1
+           WHEN p.username = ? THEN 0
+           WHEN p.username LIKE ? ESCAPE '\\' THEN 1
            ELSE 2
          END as rank
-       FROM user_profile
-       WHERE username LIKE ? ESCAPE '\\'
-       ORDER BY rank ASC, createdAt DESC
+       FROM user_profile p
+       LEFT JOIN user u ON u.id = p.userId
+       WHERE p.username LIKE ? ESCAPE '\\'
+       ORDER BY rank ASC, p.createdAt DESC
        LIMIT ? OFFSET ?`
     )
     .bind(q, likePrefix, likeContains, limit, offset)
@@ -316,6 +320,7 @@ export async function searchUsers(
       username: string;
       nameColor: string | null;
       badge: string | null;
+      avatar: string | null;
       rank: number;
     }>();
 
@@ -324,6 +329,7 @@ export async function searchUsers(
     username: row.username,
     nameColor: row.nameColor,
     badge: row.badge,
+    avatar: row.avatar,
   }));
 }
 
