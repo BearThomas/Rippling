@@ -66,6 +66,8 @@ export interface SiteConfig {
   recommendWeights: SiteConfigRecommendWeights;
   /** 用户等级名称颜色 */
   nameColors: SiteConfigNameColors;
+  /** 是否已初始化 */
+  initialized?: boolean;
 }
 
 /** site_config 表中存储整份配置的 key */

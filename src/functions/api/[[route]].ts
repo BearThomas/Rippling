@@ -26,6 +26,7 @@
  *   - /api/upload       图片上传（B2）
  *   - /api/image        图片代理（读取 B2 私有 Bucket，公开）
  *   - /api/user         用户资料 / 帖子评论列表 / 账号设置
+ *   - /api/setup        初始化向导（公开）
  *
  * 待挂载路由：
  *   - ...
@@ -38,7 +39,7 @@ import { errorHandler } from "../../middleware/error";
 import { authMiddleware } from "../../middleware/auth";
 import type { AppContextVars } from "../../middleware/auth";
 import { deviceMiddleware } from "../../middleware/device";
-import { postRoutes, likeRoutes, confessionRoutes, timelineRoutes, voteRoutes, recommendRoutes, searchRoutes, followRoutes, questionRoutes, notificationRoutes, blockRoutes, ticketRoutes, adminRoutes, adminLogRoutes, permissionRoutes, uploadRoutes, imageRoutes, userRoutes } from "../../routes";
+import { postRoutes, likeRoutes, confessionRoutes, timelineRoutes, voteRoutes, recommendRoutes, searchRoutes, followRoutes, questionRoutes, notificationRoutes, blockRoutes, ticketRoutes, adminRoutes, adminLogRoutes, permissionRoutes, uploadRoutes, imageRoutes, userRoutes, setupRoutes } from "../../routes";
 import { nowISO } from "../../utils/time";
 import { NOT_FOUND } from "../../utils/errors";
 import { getSiteConfig } from "../../db";
@@ -74,6 +75,9 @@ app.get("/api/config", async (c) => {
     data: dbConfig ?? siteConfig,
   });
 });
+
+// 初始化向导（公开接口）
+app.route("/api/setup", setupRoutes);
 
 // ============================================================
 //  受保护路由（需要认证 + 设备识别）

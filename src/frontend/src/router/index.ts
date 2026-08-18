@@ -46,6 +46,8 @@ const TicketCreateView = () => import("../views/TicketCreateView.vue");
 const AdminLogView = () => import("../views/AdminLogView.vue");
 const QuestionBoxView = () => import("../views/QuestionBoxView.vue");
 const NotFoundView = () => import("../views/NotFoundView.vue");
+const SetupView = () => import("../views/SetupView.vue");
+const SetupView = () => import("../views/SetupView.vue");
 
 const routes: RouteRecordRaw[] = [
   // 登录 / 注册独立于主布局
@@ -231,6 +233,14 @@ const routes: RouteRecordRaw[] = [
     component: NotFoundView,
     meta: { title: "页面不存在" },
   },
+
+  // 初始化向导
+  {
+    path: "/setup",
+    name: "setup",
+    component: SetupView,
+    meta: { title: "初始化向导" },
+  },
 ];
 
 const router = createRouter({
@@ -241,8 +251,33 @@ const router = createRouter({
   },
 });
 
-// 全局前置守卫：登录校验 + 页面标题
-router.beforeEach((to) => {
+// 全局前置守卫：登录校验 + 页面标题 + 初始化检查
+router.beforeEach(async (to) => {
+  // 检查初始化状态
+  try {
+    const response = await fetch("/api/setup/status");
+    const data = await response.json();
+    
+    if (data.success && data.data.initialized) {
+      // 已初始化，检查是否访问 setup 页面
+      if (to.path === "/setup") {
+        return "/"; // 跳转到首页
+      }
+    } else {
+      // 未初始化，检查是否访问其他页面
+      if (to.path !== "/setup" && to.path !== "/login" && to.path !== "/register") {
+        return "/setup"; // 跳转到 setup 页面
+      }
+    }
+  } catch (error) {
+    console.error("检查初始化状态失败:", error);
+    // 如果检查失败，允许访问 setup 页面
+    if (to.path === "/setup") {
+      return true;
+    }
+  }
+
+  // 原有的登录校验逻辑
   if (to.meta.requiresAuth) {
     const auth = useAuthStore();
     // 会话尚未加载完成时先视为游客，由页面自行处理加载态
