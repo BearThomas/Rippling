@@ -108,9 +108,10 @@ CREATE TABLE user_log (
 -- ============================================================
 
 -- 帖子表（支持嵌套回复 parentId、板块归属 blockId）
+-- 注意：parentId 不加外键——大事记评论复用 post 表，parentId 可能指向 timeline_event(id)
 CREATE TABLE post (
     id            TEXT PRIMARY KEY,
-    parentId      TEXT REFERENCES post(id),
+    parentId      TEXT,
     authorId      TEXT NOT NULL REFERENCES user(id),
     authorVisible INTEGER NOT NULL DEFAULT 1,
     title         TEXT,

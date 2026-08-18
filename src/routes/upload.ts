@@ -93,8 +93,17 @@ uploadRoutes.post("/image", requirePermission(PERM_UPLOAD_IMAGE), async (c) => {
     url = await uploadImageToB2(file, c.env);
   } catch (err) {
     console.error("[Upload] B2 upload failed:", err);
+    // 调试期：向客户端暴露具体错误信息与堆栈，定位后改回通用提示
+    const msg = err instanceof Error ? err.message : String(err);
     return c.json(
-      { success: false, error: { code: INTERNAL_ERROR.code, message: "图片上传失败，请稍后重试" } },
+      {
+        success: false,
+        error: {
+          code: INTERNAL_ERROR.code,
+          message: `上传失败: ${msg}`,
+          stack: err instanceof Error ? err.stack : undefined,
+        },
+      },
       INTERNAL_ERROR.statusCode as any
     );
   }
