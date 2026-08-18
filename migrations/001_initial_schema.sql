@@ -70,7 +70,7 @@ CREATE TABLE user_profile (
     id                TEXT PRIMARY KEY,
     userId            TEXT NOT NULL UNIQUE REFERENCES user(id),
     studentId         TEXT UNIQUE,
-    username          TEXT NOT NULL UNIQUE,
+    username          TEXT NOT NULL,
     permissions       INTEGER NOT NULL DEFAULT 0,
     nameColor         TEXT DEFAULT 'black',
     badge             TEXT,
