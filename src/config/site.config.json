@@ -3,7 +3,7 @@
   "authMethod": "student_id",
   "studentIdPattern": "^20\\d{6}$",
   "studentIdHint": "格式：20 开头 + 6 位数字",
-  "defaultPermissions": 0,
+  "defaultPermissions": 85701697087,
   "archiveDays": 30,
   "theme": {
     "preset": "light",
