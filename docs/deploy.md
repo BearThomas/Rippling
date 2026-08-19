@@ -242,7 +242,7 @@ Cloudflare 需要能访问到 Rippling 的源码。
 2. 进入 **探索数据**，点击上方标签栏的 new，是一个大的输入框
 3. 打开仓库中的 `migrations/001_initial_schema.sql` 文件，
    复制**全部内容**粘贴到 Console，点击右边的向下的箭头，选择第2/3个 **Run**，等待提示成功
-4. 再用同样方式执行 `migrations/002_indexes.sql` 的全部内容
+4. 再用同样方式执行 `migrations/002_indexes.sql` 和 `003_question_box_owner_index.sql` 的全部内容
 
 > ⚠️ 方式 B 注意：两个文件必须**按顺序**执行（先 001 后 002），
 > 每次只粘贴一个文件的内容。
