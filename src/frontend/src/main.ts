@@ -30,7 +30,14 @@ const theme = useThemeStore();
 const auth = useAuthStore();
 const notification = useNotificationStore();
 
-void theme.loadConfig();
+void theme.loadConfig().then(() => {
+  // 配置加载完成后刷新当前页标题：
+  // 首次路由导航的 afterEach 可能早于 /api/config 返回（当时回退为 Rippling），
+  // 这里用自定义 siteName 重新拼接，保证首屏即显示正确标题
+  const route = router.currentRoute.value;
+  const title = route.meta.title as string | undefined;
+  document.title = title ? `${title} · ${theme.siteName}` : theme.siteName;
+});
 void auth.fetchSession().then(() => {
   // 登录用户启动未读通知轮询（红点）
   if (auth.isLoggedIn) notification.startPolling();

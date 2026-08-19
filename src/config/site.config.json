@@ -1,5 +1,6 @@
 {
   "siteName": "Rippling",
+  "siteIcon": "",
   "authMethod": "student_id",
   "studentIdPattern": "^20\\d{6}$",
   "studentIdHint": "格式：20 开头 + 6 位数字",

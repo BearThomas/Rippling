@@ -578,7 +578,7 @@ const currentAvatar = computed(() => auth.session?.user?.image ?? null);
     <section class="card-base text-sm">
       <h3 class="mb-3 font-semibold">关于</h3>
       <div class="space-y-2 text-ink-soft">
-        <p>Rippling · 校园论坛</p>
+        <p>{{ theme.siteName }} · 校园论坛</p>
         <p>版本：{{ ABOUT.version }}</p>
         <p>开源协议：{{ ABOUT.license }}</p>
         <a

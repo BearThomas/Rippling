@@ -10,6 +10,7 @@ import { onMounted, ref } from "vue";
 import LoadingSpinner from "../common/LoadingSpinner.vue";
 import ErrorState from "../common/ErrorState.vue";
 import { getAdminSiteConfig, updateAdminSiteConfig } from "../../api/admin";
+import { uploadImage, MAX_IMAGE_SIZE } from "../../api/upload";
 import { showToast } from "../../utils/toast";
 import type { SiteConfig } from "../../types";
 
@@ -19,6 +20,9 @@ const props = defineProps<{ canEdit: boolean }>();
 const loading = ref(true);
 const error = ref(false);
 const saving = ref(false);
+/** 图标上传状态 */
+const iconUploading = ref(false);
+const iconInput = ref<HTMLInputElement | null>(null);
 /** 表单状态（加载后深拷贝，避免直接引用响应数据） */
 const form = ref<SiteConfig | null>(null);
 
@@ -62,6 +66,46 @@ const DEFAULT_NAME_COLORS = {
   owner: "#8B5CF6",
   superadmin: "#EF4444",
 } as const;
+
+/** 图标 MIME 白名单（与后端一致） */
+const ICON_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+/** 选择图标 → 前端校验 → 上传（/api/upload/image）→ 预览 */
+async function onIconChange(event: Event): Promise<void> {
+  if (!form.value) return;
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  // 清空 input 以便重复选择同一文件
+  input.value = "";
+  if (!file) return;
+
+  if (!ICON_TYPES.includes(file.type)) {
+    showToast("仅支持 JPEG / PNG / WebP / GIF 图片", "error");
+    return;
+  }
+  if (file.size > MAX_IMAGE_SIZE) {
+    showToast("图片超过 2MB，请压缩后再上传", "error");
+    return;
+  }
+
+  iconUploading.value = true;
+  try {
+    const { url } = await uploadImage(file);
+    form.value.siteIcon = url;
+    showToast("图标上传成功，保存后生效", "success");
+  } catch {
+    // uploadTo 已自动 Toast（含“图床未配置，暂无法上传图片”）
+  } finally {
+    iconUploading.value = false;
+  }
+}
+
+/** 移除图标（保存后生效） */
+function removeIcon(): void {
+  if (!form.value) return;
+  form.value.siteIcon = "";
+  showToast("已移除图标，保存后生效", "info");
+}
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -123,6 +167,55 @@ onMounted(load);
             <span class="mb-1 block text-xs text-ink-soft">站点名称</span>
             <input v-model="form.siteName" type="text" class="input-base w-full" />
           </label>
+
+          <!-- 站点图标 -->
+          <div>
+            <span class="mb-1 block text-xs text-ink-soft">站点图标</span>
+            <div class="flex items-center gap-4">
+              <!-- 当前图标预览 -->
+              <div
+                class="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-page"
+              >
+                <img
+                  v-if="form.siteIcon"
+                  :src="form.siteIcon"
+                  alt="站点图标"
+                  class="h-full w-full object-cover"
+                />
+                <span v-else class="text-xl text-ink-soft">🏫</span>
+              </div>
+
+              <div class="flex-1 space-y-1.5">
+                <input
+                  ref="iconInput"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  class="hidden"
+                  @change="onIconChange"
+                />
+                <button
+                  type="button"
+                  class="btn-secondary w-full text-sm"
+                  :disabled="iconUploading"
+                  @click="iconInput?.click()"
+                >
+                  {{ iconUploading ? "上传中…" : form.siteIcon ? "更换图标" : "上传图标" }}
+                </button>
+                <button
+                  v-if="form.siteIcon"
+                  type="button"
+                  class="w-full text-left text-xs text-red-500 hover:underline"
+                  @click="removeIcon"
+                >
+                  移除图标
+                </button>
+                <p class="text-xs text-ink-soft">
+                  支持 JPEG / PNG / WebP / GIF，≤2MB；保存后作为标签页 favicon 与站内 Logo
+                </p>
+              </div>
+            </div>
+          </div>
+
           <label class="block">
             <span class="mb-1 block text-xs text-ink-soft">学号格式正则</span>
             <input v-model="form.studentIdPattern" type="text" class="input-base w-full font-mono text-xs" />

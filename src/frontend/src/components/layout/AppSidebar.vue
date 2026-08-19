@@ -55,12 +55,18 @@ onMounted(async () => {
     class="group fixed left-0 top-0 z-50 hidden h-screen w-16 flex-col overflow-hidden border-r border-line bg-surface transition-[width] duration-200 hover:w-[220px] lg:flex"
     aria-label="主导航"
   >
-    <!-- Logo：站点名（悬停展开显示） -->
+    <!-- Logo：站点图标（如有）+ 站点名（悬停展开显示） -->
     <RouterLink
       to="/"
-      class="flex h-14 shrink-0 items-center px-3"
+      class="flex h-14 shrink-0 items-center gap-2 px-3"
       :title="theme.siteName"
     >
+      <img
+        v-if="theme.siteIcon"
+        :src="theme.siteIcon"
+        alt=""
+        class="h-7 w-7 shrink-0 rounded-md object-cover"
+      />
       <span
         class="truncate whitespace-nowrap text-base font-semibold text-primary opacity-0 transition-opacity duration-150 group-hover:opacity-100"
       >

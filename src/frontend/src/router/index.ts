@@ -16,6 +16,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import type { RouteRecordRaw } from "vue-router";
 import AppLayout from "../components/layout/AppLayout.vue";
 import { useAuthStore } from "../stores/auth";
+import { useThemeStore } from "../stores/theme";
 
 // 主布局页面（首屏依赖，直接静态导入）
 import HomeView from "../views/HomeView.vue";
@@ -287,7 +288,9 @@ router.beforeEach(async (to) => {
 
 router.afterEach((to) => {
   const title = to.meta.title as string | undefined;
-  document.title = title ? `${title} · Rippling` : "Rippling";
+  // 站点名使用主题 store（/api/config 动态读取，未加载时回退 Rippling）
+  const { siteName } = useThemeStore();
+  document.title = title ? `${title} · ${siteName}` : siteName;
 });
 
 export default router;

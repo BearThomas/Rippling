@@ -55,7 +55,8 @@ function goBack(): void {
       >
         <AppSvgIcon name="back" :size="20" />
       </button>
-      <h1 v-if="isHome" class="text-lg font-semibold text-primary lg:hidden">
+      <h1 v-if="isHome" class="flex items-center gap-2 text-lg font-semibold text-primary lg:hidden">
+        <img v-if="theme.siteIcon" :src="theme.siteIcon" alt="" class="h-6 w-6 rounded object-cover" />
         {{ theme.siteName }}
       </h1>
       <h1 v-else class="truncate text-base font-semibold">{{ title }}</h1>

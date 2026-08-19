@@ -57,6 +57,8 @@ export interface SiteConfigNameColors {
 /** 站点配置 */
 export interface SiteConfig {
   siteName: string;
+  /** 站点图标（图片 URL，可为空串表示未设置） */
+  siteIcon?: string;
   authMethod: string;
   studentIdPattern: string;
   studentIdHint: string;

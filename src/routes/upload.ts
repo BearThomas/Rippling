@@ -91,6 +91,25 @@ uploadRoutes.post("/image", requirePermission(PERM_UPLOAD_IMAGE), async (c) => {
     );
   }
 
+  // B2 图床未配置：提前返回友好提示（避免签名报错堆栈）
+  if (
+    !c.env.B2_BUCKET_NAME ||
+    !c.env.B2_ACCESS_KEY_ID ||
+    !c.env.B2_SECRET_ACCESS_KEY ||
+    !c.env.B2_ENDPOINT
+  ) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          code: "IMAGE_HOST_NOT_CONFIGURED",
+          message: "图床未配置，暂无法上传图片",
+        },
+      },
+      400
+    );
+  }
+
   // 上传到 B2
   let result: { url: string; key: string };
   try {

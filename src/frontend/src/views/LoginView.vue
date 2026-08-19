@@ -52,7 +52,15 @@ async function handleSubmit(): Promise<void> {
 
 <template>
   <div class="mx-auto flex min-h-screen w-full max-w-app flex-col justify-center px-6">
-    <h1 class="mb-1 text-center text-2xl font-bold text-primary">{{ theme.siteName }}</h1>
+    <div class="mb-1 flex items-center justify-center gap-3">
+      <img
+        v-if="theme.siteIcon"
+        :src="theme.siteIcon"
+        alt=""
+        class="h-10 w-10 rounded-lg object-cover"
+      />
+      <h1 class="text-center text-2xl font-bold text-primary">{{ theme.siteName }}</h1>
+    </div>
     <p class="mb-8 text-center text-sm text-ink-soft">校园社区论坛</p>
 
     <form class="space-y-4" @submit.prevent="handleSubmit">

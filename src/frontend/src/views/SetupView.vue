@@ -28,6 +28,56 @@
             />
           </div>
 
+          <!-- 站点图标（可选） -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              站点图标（可选）
+            </label>
+            <div class="flex items-center gap-4">
+              <!-- 预览 -->
+              <div
+                class="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-600 dark:bg-gray-700"
+              >
+                <img
+                  v-if="form.siteIcon"
+                  :src="form.siteIcon"
+                  alt="站点图标预览"
+                  class="h-full w-full object-cover"
+                />
+                <span v-else class="text-2xl text-gray-400">🏫</span>
+              </div>
+
+              <div class="flex-1 space-y-2">
+                <input
+                  ref="iconInput"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  class="hidden"
+                  @change="onIconChange"
+                />
+                <button
+                  type="button"
+                  class="btn-secondary w-full"
+                  :disabled="iconUploading"
+                  @click="iconInput?.click()"
+                >
+                  {{ iconUploading ? "上传中…" : form.siteIcon ? "重新上传" : "上传图片" }}
+                </button>
+                <button
+                  v-if="form.siteIcon"
+                  type="button"
+                  class="w-full text-xs text-red-500 hover:underline"
+                  @click="removeIcon"
+                >
+                  移除图标
+                </button>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                  支持 JPEG / PNG / WebP / GIF，不超过 2MB；上传后作为浏览器标签页与站内 Logo
+                </p>
+              </div>
+            </div>
+          </div>
+
           <!-- 学号格式 -->
           <div>
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -185,6 +235,7 @@ import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { showToast } from "../utils/toast";
 import { apiGet, apiPost } from "../api/client";
+import { uploadSetupIcon, MAX_IMAGE_SIZE } from "../api/upload";
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
 
 interface SetupFormData {
@@ -194,11 +245,15 @@ interface SetupFormData {
   adminStudentId: string;
   adminPassword: string;
   theme: string;
+  /** 站点图标 URL（可选，来自 /api/setup/upload-icon） */
+  siteIcon: string;
 }
 
 const router = useRouter();
 const loading = ref(false);
 const showPassword = ref(false);
+const iconUploading = ref(false);
+const iconInput = ref<HTMLInputElement | null>(null);
 const form = ref<SetupFormData>({
   siteName: "",
   studentIdPattern: "^20\\d{6}$",
@@ -206,6 +261,7 @@ const form = ref<SetupFormData>({
   adminStudentId: "",
   adminPassword: "",
   theme: "campus",
+  siteIcon: "",
 });
 
 const themes = [
@@ -257,6 +313,45 @@ function getPasswordStrengthText(): string {
   if (password.length < 6) return "弱";
   if (password.length < 8) return "中等";
   return "强";
+}
+
+/** 图标 MIME 白名单（与后端一致） */
+const ICON_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+/** 选择图标文件 → 前端校验 → 上传 → 预览 */
+async function onIconChange(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  // 清空 input 以便重复选择同一文件
+  input.value = "";
+  if (!file) return;
+
+  // 前端校验类型与大小（后端同样校验，这里提前提示）
+  if (!ICON_TYPES.includes(file.type)) {
+    showToast("仅支持 JPEG / PNG / WebP / GIF 图片", "error");
+    return;
+  }
+  if (file.size > MAX_IMAGE_SIZE) {
+    showToast("图片超过 2MB，请压缩后再上传", "error");
+    return;
+  }
+
+  iconUploading.value = true;
+  try {
+    const { url } = await uploadSetupIcon(file);
+    form.value.siteIcon = url;
+    showToast("图标上传成功", "success");
+  } catch {
+    // uploadTo 已自动 Toast（含“图床未配置，暂无法上传图标”）
+  } finally {
+    iconUploading.value = false;
+  }
+}
+
+/** 移除已选图标 */
+function removeIcon(): void {
+  form.value.siteIcon = "";
+  showToast("已移除图标，将使用默认图标", "info");
 }
 
 async function handleSubmit() {

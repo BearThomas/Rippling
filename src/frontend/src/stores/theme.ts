@@ -26,6 +26,8 @@ export const useThemeStore = defineStore("theme", {
   getters: {
     /** 站点名称 */
     siteName: (state) => state.config?.siteName ?? "Rippling",
+    /** 站点图标 URL（未设置时为空串） */
+    siteIcon: (state) => state.config?.siteIcon ?? "",
     /** 当前主题预设 */
     preset: (state) => state.config?.theme?.preset ?? "light",
   },
@@ -39,7 +41,40 @@ export const useThemeStore = defineStore("theme", {
         this.config = null;
       }
       this.applyTheme();
+      this.applySiteIdentity();
       this.loaded = true;
+    },
+
+    /**
+     * 应用站点身份：浏览器标签页标题 + favicon
+     *
+     * 站点名称来自 /api/config 的 siteName（标题统一以 siteName 结尾）；
+     * siteIcon 存在时动态更新 link[rel="icon"]，为空保留默认 favicon。
+     */
+    applySiteIdentity(): void {
+      const name = this.siteName;
+
+      // 1. 标签页标题（无后缀，路由 afterEach 会拼接页面标题）
+      document.title = name;
+
+      // 2. favicon
+      const icon = this.siteIcon;
+      let link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
+      if (icon) {
+        if (!link) {
+          link = document.createElement("link");
+          link.rel = "icon";
+          document.head.appendChild(link);
+        }
+        if (link.href !== icon) {
+          link.href = icon;
+        }
+      }
+      // siteIcon 为空：保留 index.html 中的默认 favicon，不做任何修改
+
+      // 3. iOS 添加到主屏幕的标题
+      const meta = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+      if (meta) meta.setAttribute("content", name);
     },
 
     /** 将主题配置应用到根元素 CSS 变量 */
