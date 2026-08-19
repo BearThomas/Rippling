@@ -46,6 +46,7 @@ const TicketDetailView = () => import("../views/TicketDetailView.vue");
 const TicketCreateView = () => import("../views/TicketCreateView.vue");
 const AdminLogView = () => import("../views/AdminLogView.vue");
 const QuestionBoxView = () => import("../views/QuestionBoxView.vue");
+const FollowListView = () => import("../views/FollowListView.vue");
 const NotFoundView = () => import("../views/NotFoundView.vue");
 const SetupView = () => import("../views/SetupView.vue");
 
@@ -107,6 +108,18 @@ const routes: RouteRecordRaw[] = [
         name: "user-profile",
         component: UserProfileView,
         meta: { title: "用户主页", showBack: true, showTabbar: false },
+      },
+      {
+        path: "user/:id/following",
+        name: "user-following",
+        component: FollowListView,
+        meta: { title: "关注", showBack: true, showTabbar: false },
+      },
+      {
+        path: "user/:id/followers",
+        name: "user-followers",
+        component: FollowListView,
+        meta: { title: "粉丝", showBack: true, showTabbar: false },
       },
       {
         // 注意：静态段 "post/create" 由 Vue Router 4 的打分机制保证

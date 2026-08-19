@@ -62,16 +62,22 @@ const avatarChar = computed(() => props.profile.username.slice(0, 1) || "?");
           </span>
         </div>
 
-        <!-- 关注数 / 粉丝数 -->
+        <!-- 关注数 / 粉丝数（可点击进入对应列表） -->
         <div class="mt-2 flex gap-5 text-sm">
-          <span>
+          <RouterLink
+            :to="{ name: 'user-following', params: { id: profile.userId } }"
+            class="transition-opacity active:opacity-60"
+          >
             <b class="font-semibold">{{ profile.followingCount }}</b>
             <span class="ml-1 text-ink-soft">关注</span>
-          </span>
-          <span>
+          </RouterLink>
+          <RouterLink
+            :to="{ name: 'user-followers', params: { id: profile.userId } }"
+            class="transition-opacity active:opacity-60"
+          >
             <b class="font-semibold">{{ profile.followerCount }}</b>
             <span class="ml-1 text-ink-soft">粉丝</span>
-          </span>
+          </RouterLink>
         </div>
       </div>
 
