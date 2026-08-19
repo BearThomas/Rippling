@@ -89,6 +89,13 @@ export async function setQuestionBoxEnabled(
       .bind(generateUUID(), ownerId, enabled ? 1 : 0, onlyFollowers ? 1 : 0, nowISO())
       .run();
   }
+
+  // 同步 user_profile.questionBoxEnabled：
+  // 公开资料 / 搜索 / 管理端均读取该字段，不同步会导致开启后入口不显示。
+  await db
+    .prepare("UPDATE user_profile SET questionBoxEnabled = ? WHERE userId = ?")
+    .bind(enabled ? 1 : 0, ownerId)
+    .run();
 }
 
 /**

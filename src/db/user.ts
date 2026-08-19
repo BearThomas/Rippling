@@ -200,12 +200,16 @@ export async function getUserPublicProfile(
   currentUser: CurrentUser | null
 ): Promise<UserPublicProfile | null> {
   // user_profile 与 user 表左连接，一次查出基础资料 + 头像
+  // questionBoxEnabled 以 question_box 表为准：
+  // LEFT JOIN 兼容「无提问箱行 / 历史开启过但 user_profile 未同步」的情况，
+  // 避免用户在设置中开启提问箱后入口仍不显示。
   const row = await db
     .prepare(
-      `SELECT p.userId, p.username, p.permissions, p.badge, p.questionBoxEnabled,
-              p.createdAt, u.image AS avatar
+      `SELECT p.userId, p.username, p.permissions, p.badge, p.createdAt,
+              u.image AS avatar, COALESCE(qb.enabled, 0) AS boxEnabled
        FROM user_profile p
        LEFT JOIN user u ON u.id = p.userId
+       LEFT JOIN question_box qb ON qb.ownerId = p.userId
        WHERE p.userId = ?`
     )
     .bind(userId)
@@ -214,9 +218,9 @@ export async function getUserPublicProfile(
       username: string;
       permissions: number;
       badge: string | null;
-      questionBoxEnabled: number;
       createdAt: string;
       avatar: string | null;
+      boxEnabled: number;
     }>();
 
   if (!row) return null;
@@ -252,7 +256,7 @@ export async function getUserPublicProfile(
     nameColor: computeNameColor(BigInt(row.permissions), nameColors),
     badge: row.badge,
     avatar: row.avatar,
-    questionBoxEnabled: !!row.questionBoxEnabled,
+    questionBoxEnabled: !!row.boxEnabled,
     followingCount: followingRow?.count ?? 0,
     followerCount: followerRow?.count ?? 0,
     isFollowedByMe,
