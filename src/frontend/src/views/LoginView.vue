@@ -11,6 +11,7 @@ import { signIn } from "../api/auth";
 import { useAuthStore } from "../stores/auth";
 import { useThemeStore } from "../stores/theme";
 import { useNotificationStore } from "../stores/notification";
+import { clearPermissionCache } from "../utils/myPermissions";
 import { showToast } from "../utils/toast";
 
 const route = useRoute();
@@ -35,6 +36,9 @@ async function handleSubmit(): Promise<void> {
   try {
     await signIn({ email: studentId.value.trim(), password: password.value });
     await auth.fetchSession();
+    // 登录后清权限缓存：若此前以游客身份访问过站点（缓存权限 "0"），
+    // 不清除会导致管理面板等按权限显隐的入口在本次会话内一直不显示。
+    clearPermissionCache();
     notification.startPolling();
     showToast("登录成功", "success");
 
