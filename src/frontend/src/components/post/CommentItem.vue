@@ -8,7 +8,7 @@
   子评论懒加载：点击「展开 N 条回复」时调用 GET /api/post/comments。
 -->
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import AppSvgIcon from "../layout/AppSvgIcon.vue";
 import MarkdownRenderer from "../markdown/MarkdownRenderer.vue";
@@ -62,6 +62,14 @@ const authorName = props.comment.author?.username ?? "匿名用户";
 
 /** 头像占位首字 */
 const avatarChar = authorName.slice(0, 1);
+
+/** 作者主页路由（作者存在且有 id 时返回；匿名评论为 null → 不可点击） */
+const authorProfileLink = computed(() => {
+  const author = props.comment.author;
+  return author?.id
+    ? { name: "user-profile" as const, params: { id: author.id } }
+    : null;
+});
 
 /** 切换点赞 */
 async function onToggleLike(): Promise<void> {
@@ -126,34 +134,50 @@ function openCommentDetail(): void {
   <div class="py-2.5" :class="depth > 1 ? 'border-l-2 border-line pl-3' : ''">
     <!-- 作者行 -->
     <div class="mb-1 flex items-center gap-2">
-      <!-- 头像（有头像显示图片，否则首字占位；匿名用灰色） -->
-      <img
-        v-if="comment.author?.avatar"
-        :src="comment.author.avatar"
-        :alt="authorName"
-        class="h-6 w-6 shrink-0 rounded-full object-cover"
-      />
-      <span
-        v-else
-        class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
-        :style="
-          comment.author?.nameColor
-            ? {
-                color: comment.author.nameColor,
-                background: 'color-mix(in srgb, ' + comment.author.nameColor + ' 14%, transparent)',
-              }
-            : undefined
-        "
-        :class="comment.author ? '' : 'bg-line text-ink-soft'"
+      <!-- 有作者 → 头像 + 用户名点击跳转用户主页 -->
+      <RouterLink
+        v-if="authorProfileLink"
+        :to="authorProfileLink"
+        class="flex min-w-0 items-center gap-2"
+        @click.stop
       >
-        {{ avatarChar }}
-      </span>
-      <span
-        class="truncate text-sm font-medium"
-        :style="{ color: comment.author?.nameColor ?? undefined }"
-      >
-        {{ authorName }}
-      </span>
+        <img
+          v-if="comment.author?.avatar"
+          :src="comment.author.avatar"
+          :alt="authorName"
+          class="h-6 w-6 shrink-0 rounded-full object-cover"
+        />
+        <span
+          v-else
+          class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
+          :style="
+            comment.author?.nameColor
+              ? {
+                  color: comment.author.nameColor,
+                  background: 'color-mix(in srgb, ' + comment.author.nameColor + ' 14%, transparent)',
+                }
+              : undefined
+          "
+        >
+          {{ avatarChar }}
+        </span>
+        <span
+          class="truncate text-sm font-medium"
+          :style="{ color: comment.author?.nameColor ?? undefined }"
+        >
+          {{ authorName }}
+        </span>
+      </RouterLink>
+
+      <!-- 匿名：头像 + 用户名不可点击 -->
+      <template v-else>
+        <span
+          class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-line text-[10px] font-semibold text-ink-soft"
+        >
+          {{ avatarChar }}
+        </span>
+        <span class="truncate text-sm font-medium">{{ authorName }}</span>
+      </template>
       <span class="ml-auto shrink-0 text-[11px] text-ink-soft">
         {{ formatRelativeTime(comment.createdAt) }}
       </span>

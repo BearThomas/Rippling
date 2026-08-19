@@ -19,6 +19,7 @@ import EmptyState from "../components/common/EmptyState.vue";
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
 import CommentItem from "../components/post/CommentItem.vue";
 import CommentComposer from "../components/post/CommentComposer.vue";
+import FollowButton from "../components/user/FollowButton.vue";
 import {
   getPost,
   getComments,
@@ -28,7 +29,8 @@ import {
   togglePinPost,
 } from "../api/post";
 import { toggleLike } from "../api/like";
-import { followUser, unfollowUser, getFollowStatus } from "../api/follow";
+import { getFollowStatus } from "../api/follow";
+import { getUserProfile } from "../api/user";
 import { getBlockDetail } from "../api/block";
 import { formatDateTime, formatNumber } from "../utils/format";
 import { showToast } from "../utils/toast";
@@ -69,7 +71,9 @@ const likeBusy = ref(false);
 
 /** 关注状态（null = 未知 / 不可关注） */
 const following = ref<boolean | null>(null);
-const followBusy = ref(false);
+
+/** 作者是否开启提问箱（null = 未知 / 未查询到） */
+const authorQuestionBoxEnabled = ref<boolean | null>(null);
 
 /** 所属板块名（blockId 存在时查询） */
 const blockName = ref<string | null>(null);
@@ -126,6 +130,14 @@ const authorName = computed(() => post.value?.author?.username ?? "匿名");
 /** 头像占位首字 */
 const avatarChar = computed(() => authorName.value.slice(0, 1));
 
+/** 作者主页路由（作者存在且有 id 时返回；匿名帖为 null → 不可点击） */
+const authorProfileLink = computed(() => {
+  const author = post.value?.author;
+  return author?.id
+    ? { name: "user-profile" as const, params: { id: author.id } }
+    : null;
+});
+
 // ------------------------------------------------------------
 //  加载
 // ------------------------------------------------------------
@@ -177,6 +189,16 @@ async function loadRelations(): Promise<void> {
     }
   }
 
+  // 提问箱状态：作者公开资料中查询（决定「提问箱」入口可见性）
+  if (p.authorId) {
+    try {
+      const profile = await getUserProfile(p.authorId);
+      authorQuestionBoxEnabled.value = profile.questionBoxEnabled;
+    } catch {
+      authorQuestionBoxEnabled.value = false;
+    }
+  }
+
   // 板块名
   if (p.blockId) {
     try {
@@ -214,28 +236,6 @@ async function onToggleLike(): Promise<void> {
     // client.ts 已自动 Toast
   } finally {
     likeBusy.value = false;
-  }
-}
-
-/** 关注 / 取消关注作者 */
-async function onToggleFollow(): Promise<void> {
-  const authorId = post.value?.authorId;
-  if (!authorId || !requireLogin() || followBusy.value) return;
-  followBusy.value = true;
-  try {
-    if (following.value) {
-      await unfollowUser(authorId);
-      following.value = false;
-      showToast("已取消关注", "success");
-    } else {
-      await followUser(authorId);
-      following.value = true;
-      showToast("关注成功", "success");
-    }
-  } catch {
-    // client.ts 已自动 Toast
-  } finally {
-    followBusy.value = false;
   }
 }
 
@@ -343,34 +343,47 @@ onMounted(load);
       <article class="card-base">
         <!-- 作者行 -->
         <div class="mb-3 flex items-center gap-2">
-          <!-- 头像（有头像显示图片，否则首字占位；匿名用灰色） -->
-          <img
-            v-if="post.author?.avatar"
-            :src="post.author.avatar"
-            :alt="authorName"
-            class="h-9 w-9 shrink-0 rounded-full object-cover"
-          />
+          <!-- 头像（有作者时点击跳转用户主页；匿名不可点击） -->
+          <RouterLink v-if="authorProfileLink" :to="authorProfileLink" class="shrink-0">
+            <img
+              v-if="post.author?.avatar"
+              :src="post.author.avatar"
+              :alt="authorName"
+              class="h-9 w-9 shrink-0 rounded-full object-cover"
+            />
+            <span
+              v-else
+              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
+              :style="
+                post.author?.nameColor
+                  ? {
+                      color: post.author.nameColor,
+                      background: 'color-mix(in srgb, ' + post.author.nameColor + ' 14%, transparent)',
+                    }
+                  : undefined
+              "
+              :class="post.author ? 'bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)]' : 'bg-line text-ink-soft'"
+            >
+              {{ avatarChar }}
+            </span>
+          </RouterLink>
           <span
             v-else
-            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
-            :style="
-              post.author?.nameColor
-                ? {
-                    color: post.author.nameColor,
-                    background: 'color-mix(in srgb, ' + post.author.nameColor + ' 14%, transparent)',
-                  }
-                : undefined
-            "
-            :class="post.author ? 'bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)]' : 'bg-line text-ink-soft'"
+            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-line text-sm font-semibold text-ink-soft"
           >
             {{ avatarChar }}
           </span>
           <div class="min-w-0">
             <div class="flex items-center gap-1.5">
-              <span
-                class="truncate text-sm font-semibold"
+              <RouterLink
+                v-if="authorProfileLink"
+                :to="authorProfileLink"
+                class="truncate text-sm font-semibold hover:underline"
                 :style="{ color: post.author?.nameColor ?? undefined }"
               >
+                {{ authorName }}
+              </RouterLink>
+              <span v-else class="truncate text-sm font-semibold">
                 {{ authorName }}
               </span>
               <span
@@ -383,17 +396,23 @@ onMounted(load);
             <div class="text-[11px] text-ink-soft">{{ formatDateTime(post.createdAt) }}</div>
           </div>
 
-          <!-- 关注按钮（有作者且非本人） -->
-          <button
-            v-if="post.authorId && post.authorId !== auth.userId"
-            type="button"
-            class="ml-auto shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-opacity active:opacity-70 disabled:opacity-50"
-            :class="following ? 'bg-line text-ink-soft' : 'bg-primary text-white'"
-            :disabled="followBusy || following === null"
-            @click="onToggleFollow"
-          >
-            {{ following === null ? "…" : following ? "已关注" : "关注" }}
-          </button>
+          <!-- 作者操作区：提问箱入口（作者开启时）+ 关注按钮（非本人时） -->
+          <div class="ml-auto flex shrink-0 items-center gap-2">
+            <RouterLink
+              v-if="post.authorId && authorQuestionBoxEnabled"
+              :to="{ name: 'question-box', params: { userId: post.authorId } }"
+              class="flex items-center gap-1 rounded-full border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink-soft transition-opacity active:opacity-70"
+            >
+              <AppSvgIcon name="inbox" :size="14" />
+              提问箱
+            </RouterLink>
+            <FollowButton
+              v-if="post.authorId && post.authorId !== auth.userId"
+              :user-id="post.authorId"
+              :following="following ?? false"
+              @change="(next: boolean) => (following = next)"
+            />
+          </div>
         </div>
 
         <!-- 板块标签 -->

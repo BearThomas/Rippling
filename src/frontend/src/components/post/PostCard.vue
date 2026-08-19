@@ -41,6 +41,14 @@ const authorName = computed(() => props.post.author?.username ?? "匿名用户")
 /** 头像占位：作者名首字 */
 const avatarChar = computed(() => authorName.value.slice(0, 1));
 
+/** 作者主页路由（作者存在且有 id 时返回；匿名为 null → 不可点击） */
+const authorProfileLink = computed(() => {
+  const author = props.post.author;
+  return author?.id
+    ? { name: "user-profile" as const, params: { id: author.id } }
+    : null;
+});
+
 /** 内容预览（Markdown 转纯文本后截断） */
 const preview = computed(() => {
   const plain = props.post.content
@@ -73,34 +81,51 @@ function openDetail(): void {
   >
     <!-- 作者行 -->
     <div class="mb-2 flex items-center gap-2">
-      <!-- 头像（有头像显示图片，否则首字占位；匿名用灰色） -->
-      <img
-        v-if="post.author?.avatar"
-        :src="post.author.avatar"
-        :alt="authorName"
-        class="h-7 w-7 shrink-0 rounded-full object-cover"
-      />
-      <span
-        v-else
-        class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-        :style="
-          post.author?.nameColor
-            ? {
-                color: post.author.nameColor,
-                background: 'color-mix(in srgb, ' + post.author.nameColor + ' 14%, transparent)',
-              }
-            : undefined
-        "
-        :class="isAnonymous ? 'bg-line text-ink-soft' : 'bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] text-primary'"
+      <!-- 有作者 → 头像 + 用户名包成链接，点击跳转用户主页（.stop 阻止触发整卡跳转） -->
+      <RouterLink
+        v-if="authorProfileLink"
+        :to="authorProfileLink"
+        class="flex min-w-0 items-center gap-2"
+        @click.stop
       >
-        {{ avatarChar }}
-      </span>
-      <span
-        class="truncate text-sm font-medium"
-        :style="{ color: post.author?.nameColor ?? undefined }"
-      >
-        {{ authorName }}
-      </span>
+        <img
+          v-if="post.author?.avatar"
+          :src="post.author.avatar"
+          :alt="authorName"
+          class="h-7 w-7 shrink-0 rounded-full object-cover"
+        />
+        <span
+          v-else
+          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+          :style="
+            post.author?.nameColor
+              ? {
+                  color: post.author.nameColor,
+                  background: 'color-mix(in srgb, ' + post.author.nameColor + ' 14%, transparent)',
+                }
+              : undefined
+          "
+          :class="isAnonymous ? 'bg-line text-ink-soft' : 'bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] text-primary'"
+        >
+          {{ avatarChar }}
+        </span>
+        <span
+          class="truncate text-sm font-medium"
+          :style="{ color: post.author?.nameColor ?? undefined }"
+        >
+          {{ authorName }}
+        </span>
+      </RouterLink>
+
+      <!-- 匿名：头像 + 用户名不可点击 -->
+      <template v-else>
+        <span
+          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-line text-xs font-semibold text-ink-soft"
+        >
+          {{ avatarChar }}
+        </span>
+        <span class="truncate text-sm font-medium">{{ authorName }}</span>
+      </template>
       <span
         v-if="post.author?.badge"
         class="shrink-0 rounded bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] px-1 text-[10px] text-primary"
