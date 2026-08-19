@@ -77,7 +77,10 @@ async function submitUsername(): Promise<void> {
     await updateUsername(name);
     showToast("用户名修改成功（每月最多 4 次）", "success");
     usernameSheet.value = false;
-    await auth.fetchSession(); // 同步会话中的用户名
+    // 本地立即同步会话用户名（界面即时生效，不依赖重新拉取会话）
+    auth.setUsername(name);
+    // 后端已同步 user.name，重新拉取会话以保持与服务端一致
+    await auth.fetchSession();
   } catch {
     // client.ts 已自动 Toast（被占用 / 次数超限等）
   } finally {

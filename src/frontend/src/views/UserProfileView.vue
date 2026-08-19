@@ -206,6 +206,17 @@ watch(targetUserId, (next, prev) => {
   if (next && next !== prev) loadAll();
 });
 
+// 本人资料：用户名修改后（auth store 本地同步）重新拉取资料，
+// 保证返回本页时立即显示新用户名，不依赖手动刷新
+watch(
+  () => auth.username,
+  (next, prev) => {
+    if (next && prev && next !== prev && isSelf.value) {
+      loadAll();
+    }
+  }
+);
+
 onMounted(() => {
   if (targetUserId.value) loadAll();
   else loading.value = false; // 未登录访问 /profile，显示登录引导

@@ -33,6 +33,18 @@ export const useAuthStore = defineStore("auth", {
       this.loaded = true;
     },
 
+    /**
+     * 本地更新会话中的用户名（修改成功后立即生效）
+     *
+     * 避免依赖重新拉取会话（get-session 可能命中缓存 / 延迟），
+     * 后端已在修改时同步更新 user.name，此处作为即时反馈兜底。
+     */
+    setUsername(name: string): void {
+      if (this.session?.user) {
+        this.session.user.name = name;
+      }
+    },
+
     /** 登出并清空本地会话 */
     async signOut(): Promise<void> {
       try {

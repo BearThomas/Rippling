@@ -275,7 +275,9 @@ export async function userExists(
 /**
  * 修改用户名
  *
- * 检查新用户名的唯一性，更新后记录到 user_log。
+ * 检查新用户名的唯一性，更新 user_profile 中的用户名，
+ * 并同步 Better Auth user 表的 name 字段（保持会话显示一致），
+ * 最后记录到 user_log。
  *
  * @returns false 表示用户名已存在
  */
@@ -300,8 +302,16 @@ export async function updateUsername(
 
   const now = nowISO();
 
+  // 更新 user_profile 中的用户名（帖子 / 评论 / 搜索等业务数据来源）
   await db
     .prepare("UPDATE user_profile SET username = ?, updatedAt = ? WHERE userId = ?")
+    .bind(newUsername, now, userId)
+    .run();
+
+  // 同步更新 Better Auth user 表的 name 字段，
+  // 保证 get-session 返回的会话用户名一致，前端 auth store 无需缓存失效
+  await db
+    .prepare("UPDATE user SET name = ?, updatedAt = ? WHERE id = ?")
     .bind(newUsername, now, userId)
     .run();
 
