@@ -530,7 +530,10 @@ onMounted(load);
       </section>
 
       <!-- 底部评论输入栏（固定） -->
-      <div class="fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-app bg-page px-3 pb-3 pt-2">
+      <div
+        class="fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-app bg-page px-3 pt-2"
+        style="padding-bottom: max(0.75rem, env(safe-area-inset-bottom))"
+      >
         <!-- 回复提示 -->
         <div
           v-if="replyTarget"

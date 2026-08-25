@@ -63,7 +63,7 @@ defineExpose({ focus });
       v-else
       ref="textareaEl"
       v-model="content"
-      class="min-h-[72px] w-full resize-y rounded-lg bg-page px-3 py-2 text-sm outline-none placeholder:text-ink-soft/60"
+      class="min-h-[72px] w-full resize-y rounded-lg bg-page px-3 py-2 text-base sm:text-sm outline-none placeholder:text-ink-soft/60"
       :placeholder="placeholder"
       maxlength="300"
     />
