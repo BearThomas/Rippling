@@ -199,7 +199,7 @@ async function onFollow(user: SearchUserResult): Promise<void> {
 </script>
 
 <template>
-  <div class="px-3 pb-10 pt-3">
+  <div class="overflow-x-hidden px-3 pb-4 pt-3">
     <!-- 搜索框 -->
     <form class="flex items-center gap-2" @submit.prevent="onSubmit">
       <div class="flex flex-1 items-center gap-2 rounded-full border border-line bg-surface px-3 py-2 focus-within:border-primary">

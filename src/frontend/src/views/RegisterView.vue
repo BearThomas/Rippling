@@ -108,7 +108,7 @@ async function handleSubmit(): Promise<void> {
 </script>
 
 <template>
-  <div class="mx-auto flex min-h-screen w-full max-w-app flex-col justify-center px-6 py-10">
+  <div class="mx-auto flex min-h-screen min-h-dvh w-full max-w-app flex-col justify-center px-6 py-10">
     <h1 class="mb-6 text-center text-2xl font-bold text-primary">注册</h1>
 
     <form class="space-y-4" @submit.prevent="handleSubmit">

@@ -21,7 +21,7 @@ const showTabbar = computed(() => route.meta.showTabbar !== false);
 
 <template>
   <div
-    class="mx-auto flex min-h-screen w-full max-w-app flex-col bg-page lg:max-w-none lg:pl-16"
+    class="mx-auto flex min-h-screen min-h-dvh w-full max-w-app flex-col bg-page lg:max-w-none lg:pl-16"
   >
     <!-- 桌面端左侧导航（fixed，移动端不渲染） -->
     <AppSidebar />

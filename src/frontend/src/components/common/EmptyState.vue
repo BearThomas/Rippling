@@ -16,7 +16,7 @@ withDefaults(
 </script>
 
 <template>
-  <div class="flex flex-col items-center justify-center gap-3 py-14 text-ink-soft">
+  <div class="flex flex-col items-center justify-center gap-3 py-8 sm:py-12 text-ink-soft">
     <AppSvgIcon :name="icon" :size="40" class="opacity-40" />
     <p class="text-sm">{{ text }}</p>
   </div>

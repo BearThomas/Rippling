@@ -55,7 +55,7 @@ async function handleSubmit(): Promise<void> {
 </script>
 
 <template>
-  <div class="mx-auto flex min-h-screen w-full max-w-app flex-col justify-center px-6">
+  <div class="mx-auto flex min-h-screen min-h-dvh w-full max-w-app flex-col justify-center px-6">
     <div class="mb-1 flex items-center justify-center gap-3">
       <img
         v-if="theme.siteIcon"
