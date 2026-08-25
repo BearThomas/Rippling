@@ -953,6 +953,21 @@ export async function leaveBlock(
   blockId: string,
   userId: string
 ): Promise<boolean> {
+  // 检查是否为官方固定板块（ownerId 为占位符）
+  const ownerRow = await db
+    .prepare("SELECT ownerId FROM block WHERE id = ?")
+    .bind(blockId)
+    .first<{ ownerId: string }>();
+
+  const isFixed = ownerRow?.ownerId === "__fixed__";
+  if (isFixed) {
+    // 只有拥有全站 manage_block 权限的用户才能退出
+    if (!can(userId, PERM_MANAGE_BLOCK)) {
+      return false; // 普通成员不可退出
+    }
+  }
+
+  // 原有成员检查逻辑保持不变
   const member = await db
     .prepare("SELECT role FROM block_member WHERE blockId = ? AND userId = ?")
     .bind(blockId, userId)
