@@ -77,22 +77,6 @@ async function autoJoinGradeAndClassBlocks(
           .run();
 
         // 将站长（如果存在）作为 owner 角色加入 block_member
-        const adminRow = await db
-          .prepare(
-            "SELECT userId FROM user_profile WHERE badge = '站长' ORDER BY createdAt ASC LIMIT 1"
-          )
-          .first<{ userId: string }>();
-        if (adminRow?.userId) {
-          await db
-            .prepare(
-              `INSERT OR IGNORE INTO block_member (id, blockId, userId, role, permissions, joinedAt)
-               VALUES (?, ?, ?, 'owner', ?, ?)`
-            )
-            .bind(generateUUID(), blockId, adminRow.userId, BLOCK_OWNER_PERMISSIONS, now)
-            .run();
-        }
-
-        // 若站长存在，自动将站长以 owner 角色加入 block_member
         if (adminRow?.userId) {
           await db
             .prepare(

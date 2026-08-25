@@ -276,6 +276,19 @@ CREATE TABLE block (
     isArchived  INTEGER DEFAULT 0,
     createdAt   TEXT NOT NULL
 );
+-- 插入占位系统用户（仅首次执行，已存在则忽略）
+INSERT OR IGNORE INTO user (
+    id,
+    name,
+    createdAt,
+    updatedAt
+) VALUES (
+    '__fixed__',
+    '系统占位用户',
+    datetime('now'),
+    datetime('now')
+);
+
 
 -- 板块成员表
 CREATE TABLE block_member (
