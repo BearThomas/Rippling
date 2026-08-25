@@ -207,6 +207,83 @@
             </div>
           </div>
 
+          <!-- 学号自动分板块配置（可选折叠） -->
+          <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <button
+              type="button"
+              class="flex items-center justify-between w-full text-left text-sm font-medium text-gray-700 dark:text-gray-300 mb-2"
+              @click="showAutoBlockConfig = !showAutoBlockConfig"
+            >
+              <span>⚙️ 自动分板块与年级设置（可选）</span>
+              <span class="text-xs text-blue-500 hover:underline">
+                {{ showAutoBlockConfig ? "收起" : "展开配置" }}
+              </span>
+            </button>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
+              注册时根据学号自动创建并加入对应的年级板块与班级板块
+            </p>
+
+            <div v-if="showAutoBlockConfig" class="space-y-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 p-4">
+              <!-- 年级板块 -->
+              <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-semibold text-gray-700 dark:text-gray-300">年级板块</span>
+                  <label class="relative inline-flex cursor-pointer items-center">
+                    <input
+                      v-model="form.autoBlock.gradeEnabled"
+                      type="checkbox"
+                      class="peer sr-only"
+                    />
+                    <div class="peer h-5 w-9 rounded-full bg-gray-300 dark:bg-gray-600 transition-colors peer-checked:bg-blue-600 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full"></div>
+                  </label>
+                </div>
+                <div v-if="form.autoBlock.gradeEnabled" class="grid grid-cols-2 gap-2 text-xs">
+                  <label>
+                    <span class="text-gray-600 dark:text-gray-300">起始位 (第N位)</span>
+                    <input v-model.number="form.autoBlock.gradeStart" type="number" min="1" class="input-base w-full mt-1" />
+                  </label>
+                  <label>
+                    <span class="text-gray-600 dark:text-gray-300">长度 (占N位)</span>
+                    <input v-model.number="form.autoBlock.gradeLength" type="number" min="1" class="input-base w-full mt-1" />
+                  </label>
+                  <label class="col-span-2">
+                    <span class="text-gray-600 dark:text-gray-300">板块名称模板</span>
+                    <input v-model="form.autoBlock.gradeNameFormat" type="text" class="input-base w-full mt-1 font-mono text-xs" />
+                  </label>
+                </div>
+              </div>
+
+              <!-- 班级板块 -->
+              <div class="space-y-2 pt-2 border-t border-gray-200 dark:border-gray-600">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-semibold text-gray-700 dark:text-gray-300">班级板块</span>
+                  <label class="relative inline-flex cursor-pointer items-center">
+                    <input
+                      v-model="form.autoBlock.classEnabled"
+                      type="checkbox"
+                      class="peer sr-only"
+                    />
+                    <div class="peer h-5 w-9 rounded-full bg-gray-300 dark:bg-gray-600 transition-colors peer-checked:bg-blue-600 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full"></div>
+                  </label>
+                </div>
+                <div v-if="form.autoBlock.classEnabled" class="grid grid-cols-2 gap-2 text-xs">
+                  <label>
+                    <span class="text-gray-600 dark:text-gray-300">起始位 (第N位)</span>
+                    <input v-model.number="form.autoBlock.classStart" type="number" min="1" class="input-base w-full mt-1" />
+                  </label>
+                  <label>
+                    <span class="text-gray-600 dark:text-gray-300">长度 (占N位)</span>
+                    <input v-model.number="form.autoBlock.classLength" type="number" min="1" class="input-base w-full mt-1" />
+                  </label>
+                  <label class="col-span-2">
+                    <span class="text-gray-600 dark:text-gray-300">板块名称模板</span>
+                    <input v-model="form.autoBlock.classNameFormat" type="text" class="input-base w-full mt-1 font-mono text-xs" />
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- 提交按钮 -->
           <div class="pt-4">
             <button
@@ -247,11 +324,22 @@ interface SetupFormData {
   theme: string;
   /** 站点图标 URL（可选，来自 /api/setup/upload-icon） */
   siteIcon: string;
+  autoBlock: {
+    gradeEnabled: boolean;
+    gradeStart: number;
+    gradeLength: number;
+    gradeNameFormat: string;
+    classEnabled: boolean;
+    classStart: number;
+    classLength: number;
+    classNameFormat: string;
+  };
 }
 
 const router = useRouter();
 const loading = ref(false);
 const showPassword = ref(false);
+const showAutoBlockConfig = ref(false);
 const iconUploading = ref(false);
 const iconInput = ref<HTMLInputElement | null>(null);
 const form = ref<SetupFormData>({
@@ -262,6 +350,16 @@ const form = ref<SetupFormData>({
   adminPassword: "",
   theme: "campus",
   siteIcon: "",
+  autoBlock: {
+    gradeEnabled: true,
+    gradeStart: 1,
+    gradeLength: 4,
+    gradeNameFormat: "{grade}级年级板",
+    classEnabled: true,
+    classStart: 5,
+    classLength: 2,
+    classNameFormat: "{grade}年级{class}班板块",
+  },
 });
 
 const themes = [

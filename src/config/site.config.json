@@ -28,5 +28,15 @@
     "admin": "#F59E0B",
     "owner": "#8B5CF6",
     "superadmin": "#EF4444"
+  },
+  "autoBlock": {
+    "gradeEnabled": true,
+    "gradeStart": 1,
+    "gradeLength": 4,
+    "gradeNameFormat": "{grade}级年级板",
+    "classEnabled": true,
+    "classStart": 5,
+    "classLength": 2,
+    "classNameFormat": "{grade}年级{class}班板块"
   }
 }

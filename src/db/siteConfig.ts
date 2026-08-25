@@ -54,6 +54,26 @@ export interface SiteConfigNameColors {
   superadmin: string;
 }
 
+/** 学号自动分板块配置 */
+export interface SiteConfigAutoBlock {
+  /** 是否开启年级板块自动创建/加入 */
+  gradeEnabled: boolean;
+  /** 年级起始位置（1-indexed） */
+  gradeStart: number;
+  /** 年级长度 */
+  gradeLength: number;
+  /** 年级板块名称模板，如 "{grade}级年级板" */
+  gradeNameFormat: string;
+  /** 是否开启班级板块自动创建/加入 */
+  classEnabled: boolean;
+  /** 班级起始位置（1-indexed） */
+  classStart: number;
+  /** 班级长度 */
+  classLength: number;
+  /** 班级板块名称模板，如 "{grade}年级{class}班板块" */
+  classNameFormat: string;
+}
+
 /** 站点配置 */
 export interface SiteConfig {
   siteName: string;
@@ -68,6 +88,8 @@ export interface SiteConfig {
   recommendWeights: SiteConfigRecommendWeights;
   /** 用户等级名称颜色 */
   nameColors: SiteConfigNameColors;
+  /** 学号自动分板块配置 */
+  autoBlock?: SiteConfigAutoBlock;
   /** 是否已初始化 */
   initialized?: boolean;
 }

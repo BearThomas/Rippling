@@ -17,6 +17,29 @@ import { generateUUID } from "../utils/uuid";
 import { nowISO } from "../utils/time";
 import { writeAdminLog } from "./adminLog";
 import { computeNameColor, loadNameColors, type UserLevel } from "../utils/userLevel";
+import { getSiteConfig, type SiteConfigAutoBlock } from "./siteConfig";
+import siteConfigFallback from "../config/site.config.json";
+
+// ============================================================
+//  年级提取辅助
+// ============================================================
+
+/**
+ * 从学号和配置中提取年级名称（如 2024级）
+ */
+export function extractGradeFromStudentId(
+  studentId: string | null | undefined,
+  autoBlock?: SiteConfigAutoBlock | null
+): string | null {
+  if (!studentId) return null;
+  const cfg = autoBlock ?? siteConfigFallback.autoBlock;
+  const start = (cfg?.gradeStart ?? 1) - 1;
+  const length = cfg?.gradeLength ?? 4;
+  if (start < 0 || studentId.length < start + length) return null;
+  const gradeCode = studentId.slice(start, start + length);
+  if (!gradeCode || !/^\d+$/.test(gradeCode)) return null;
+  return `${gradeCode}级`;
+}
 
 // ============================================================
 //  返回类型
@@ -30,6 +53,8 @@ export interface PublicUserProfile {
   nameColor: string | null;
   /** 徽章 */
   badge: string | null;
+  /** 年级标识（如 2024级） */
+  grade?: string | null;
   /** 提问箱是否启用 */
   questionBoxEnabled: boolean;
   /** 关注数 */
@@ -98,12 +123,15 @@ export async function getUserProfileById(
 
   // nameColor 不再取 user_profile.nameColor，按用户等级动态计算
   const nameColors = await loadNameColors(db);
+  const siteCfg = await getSiteConfig(db);
+  const grade = extractGradeFromStudentId(row.studentId, siteCfg?.autoBlock);
 
   const base: PublicUserProfile = {
     userId: row.userId,
     username: row.username,
     nameColor: computeNameColor(BigInt(row.permissions), nameColors),
     badge: row.badge,
+    grade,
     questionBoxEnabled: !!row.questionBoxEnabled,
     followingCount: followingRow?.count ?? 0,
     followerCount: followerRow?.count ?? 0,
@@ -205,7 +233,7 @@ export async function getUserPublicProfile(
   // 避免用户在设置中开启提问箱后入口仍不显示。
   const row = await db
     .prepare(
-      `SELECT p.userId, p.username, p.permissions, p.badge, p.createdAt,
+      `SELECT p.userId, p.username, p.studentId, p.permissions, p.badge, p.createdAt,
               u.image AS avatar, COALESCE(qb.enabled, 0) AS boxEnabled
        FROM user_profile p
        LEFT JOIN user u ON u.id = p.userId
@@ -216,6 +244,7 @@ export async function getUserPublicProfile(
     .first<{
       userId: string;
       username: string;
+      studentId: string | null;
       permissions: number;
       badge: string | null;
       createdAt: string;
@@ -249,12 +278,15 @@ export async function getUserPublicProfile(
 
   // nameColor 不再取 user_profile.nameColor，按用户等级动态计算
   const nameColors = await loadNameColors(db);
+  const siteCfg = await getSiteConfig(db);
+  const grade = extractGradeFromStudentId(row.studentId, siteCfg?.autoBlock);
 
   return {
     userId: row.userId,
     username: row.username,
     nameColor: computeNameColor(BigInt(row.permissions), nameColors),
     badge: row.badge,
+    grade,
     avatar: row.avatar,
     questionBoxEnabled: !!row.boxEnabled,
     followingCount: followingRow?.count ?? 0,
@@ -644,6 +676,8 @@ export interface AdminUserInfo {
   permissions: bigint;
   nameColor: string | null;
   badge: string | null;
+  /** 年级标识 */
+  grade?: string | null;
   violationCount: number;
   isDeactivated: boolean;
   createdAt: string;
@@ -665,7 +699,8 @@ interface AdminUserRow {
 /** 行 → AdminUserInfo 转换（nameColor 按用户等级动态计算） */
 function toAdminUserInfo(
   row: AdminUserRow,
-  nameColors: Record<UserLevel, string>
+  nameColors: Record<UserLevel, string>,
+  autoBlock?: SiteConfigAutoBlock | null
 ): AdminUserInfo {
   return {
     id: row.userId,
@@ -674,6 +709,7 @@ function toAdminUserInfo(
     permissions: BigInt(row.permissions),
     nameColor: computeNameColor(BigInt(row.permissions), nameColors),
     badge: row.badge,
+    grade: extractGradeFromStudentId(row.studentId, autoBlock),
     violationCount: row.violationCount,
     isDeactivated: !!row.isDeactivated,
     createdAt: row.createdAt,
@@ -710,7 +746,8 @@ export async function getAdminUserInfo(
   if (!row) return null;
 
   const nameColors = await loadNameColors(db);
-  return toAdminUserInfo(row, nameColors);
+  const siteCfg = await getSiteConfig(db);
+  return toAdminUserInfo(row, nameColors, siteCfg?.autoBlock);
 }
 
 /**
@@ -746,7 +783,8 @@ export async function listUsersForAdmin(
   const rows = await db.prepare(sql).bind(...params).all<AdminUserRow>();
 
   const nameColors = await loadNameColors(db);
-  return rows.results.map((row) => toAdminUserInfo(row, nameColors));
+  const siteCfg = await getSiteConfig(db);
+  return rows.results.map((row) => toAdminUserInfo(row, nameColors, siteCfg?.autoBlock));
 }
 
 /**

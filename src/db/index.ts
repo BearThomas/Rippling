@@ -60,6 +60,7 @@ export type {
   SiteConfigTheme,
   SiteConfigRecommendWeights,
   SiteConfigNameColors,
+  SiteConfigAutoBlock,
 } from "./siteConfig";
 
 // 归档查看器

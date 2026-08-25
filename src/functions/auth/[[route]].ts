@@ -23,7 +23,104 @@ import { checkRateLimit, resetRateLimit } from "../../utils/rate-limit";
 import { generateUUID } from "../../utils/uuid";
 import { nowISO } from "../../utils/time";
 import { DEFAULT_USER_PERMISSIONS } from "../../shared/permissions";
+import { getSiteConfig } from "../../db";
 import siteConfig from "../../config/site.config.json";
+
+// ============================================================
+//  注册自动创建 / 加入年级板块与班级板块
+// ============================================================
+
+async function autoJoinGradeAndClassBlocks(
+  db: D1Database,
+  userId: string,
+  studentId: string
+): Promise<void> {
+  try {
+    const dbConfig = await getSiteConfig(db);
+    const autoBlock = dbConfig?.autoBlock ?? siteConfig.autoBlock;
+    if (!autoBlock) return;
+
+    const now = nowISO();
+    const defaultMemberPerms = 4159; // BLOCK_DEFAULT_MEMBER_PERMISSIONS
+
+    // 辅助函数：确保板块存在并加入成员
+    async function ensureBlockAndJoin(blockName: string, description: string) {
+      if (!blockName) return;
+
+      // 1. 查询板块是否存在
+      const block = await db
+        .prepare("SELECT id FROM block WHERE name = ? AND isDeleted = 0")
+        .bind(blockName)
+        .first<{ id: string }>();
+
+      let blockId = block?.id;
+
+      // 2. 不存在则创建
+      if (!blockId) {
+        blockId = generateUUID();
+        await db
+          .prepare(
+            `INSERT INTO block (id, name, description, ownerId, createdAt)
+             VALUES (?, ?, ?, ?, ?)`
+          )
+          .bind(blockId, blockName, description, userId, now)
+          .run();
+      }
+
+      // 3. 将新注册用户加入该板块成员（若已存在则忽略）
+      await db
+        .prepare(
+          `INSERT OR IGNORE INTO block_member (id, blockId, userId, role, permissions, joinedAt)
+           VALUES (?, ?, ?, 'member', ?, ?)`
+        )
+        .bind(generateUUID(), blockId, userId, defaultMemberPerms, now)
+        .run();
+    }
+
+    // 1. 处理年级板块
+    if (autoBlock.gradeEnabled) {
+      const gStart = (autoBlock.gradeStart ?? 1) - 1;
+      const gLen = autoBlock.gradeLength ?? 4;
+      if (gStart >= 0 && studentId.length >= gStart + gLen) {
+        const gradeCode = studentId.slice(gStart, gStart + gLen);
+        if (/^\d+$/.test(gradeCode)) {
+          const gNameFormat = autoBlock.gradeNameFormat || "{grade}级年级板";
+          const gradeBlockName = gNameFormat.replace(/\{grade\}/g, gradeCode);
+          await ensureBlockAndJoin(gradeBlockName, `${gradeCode}级官方年级板块`);
+        }
+      }
+    }
+
+    // 2. 处理班级板块
+    if (autoBlock.classEnabled) {
+      const gStart = (autoBlock.gradeStart ?? 1) - 1;
+      const gLen = autoBlock.gradeLength ?? 4;
+      const cStart = (autoBlock.classStart ?? 5) - 1;
+      const cLen = autoBlock.classLength ?? 2;
+      if (
+        gStart >= 0 &&
+        cStart >= 0 &&
+        studentId.length >= Math.max(gStart + gLen, cStart + cLen)
+      ) {
+        const gradeCode = studentId.slice(gStart, gStart + gLen);
+        const classCode = studentId.slice(cStart, cStart + cLen);
+        if (/^\d+$/.test(gradeCode) && /^\d+$/.test(classCode)) {
+          const cNameFormat =
+            autoBlock.classNameFormat || "{grade}年级{class}班板块";
+          const classBlockName = cNameFormat
+            .replace(/\{grade\}/g, gradeCode)
+            .replace(/\{class\}/g, classCode);
+          await ensureBlockAndJoin(
+            classBlockName,
+            `${gradeCode}级${classCode}班官方班级板块`
+          );
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[Auth] autoJoinGradeAndClassBlocks failed:", err);
+  }
+}
 
 // ============================================================
 //  解析验证问题
@@ -299,6 +396,9 @@ export async function handleAuthRequest(
             now
           )
           .run();
+
+        // 自动创建 / 加入年级板块与班级板块
+        await autoJoinGradeAndClassBlocks(env.DB, userId, username);
       }
     } catch (err) {
       console.error("[Auth] Failed to create user_profile after sign-up:", err);

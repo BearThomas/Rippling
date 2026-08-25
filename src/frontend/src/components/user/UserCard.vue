@@ -46,13 +46,20 @@ const avatarChar = computed(() => props.profile.username.slice(0, 1) || "?");
 
       <!-- 用户名 + 牌子 + 关注按钮 -->
       <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-wrap">
           <p
             class="truncate text-lg font-semibold"
             :style="profile.nameColor ? `color: ${profile.nameColor}` : ''"
           >
             {{ profile.username }}
           </p>
+          <!-- 年级标签（由学号前 N 位提取） -->
+          <span
+            v-if="profile.grade"
+            class="shrink-0 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+          >
+            {{ profile.grade }}
+          </span>
           <!-- 名字牌子（认证 / 头衔标识） -->
           <span
             v-if="profile.badge"

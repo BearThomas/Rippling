@@ -21,7 +21,7 @@ import type { CloudflareEnv } from "../auth";
 import { createAuth } from "../auth";
 import { ALL_PERMISSIONS_MASK } from "../utils/userLevel";
 import { INTERNAL_ERROR, VALIDATION_ERROR } from "../utils/errors";
-import { getSiteConfig } from "../db/siteConfig";
+import { getSiteConfig, type SiteConfigAutoBlock } from "../db/siteConfig";
 import { generateUUID } from "../utils/uuid";
 import { nowISO } from "../utils/time";
 import { uploadImageToB2, ALLOWED_IMAGE_TYPES } from "../utils/b2";
@@ -196,6 +196,8 @@ interface InitializeBody {
   theme?: string;
   /** 站点图标 URL（可选，来自 /api/setup/upload-icon 返回） */
   siteIcon?: string;
+  /** 学号自动分板块配置 */
+  autoBlock?: SiteConfigAutoBlock;
 }
 
 app.post("/initialize", async (c) => {
@@ -293,6 +295,7 @@ app.post("/initialize", async (c) => {
       studentIdHint,
       theme: { ...staticConfig.theme, preset: body.theme || "light" },
       siteIcon: body.siteIcon?.trim() ?? "",
+      autoBlock: body.autoBlock ?? staticConfig.autoBlock,
       initialized: true,
     };
     const configValue = JSON.stringify(siteConfig);

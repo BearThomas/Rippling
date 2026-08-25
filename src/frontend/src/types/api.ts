@@ -61,6 +61,8 @@ export interface UserProfile {
   permissions: string;
   nameColor: string | null;
   badge: string | null;
+  /** 年级标识（如 2024级） */
+  grade?: string | null;
   questionBoxEnabled: boolean;
   violationCount: number;
   isDeactivated: boolean;
@@ -89,6 +91,8 @@ export interface AdminUserInfo {
   permissions: string;
   nameColor: string | null;
   badge: string | null;
+  /** 年级标识 */
+  grade?: string | null;
   violationCount: number;
   /** 账号是否已注销 */
   isDeactivated: boolean;
@@ -102,6 +106,8 @@ export interface UserPublicProfile {
   nameColor: string | null;
   /** 名字牌子（认证 / 头衔标识） */
   badge: string | null;
+  /** 年级标识（如 2024级） */
+  grade?: string | null;
   /** 头像 URL（无头像为 null） */
   avatar: string | null;
   questionBoxEnabled: boolean;
@@ -562,6 +568,26 @@ export interface SiteConfigNameColors {
   superadmin: string;
 }
 
+/** 学号自动分板块配置 */
+export interface SiteConfigAutoBlock {
+  /** 是否开启年级板块自动创建/加入 */
+  gradeEnabled: boolean;
+  /** 年级起始位置（1-indexed） */
+  gradeStart: number;
+  /** 年级长度 */
+  gradeLength: number;
+  /** 年级板块名称模板，如 "{grade}级年级板" */
+  gradeNameFormat: string;
+  /** 是否开启班级板块自动创建/加入 */
+  classEnabled: boolean;
+  /** 班级起始位置（1-indexed） */
+  classStart: number;
+  /** 班级长度 */
+  classLength: number;
+  /** 班级板块名称模板，如 "{grade}年级{class}班板块" */
+  classNameFormat: string;
+}
+
 /** 站点配置（/api/config 返回） */
 export interface SiteConfig {
   siteName: string;
@@ -576,5 +602,7 @@ export interface SiteConfig {
   recommendWeights: SiteConfigRecommendWeights;
   /** 用户等级颜色（旧配置可能缺失） */
   nameColors: SiteConfigNameColors;
+  /** 学号自动分板块配置 */
+  autoBlock?: SiteConfigAutoBlock;
 }
 
