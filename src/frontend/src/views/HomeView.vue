@@ -259,10 +259,11 @@ function goCreatePost(): void {
       </div>
     </template>
 
-    <!-- 悬浮发帖按钮 -->
+    <!-- 悬浮发帖按钮（位于最顶层，避开底部导航栏） -->
     <button
       type="button"
-      class="fixed bottom-20 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-white shadow-lg transition-transform active:scale-95"
+      class="fixed right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-white shadow-lg transition-transform active:scale-95"
+      style="bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px))"
       aria-label="发帖"
       @click="goCreatePost"
     >

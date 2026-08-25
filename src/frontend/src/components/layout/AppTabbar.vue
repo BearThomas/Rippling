@@ -35,11 +35,11 @@ const activeTab = computed<TabName | null>(() => resolveActiveNav(route.path));
         v-for="tab in TABS"
         :key="tab.name"
         :to="tab.path"
-        class="flex flex-col items-center gap-0.5 py-2 text-ink-soft transition-colors"
+        class="flex items-center justify-center py-3 text-ink-soft transition-colors"
         :class="{ '!text-primary': activeTab === tab.name }"
+        :aria-label="tab.label"
       >
-        <AppSvgIcon :name="tab.icon" :size="22" />
-        <span class="text-[11px] leading-none">{{ tab.label }}</span>
+        <AppSvgIcon :name="tab.icon" :size="24" />
       </RouterLink>
     </div>
   </nav>
