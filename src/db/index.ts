@@ -43,8 +43,11 @@ export {
   banUser,
   unbanUser,
   resetUserViolations,
+  listUserDevices,
+  deleteUserDevice,
+  setMainUserDevice,
 } from "./user";
-export type { AdminUserInfo, UserPublicProfile } from "./user";
+export type { AdminUserInfo, UserPublicProfile, UserDeviceInfo } from "./user";
 
 // 管理日志
 export { writeAdminLog, listAdminLogs } from "./adminLog";

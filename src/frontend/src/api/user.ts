@@ -6,7 +6,7 @@
  * 会话查询仍来自 Better Auth（api/auth.ts），管理员查用户走 api/admin.ts。
  */
 
-import { apiGet, apiPost, apiPut } from "./client";
+import { apiGet, apiPost, apiPut, apiDelete } from "./client";
 import { getSession as fetchSession } from "./auth";
 import type {
   SessionInfo,
@@ -14,6 +14,7 @@ import type {
   UserPublicProfile,
   UserPostsData,
   UserCommentsData,
+  UserDevice,
 } from "../types";
 
 /** 获取当前会话（游客返回 null） */
@@ -82,4 +83,19 @@ export function updatePassword(
 /** 管理员查看用户详情（access_admin_panel 权限） */
 export function getUserProfileForAdmin(userId: string): Promise<UserProfile> {
   return apiGet<UserProfile>("/api/admin/user", { params: { id: userId } });
+}
+
+/** 查询当前用户已登录绑定的设备列表 */
+export function getUserDevices(): Promise<{ devices: UserDevice[] }> {
+  return apiGet<{ devices: UserDevice[] }>("/api/user/devices");
+}
+
+/** 解绑 / 移除指定设备 */
+export function deleteUserDevice(deviceId: string): Promise<void> {
+  return apiDelete<void>(`/api/user/devices/${encodeURIComponent(deviceId)}`);
+}
+
+/** 设为主设备 */
+export function setMainDevice(deviceId: string): Promise<void> {
+  return apiPost<void>(`/api/user/devices/${encodeURIComponent(deviceId)}/main`);
 }

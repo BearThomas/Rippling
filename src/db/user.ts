@@ -888,3 +888,91 @@ export async function resetUserViolations(
 
   return true;
 }
+
+// ============================================================
+//  设备管理
+// ============================================================
+
+export interface UserDeviceInfo {
+  id: string;
+  deviceId: string;
+  fingerprint: string | null;
+  isMainDevice: boolean;
+  isBlocked: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+/**
+ * 查询指定用户的已绑定设备列表
+ */
+export async function listUserDevices(
+  db: D1Database,
+  userId: string
+): Promise<UserDeviceInfo[]> {
+  const rows = await db
+    .prepare(
+      `SELECT id, deviceId, fingerprint, isMainDevice, isBlocked, lastLoginAt, createdAt
+       FROM user_device
+       WHERE userId = ?
+       ORDER BY isMainDevice DESC, lastLoginAt DESC`
+    )
+    .bind(userId)
+    .all<{
+      id: string;
+      deviceId: string;
+      fingerprint: string | null;
+      isMainDevice: number;
+      isBlocked: number;
+      lastLoginAt: string | null;
+      createdAt: string;
+    }>();
+
+  return (rows.results ?? []).map((r) => ({
+    id: r.id,
+    deviceId: r.deviceId,
+    fingerprint: r.fingerprint,
+    isMainDevice: Boolean(r.isMainDevice),
+    isBlocked: Boolean(r.isBlocked),
+    lastLoginAt: r.lastLoginAt,
+    createdAt: r.createdAt,
+  }));
+}
+
+/**
+ * 删除 / 解绑指定设备
+ */
+export async function deleteUserDevice(
+  db: D1Database,
+  userId: string,
+  deviceId: string
+): Promise<boolean> {
+  const result = await db
+    .prepare("DELETE FROM user_device WHERE userId = ? AND deviceId = ?")
+    .bind(userId, deviceId)
+    .run();
+
+  return Boolean(result.meta.changes && result.meta.changes > 0);
+}
+
+/**
+ * 设置指定设备为主设备
+ */
+export async function setMainUserDevice(
+  db: D1Database,
+  userId: string,
+  deviceId: string
+): Promise<boolean> {
+  // 先将该用户所有设备设为非主设备
+  await db
+    .prepare("UPDATE user_device SET isMainDevice = 0 WHERE userId = ?")
+    .bind(userId)
+    .run();
+
+  const result = await db
+    .prepare("UPDATE user_device SET isMainDevice = 1 WHERE userId = ? AND deviceId = ?")
+    .bind(userId, deviceId)
+    .run();
+
+  return Boolean(result.meta.changes && result.meta.changes > 0);
+}

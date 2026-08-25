@@ -68,6 +68,18 @@ export interface UserProfile {
   updatedAt: string;
 }
 
+/** 用户登录设备（user_device） */
+export interface UserDevice {
+  id: string;
+  deviceId: string;
+  fingerprint: string | null;
+  isMainDevice: boolean;
+  isBlocked: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  isCurrentDevice?: boolean;
+}
+
 /** 管理面板用户信息（GET /api/admin/users、/user 的路由层序列化视图） */
 export interface AdminUserInfo {
   id: string;

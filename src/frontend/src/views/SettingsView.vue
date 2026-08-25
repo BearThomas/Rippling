@@ -11,7 +11,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
-import { updateUsername, updateAvatar, updatePassword, updateBadge, getUserProfile } from "../api/user";
+import { updateUsername, updateAvatar, updatePassword, updateBadge, getUserProfile, getUserDevices, deleteUserDevice, setMainDevice } from "../api/user";
 import { uploadImage } from "../api/upload";
 import { getAdminSiteConfig, updateAdminSiteConfig } from "../api/admin";
 import { getQuestionBox, updateQuestionBox } from "../api/question";
@@ -20,8 +20,9 @@ import { useThemeStore } from "../stores/theme";
 import { getMyPermissions } from "../utils/myPermissions";
 import { hasPermission, PERM_EDIT_DATABASE, PERM_SET_NAME_BADGE } from "../utils/permission";
 import { compressImage } from "../utils/compressImage";
+import { formatDateTime } from "../utils/format";
 import { showToast } from "../utils/toast";
-import type { QuestionBoxInfo, SiteConfigTheme } from "../types";
+import type { QuestionBoxInfo, SiteConfigTheme, UserDevice } from "../types";
 
 const auth = useAuthStore();
 const theme = useThemeStore();
@@ -48,6 +49,9 @@ onMounted(async () => {
     }
   }
   await loadQuestionBox();
+  if (auth.isLoggedIn) {
+    void loadDevices();
+  }
 });
 
 // ============================================================
@@ -157,6 +161,64 @@ async function submitBadge(): Promise<void> {
     // client.ts 已自动 Toast
   } finally {
     badgeSubmitting.value = false;
+  }
+}
+
+// ============================================================
+//  登录设备管理
+// ============================================================
+
+const devicesSheet = ref(false);
+const devicesLoading = ref(false);
+const devices = ref<UserDevice[]>([]);
+const deviceOperating = ref<string | null>(null);
+
+async function loadDevices(): Promise<void> {
+  if (!auth.isLoggedIn) return;
+  devicesLoading.value = true;
+  try {
+    const res = await getUserDevices();
+    devices.value = res.devices;
+  } catch {
+    // client.ts 已自动 Toast
+  } finally {
+    devicesLoading.value = false;
+  }
+}
+
+function openDevicesSheet(): void {
+  devicesSheet.value = true;
+  void loadDevices();
+}
+
+async function handleSetMainDevice(device: UserDevice): Promise<void> {
+  if (device.isMainDevice || deviceOperating.value) return;
+  deviceOperating.value = device.deviceId;
+  try {
+    await setMainDevice(device.deviceId);
+    showToast("已设为主设备", "success");
+    await loadDevices();
+  } catch {
+    // client.ts 已自动 Toast
+  } finally {
+    deviceOperating.value = null;
+  }
+}
+
+async function handleRemoveDevice(device: UserDevice): Promise<void> {
+  if (deviceOperating.value) return;
+  if (!confirm(device.isCurrentDevice ? "确定要解绑当前设备吗？" : "确定要解绑/移除该设备吗？")) {
+    return;
+  }
+  deviceOperating.value = device.deviceId;
+  try {
+    await deleteUserDevice(device.deviceId);
+    showToast("设备已解绑", "success");
+    await loadDevices();
+  } catch {
+    // client.ts 已自动 Toast
+  } finally {
+    deviceOperating.value = null;
   }
 }
 
@@ -407,6 +469,20 @@ const currentAvatar = computed(() => auth.session?.user?.image ?? null);
         <span class="text-ink-soft">
           {{ myBadge || "未设置" }}
         </span>
+      </button>
+
+      <!-- 登录设备管理 -->
+      <button
+        v-if="auth.isLoggedIn"
+        type="button"
+        class="flex w-full items-center justify-between border-b border-line py-3 text-sm"
+        @click="openDevicesSheet"
+      >
+        <span>登录设备管理</span>
+        <div class="flex items-center gap-1.5 text-ink-soft">
+          <span v-if="devices.length > 0">{{ devices.length }} 台设备</span>
+          <AppSvgIcon name="back" :size="16" class="rotate-180" />
+        </div>
       </button>
 
       <!-- 注销账号 -->
@@ -670,6 +746,104 @@ const currentAvatar = computed(() => auth.session?.user?.image ?? null);
           {{ badgeSubmitting ? "提交中…" : "确认修改" }}
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- 登录设备管理底部弹层 -->
+  <div
+    v-if="devicesSheet"
+    class="fixed inset-0 z-50 flex items-end bg-black/40"
+    @click.self="devicesSheet = false"
+  >
+    <div
+      class="mx-auto flex max-h-[85vh] w-full max-w-app flex-col rounded-t-2xl bg-surface p-4"
+      style="padding-bottom: calc(1rem + env(safe-area-inset-bottom))"
+    >
+      <div class="flex items-center justify-between border-b border-line pb-3">
+        <div>
+          <h3 class="font-semibold">登录设备管理</h3>
+          <p class="text-xs text-ink-soft">管理已在此账号登录的所有设备</p>
+        </div>
+        <button
+          type="button"
+          class="flex h-8 w-8 items-center justify-center rounded-full text-ink-soft active:bg-page"
+          aria-label="关闭"
+          @click="devicesSheet = false"
+        >
+          <AppSvgIcon name="close" :size="18" />
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto divide-y divide-line py-2">
+        <div v-if="devicesLoading && devices.length === 0" class="py-8 text-center text-xs text-ink-soft">
+          加载中…
+        </div>
+        <div v-else-if="devices.length === 0" class="py-8 text-center text-xs text-ink-soft">
+          暂无登录设备记录
+        </div>
+        <div
+          v-for="d in devices"
+          :key="d.id"
+          class="flex items-center justify-between gap-3 py-3"
+        >
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-page text-ink-soft">
+              <AppSvgIcon name="smartphone" :size="20" />
+            </span>
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="font-mono text-xs font-medium truncate max-w-[140px] sm:max-w-[200px]">
+                  {{ d.deviceId.length > 16 ? d.deviceId.slice(0, 8) + '…' + d.deviceId.slice(-6) : d.deviceId }}
+                </span>
+                <span
+                  v-if="d.isCurrentDevice"
+                  class="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                >
+                  当前设备
+                </span>
+                <span
+                  v-if="d.isMainDevice"
+                  class="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400"
+                >
+                  主设备
+                </span>
+              </div>
+              <p class="mt-0.5 text-[11px] text-ink-soft">
+                活跃于 {{ d.lastLoginAt ? formatDateTime(d.lastLoginAt) : "未知" }}
+              </p>
+            </div>
+          </div>
+
+          <!-- 操作按钮 -->
+          <div class="flex items-center gap-2 shrink-0">
+            <button
+              v-if="!d.isMainDevice"
+              type="button"
+              class="rounded-md border border-line px-2 py-1 text-xs text-ink-soft transition-colors active:bg-page"
+              :disabled="deviceOperating === d.deviceId"
+              @click="handleSetMainDevice(d)"
+            >
+              设为主设备
+            </button>
+            <button
+              type="button"
+              class="rounded-md px-2 py-1 text-xs text-red-500 transition-colors active:bg-red-50 dark:active:bg-red-950/30"
+              :disabled="deviceOperating === d.deviceId"
+              @click="handleRemoveDevice(d)"
+            >
+              {{ deviceOperating === d.deviceId ? "处理中…" : "解绑" }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        class="btn-secondary mt-2 w-full"
+        @click="devicesSheet = false"
+      >
+        关闭
+      </button>
     </div>
   </div>
 </template>

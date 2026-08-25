@@ -34,6 +34,9 @@ import {
   listUserPosts,
   listUserComments,
   enrichPosts,
+  listUserDevices,
+  deleteUserDevice,
+  setMainUserDevice,
 } from "../db";
 import { generateUUID } from "../utils/uuid";
 import { nowISO } from "../utils/time";
@@ -96,6 +99,14 @@ function notFound(c: Context<E>, message = "用户不存在") {
   return c.json(
     { success: false, error: { code: NOT_FOUND.code, message } },
     NOT_FOUND.statusCode as any
+  );
+}
+
+/** 统一 401 响应 */
+function unauthorized(c: Context<E>, message = "请先登录") {
+  return c.json(
+    { success: false, error: { code: UNAUTHORIZED.code, message } },
+    UNAUTHORIZED.statusCode as any
   );
 }
 
@@ -319,6 +330,67 @@ userRoutes.put("/badge", requirePermission(PERM_SET_NAME_BADGE), async (c) => {
     .run();
 
   return c.json({ success: true, data: { badge } });
+});
+
+// ============================================================
+//  GET /devices  — 查询当前用户的已绑定设备列表（需登录）
+// ============================================================
+
+userRoutes.get("/devices", async (c) => {
+  const user = c.get("user");
+  if (!user) return unauthorized(c);
+
+  const currentDeviceId = c.get("deviceId") ?? c.req.header("X-Device-ID");
+  const rawDevices = await listUserDevices(c.env.DB, user.id);
+
+  const devices = rawDevices.map((d) => ({
+    ...d,
+    isCurrentDevice: Boolean(currentDeviceId && d.deviceId === currentDeviceId),
+  }));
+
+  return c.json({ success: true, data: { devices } });
+});
+
+// ============================================================
+//  DELETE /devices/:deviceId  — 解绑 / 移除指定设备（需登录）
+// ============================================================
+
+userRoutes.delete("/devices/:deviceId", async (c) => {
+  const user = c.get("user");
+  if (!user) return unauthorized(c);
+
+  const deviceId = c.req.param("deviceId");
+  if (!deviceId) return badRequest(c, "缺少设备 ID");
+
+  const success = await deleteUserDevice(c.env.DB, user.id, deviceId);
+  if (!success) return notFound(c, "设备不存在或已被解绑");
+
+  // 写 user_log
+  await c.env.DB
+    .prepare(
+      "INSERT INTO user_log (id, userId, action, detail, createdAt) VALUES (?, ?, 'remove_device', ?, ?)"
+    )
+    .bind(generateUUID(), user.id, JSON.stringify({ deviceId }), nowISO())
+    .run();
+
+  return c.json({ success: true });
+});
+
+// ============================================================
+//  POST /devices/:deviceId/main  — 设为主设备（需登录）
+// ============================================================
+
+userRoutes.post("/devices/:deviceId/main", async (c) => {
+  const user = c.get("user");
+  if (!user) return unauthorized(c);
+
+  const deviceId = c.req.param("deviceId");
+  if (!deviceId) return badRequest(c, "缺少设备 ID");
+
+  const success = await setMainUserDevice(c.env.DB, user.id, deviceId);
+  if (!success) return notFound(c, "设备不存在");
+
+  return c.json({ success: true });
 });
 
 export default userRoutes;
