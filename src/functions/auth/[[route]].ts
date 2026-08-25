@@ -42,6 +42,15 @@ async function autoJoinGradeAndClassBlocks(
 
     const now = nowISO();
     const defaultMemberPerms = 4159; // BLOCK_DEFAULT_MEMBER_PERMISSIONS
+    const ownerPerms = 32767; // BLOCK_OWNER_PERMISSIONS
+
+    // 查询站长（超级管理员）作为自动创建板块的默认 owner
+    const adminRow = await db
+      .prepare(
+        "SELECT userId FROM user_profile WHERE badge = '站长' ORDER BY createdAt ASC LIMIT 1"
+      )
+      .first<{ userId: string }>();
+    const ownerId = adminRow?.userId ?? userId;
 
     // 辅助函数：确保板块存在并加入成员
     async function ensureBlockAndJoin(blockName: string, description: string) {
@@ -55,7 +64,7 @@ async function autoJoinGradeAndClassBlocks(
 
       let blockId = block?.id;
 
-      // 2. 不存在则创建
+      // 2. 不存在则创建（以站长作为 ownerId）
       if (!blockId) {
         blockId = generateUUID();
         await db
@@ -63,8 +72,19 @@ async function autoJoinGradeAndClassBlocks(
             `INSERT INTO block (id, name, description, ownerId, createdAt)
              VALUES (?, ?, ?, ?, ?)`
           )
-          .bind(blockId, blockName, description, userId, now)
+          .bind(blockId, blockName, description, ownerId, now)
           .run();
+
+        // 若站长存在，自动将站长以 owner 角色加入 block_member
+        if (adminRow?.userId) {
+          await db
+            .prepare(
+              `INSERT OR IGNORE INTO block_member (id, blockId, userId, role, permissions, joinedAt)
+               VALUES (?, ?, ?, 'owner', ?, ?)`
+            )
+            .bind(generateUUID(), blockId, adminRow.userId, ownerPerms, now)
+            .run();
+        }
       }
 
       // 3. 将新注册用户加入该板块成员（若已存在则忽略）
