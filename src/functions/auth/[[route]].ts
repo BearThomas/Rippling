@@ -1,25 +1,23 @@
 /**
  * Better Auth 认证入口
  *
- * 前置验证（注册格式、登录锁定）和后处理（创建 profile、绑定设备）。
+ * 前置验证（注册格式）和后处理（创建 profile、绑定设备）。
  * auth 实例由 src/auth 模块统一创建。
  *
  * 功能：
  *   - 学号注册（username 字段）+ 密码登录
  *   - 注册前验证：学号格式、验证问题、IP 频率限制
- *   - 登录前验证：连续失败 5 次 → 锁定 30 分钟
  *   - 注册成功后自动创建 user_profile（默认权限）
  *   - 登录成功后自动绑定设备
  *
  * ⚠️ 临时方案标注：
  *   - IP 注册频率限制：内存计数（rate-limit.ts）
- *   - 登录失败锁定：内存计数（rate-limit.ts）
  *   - 后续 Task 会替换为 D1 持久化
  */
 
 import type { CloudflareEnv } from "../../auth";
 import { createAuth } from "../../auth";
-import { checkRateLimit, resetRateLimit } from "../../utils/rate-limit";
+import { checkRateLimit } from "../../utils/rate-limit";
 import { generateUUID } from "../../utils/uuid";
 import { nowISO } from "../../utils/time";
 import { DEFAULT_USER_PERMISSIONS } from "../../shared/permissions";
@@ -343,41 +341,6 @@ export async function handleAuthRequest(
   }
 
   // ----------------------------------------------------------
-  //  登录：锁定检查
-  // ----------------------------------------------------------
-  if (isSignIn) {
-    const body = await request.clone().json().catch(() => null) as Record<string, unknown> | null;
-    // email 通道时从邮箱前缀提取学号
-    const username =
-      (body?.username as string) ??
-      (((body?.email as string) ?? "").split("@")[0]);
-
-    if (username) {
-      // 检查是否处于锁定状态（maxCount=0 意味着任何计数都超限）
-      const lockCheck = checkRateLimit(`login_lock:${username}`, "login_lock", 1800, 0);
-      if (lockCheck.limited) {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            error: {
-              code: "RATE_LIMITED",
-              message: `登录失败次数过多，请 ${lockCheck.retryAfter} 秒后重试`,
-            },
-            retryAfter: lockCheck.retryAfter,
-          }),
-          {
-            status: 429,
-            headers: {
-              "Content-Type": "application/json",
-              "Retry-After": String(lockCheck.retryAfter),
-            },
-          }
-        );
-      }
-    }
-  }
-
-  // ----------------------------------------------------------
   //  交给 Better Auth 处理
   // ----------------------------------------------------------
   const auth = createAuth(env);
@@ -427,18 +390,12 @@ export async function handleAuthRequest(
   }
 
   // ----------------------------------------------------------
-  //  登录成功后：绑定设备 + 重置失败计数与锁定
+  //  登录成功后：绑定设备
   // ----------------------------------------------------------
   if (isSignIn && response.status < 300) {
     try {
-      const body = await request.clone().json().catch(() => null) as Record<string, unknown> | null;
       const data = (await response.clone().json()) as { user?: { id?: string } };
       const userId = data?.user?.id;
-      // email 通道时从邮箱前缀提取学号
-      const username =
-        (body?.username as string) ??
-        (((body?.email as string) ?? "").split("@")[0]);
-
       if (userId) {
         // 从请求 Header 读取设备 ID，无则生成新的
         let deviceId = request.headers.get("X-Device-ID");
@@ -457,36 +414,9 @@ export async function handleAuthRequest(
           )
           .bind(generateUUID(), userId, deviceId, now, now, now)
           .run();
-
-        // 登录成功 → 重置失败计数与锁定状态
-        if (username) {
-          resetRateLimit(`login_fail:${username}`, "login_fail");
-          resetRateLimit(`login_lock:${username}`, "login_lock");
-        }
       }
     } catch (err) {
       console.error("[Auth] Failed to bind device after sign-in:", err);
-    }
-  }
-
-  // ----------------------------------------------------------
-  //  登录失败后：记录失败次数，达到上限则锁定
-  // ----------------------------------------------------------
-  if (isSignIn && response.status >= 400) {
-    const body = await request.clone().json().catch(() => null) as Record<string, unknown> | null;
-    // email 通道时从邮箱前缀提取学号
-    const username =
-      (body?.username as string) ??
-      (((body?.email as string) ?? "").split("@")[0]);
-
-    if (username) {
-      // 记录失败：30 分钟内 5 次触发锁定
-      const failResult = checkRateLimit(`login_fail:${username}`, "login_fail", 1800, 5);
-
-      if (failResult.limited) {
-        // 达到 5 次 → 设置锁定（固定 30 分钟，maxCount=0 意味着任何计数都超限）
-        checkRateLimit(`login_lock:${username}`, "login_lock", 1800, 0);
-      }
     }
   }
 
