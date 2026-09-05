@@ -19,7 +19,7 @@
 /* eslint-env serviceworker */
 
 /** 缓存版本号：每次发版（sw.js 或资源结构变化）手动递增 */
-const VERSION = "v1";
+const VERSION = "v2";
 
 /** 静态资源缓存（App Shell：HTML / JS / CSS / 图标 / manifest） */
 const STATIC_CACHE = `rippling-static-${VERSION}`;

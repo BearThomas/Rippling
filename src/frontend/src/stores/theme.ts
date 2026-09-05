@@ -46,10 +46,11 @@ export const useThemeStore = defineStore("theme", {
     },
 
     /**
-     * 应用站点身份：浏览器标签页标题 + favicon
+     * 应用站点身份：浏览器标签页标题 + 浏览器 / iOS 图标
      *
      * 站点名称来自 /api/config 的 siteName（标题统一以 siteName 结尾）；
-     * siteIcon 存在时动态更新 link[rel="icon"]，为空保留默认 favicon。
+     * siteIcon 存在时动态更新 favicon 和 apple-touch-icon，
+     * 为空保留 index.html 中的默认图标。
      */
     applySiteIdentity(): void {
       const name = this.siteName;
@@ -57,7 +58,7 @@ export const useThemeStore = defineStore("theme", {
       // 1. 标签页标题（无后缀，路由 afterEach 会拼接页面标题）
       document.title = name;
 
-      // 2. favicon
+      // 2. favicon 与 iOS 添加到主屏幕图标
       const icon = this.siteIcon;
       let link = document.querySelector<HTMLLinkElement>("link[rel='icon']");
       if (icon) {
@@ -66,11 +67,14 @@ export const useThemeStore = defineStore("theme", {
           link.rel = "icon";
           document.head.appendChild(link);
         }
-        if (link.href !== icon) {
-          link.href = icon;
-        }
+        if (link.href !== icon) link.href = icon;
+
+        const appleLink = document.querySelector<HTMLLinkElement>(
+          "link[rel='apple-touch-icon']"
+        );
+        if (appleLink && appleLink.href !== icon) appleLink.href = icon;
       }
-      // siteIcon 为空：保留 index.html 中的默认 favicon，不做任何修改
+      // siteIcon 为空：保留 index.html 中的默认图标，不做任何修改
 
       // 3. iOS 添加到主屏幕的标题
       const meta = document.querySelector('meta[name="apple-mobile-web-app-title"]');
