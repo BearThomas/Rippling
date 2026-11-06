@@ -562,7 +562,8 @@ export async function listUserComments(
  * 板块访问检查由 canAccessBlock 统一完成：
  *   - 板块不存在 / 已删除 → null
  *   - 锁定板块仅成员或 manage_block 可见 → 否则 null
- * 帖子级可见性（private / selected）同样过滤。按 createdAt 倒序。
+ * 帖子级可见性（private / selected）同样过滤。
+ * 排序：置顶优先（isPinned DESC），同组内按 createdAt 倒序。
  *
  * @returns 帖子列表；无权访问该板块时返回 null
  */
@@ -578,7 +579,7 @@ export async function listBlockPosts(
 
   const rows = await db
     .prepare(
-      "SELECT * FROM post WHERE blockId = ? AND parentId IS NULL AND isDeleted = 0 ORDER BY createdAt DESC LIMIT ? OFFSET ?"
+      "SELECT * FROM post WHERE blockId = ? AND parentId IS NULL AND isDeleted = 0 ORDER BY isPinned DESC, createdAt DESC LIMIT ? OFFSET ?"
     )
     .bind(blockId, limit, offset)
     .all<{
@@ -841,41 +842,54 @@ export async function softDeletePost(
   return true;
 }
 
+/** 帖子置顶结果：成功时带上切换后的真实状态 */
+export type PinPostResult =
+  | { ok: true; pinned: boolean }
+  | { ok: false; reason: "forbidden" | "not_found" };
+
 /**
  * 置顶 / 取消置顶帖子
+ *
+ * 帖子置顶的唯一写入口。状态存在 post.isPinned，
+ * 首页置顶区（db/pinned.ts）与板块帖子流排序都直接读这一列。
  *
  * 权限：
  *   - 非板块帖：全站 pin_post 权限
  *   - 板块帖：block_pin_post 板块权限；锁定板块禁止（除非 manage_block）
  *
- * @returns false 表示无权限或帖子不存在
+ * @returns { ok: true, pinned } 表示切换后的状态；
+ *          { ok: false } 表示无权限或帖子不存在（两种情况都不改动数据）
  */
 export async function pinPost(
   db: D1Database,
   id: string,
   user: CurrentUser | null
-): Promise<boolean> {
-  if (!user) return false;
+): Promise<PinPostResult> {
+  if (!user) return { ok: false, reason: "forbidden" };
 
   const post = await db
     .prepare("SELECT id, isPinned, blockId FROM post WHERE id = ? AND isDeleted = 0")
     .bind(id)
     .first<{ id: string; isPinned: number; blockId: string | null }>();
 
-  if (!post) return false;
+  if (!post) return { ok: false, reason: "not_found" };
 
   if (post.blockId) {
     // 板块帖：锁定检查 + block_pin_post 权限（manage_block 绕过）
-    if (!(await canWriteBlockPost(db, post.blockId, user, BLOCK_PERM_PIN_POST))) return false;
+    if (!(await canWriteBlockPost(db, post.blockId, user, BLOCK_PERM_PIN_POST))) {
+      return { ok: false, reason: "forbidden" };
+    }
   } else if (!can(user, PERM_PIN_POST)) {
     // 非板块帖：全站 pin_post 权限
-    return false;
+    return { ok: false, reason: "forbidden" };
   }
+
+  const pinned = !post.isPinned;
 
   await db
     .prepare("UPDATE post SET isPinned = ? WHERE id = ?")
-    .bind(post.isPinned ? 0 : 1, id)
+    .bind(pinned ? 1 : 0, id)
     .run();
 
-  return true;
+  return { ok: true, pinned };
 }

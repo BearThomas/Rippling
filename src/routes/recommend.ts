@@ -3,21 +3,36 @@
  *
  * 路由表（挂载前缀 /api/recommend）：
  *   GET    /     推荐流（游标分页，第一页含置顶）
- *   POST   /pin  置顶内容
- *   DELETE /pin  取消置顶
+ *   POST   /pin  置顶大事记 / 投票
+ *   DELETE /pin  取消置顶（帖子也认，用于清理历史数据）
  *
  * 推荐流按评分公式排序，支持游标分页。
- * 置顶内容仅在第一页返回，后续翻页不返回。
+ * 置顶内容只在第一页返回；已置顶的内容不再出现在下面的列表里
+ * （否则首页同一篇帖子会出现两次）。
+ *
+ * 帖子置顶不在这里：它的写入口是 POST /api/post/pin（改 post.isPinned）。
+ * 原因见 db/pinned.ts 顶部的说明 —— 一件事只留一个写入口。
  */
 
 import { Hono } from "hono";
 import type { CloudflareEnv } from "../auth";
 import type { AppContextVars } from "../middleware/auth";
 import { requirePermission } from "../middleware/permission";
-import { listRecommendations, pinItem, unpinItem, listActivePinned } from "../db";
+import {
+  listRecommendations,
+  pinItem,
+  unpinItem,
+  listActivePinned,
+  listPinnedRefs,
+} from "../db";
 import type { CurrentUser } from "../utils/permission";
 import { PERM_PIN_POST } from "../shared/permissions";
-import { VALIDATION_ERROR, NOT_FOUND } from "../utils/errors";
+import {
+  VALIDATION_ERROR,
+  NOT_FOUND,
+  FORBIDDEN,
+  INTERNAL_ERROR,
+} from "../utils/errors";
 
 // ============================================================
 //  类型定义
@@ -44,19 +59,29 @@ recommendRoutes.get("/", async (c) => {
   const lastId = c.req.query("lastId");
   const lastScore = lastScoreStr ? parseFloat(lastScoreStr) : undefined;
 
-  // 获取推荐内容
-  const result = await listRecommendations(c.env.DB, user, lastScore, lastId);
+  // 只有第一页展示置顶区（不传任何游标）
+  const firstPage = lastScore === undefined && !lastId;
 
-  // 第一页（无游标）额外返回置顶内容
-  let pinned: unknown[] = [];
-  if (lastScore === undefined && !lastId) {
-    pinned = await listActivePinned(c.env.DB, user);
-  }
+  // 置顶内容：第一页要完整数据用于展示；每一页都要一份 id 清单用于剔除，
+  // 否则"第一页剔过、第二页没剔"会让游标错位、正文重复
+  const pinned = firstPage ? await listActivePinned(c.env.DB, user) : [];
+  const refs = await listPinnedRefs(c.env.DB);
+  const exclude = new Set(refs.map((r) => `${r.targetType}:${r.targetId}`));
+
+  // 获取推荐内容
+  const result = await listRecommendations(
+    c.env.DB,
+    user,
+    lastScore,
+    lastId,
+    undefined,
+    exclude
+  );
 
   return c.json({
     success: true,
     data: {
-      pinned,
+      pinned: firstPage ? pinned : [],
       items: result.items,
       nextCursor: result.nextCursor,
     },
@@ -64,7 +89,7 @@ recommendRoutes.get("/", async (c) => {
 });
 
 // ------------------------------------------------------------
-//  POST /pin  — 置顶内容
+//  POST /pin  — 置顶大事记 / 投票
 // ------------------------------------------------------------
 
 recommendRoutes.post("/pin", requirePermission(PERM_PIN_POST), async (c) => {
@@ -82,9 +107,11 @@ recommendRoutes.post("/pin", requirePermission(PERM_PIN_POST), async (c) => {
 
   const targetType = body.targetType as string;
   const targetId = body.targetId as string;
-  const expiresAt = (body.expiresAt as string) ?? null;
+  const rawExpiresAt = body.expiresAt;
+  const expiresAt = rawExpiresAt === undefined || rawExpiresAt === null
+    ? null
+    : String(rawExpiresAt);
 
-  // 参数校验
   if (!targetType || !targetId) {
     return c.json(
       { success: false, error: { code: VALIDATION_ERROR.code, message: "缺少 targetType 或 targetId" } },
@@ -92,28 +119,56 @@ recommendRoutes.post("/pin", requirePermission(PERM_PIN_POST), async (c) => {
     );
   }
 
-  // 类型检查：表白墙不可置顶
-  if (!["post", "timeline", "vote"].includes(targetType)) {
-    return c.json(
-      { success: false, error: { code: VALIDATION_ERROR.code, message: "该类型不可置顶" } },
-      VALIDATION_ERROR.statusCode as any
-    );
-  }
+  const result = await pinItem(
+    c.env.DB,
+    targetType,
+    targetId,
+    expiresAt,
+    user as CurrentUser
+  );
 
-  // 校验 expiresAt 格式（如果提供）
-  if (expiresAt && isNaN(Date.parse(expiresAt))) {
-    return c.json(
-      { success: false, error: { code: VALIDATION_ERROR.code, message: "expiresAt 须为有效的 ISO 8601 日期" } },
-      VALIDATION_ERROR.statusCode as any
-    );
-  }
-
-  const ok = await pinItem(c.env.DB, targetType, targetId, expiresAt, user as CurrentUser);
-  if (!ok) {
-    return c.json(
-      { success: false, error: { code: NOT_FOUND.code, message: "置顶失败（已置顶或目标不存在）" } },
-      NOT_FOUND.statusCode as any
-    );
+  if (!result.ok) {
+    switch (result.reason) {
+      case "forbidden":
+        return c.json(
+          { success: false, error: { code: FORBIDDEN.code, message: "无置顶权限" } },
+          FORBIDDEN.statusCode as any
+        );
+      case "invalid_type":
+        return c.json(
+          {
+            success: false,
+            error: {
+              code: VALIDATION_ERROR.code,
+              message:
+                targetType === "post"
+                  ? "帖子置顶请用 POST /api/post/pin"
+                  : "该类型不可置顶（仅支持 timeline / vote）",
+            },
+          },
+          VALIDATION_ERROR.statusCode as any
+        );
+      case "invalid_target":
+        return c.json(
+          { success: false, error: { code: NOT_FOUND.code, message: "目标不存在或未通过审核" } },
+          NOT_FOUND.statusCode as any
+        );
+      case "expired":
+        return c.json(
+          { success: false, error: { code: VALIDATION_ERROR.code, message: "expiresAt 须为未来的有效 ISO 8601 日期" } },
+          VALIDATION_ERROR.statusCode as any
+        );
+      case "already_pinned":
+        return c.json(
+          { success: false, error: { code: "ALREADY_PINNED", message: "该内容已置顶" } },
+          409 as any
+        );
+      default:
+        return c.json(
+          { success: false, error: { code: INTERNAL_ERROR.code, message: "置顶失败，请稍后重试" } },
+          INTERNAL_ERROR.statusCode as any
+        );
+    }
   }
 
   return c.json({ success: true });
@@ -136,10 +191,23 @@ recommendRoutes.delete("/pin", requirePermission(PERM_PIN_POST), async (c) => {
     );
   }
 
-  const ok = await unpinItem(c.env.DB, targetType, targetId, user as CurrentUser);
-  if (!ok) {
+  const result = await unpinItem(c.env.DB, targetType, targetId, user as CurrentUser);
+
+  if (!result.ok) {
+    if (result.reason === "forbidden") {
+      return c.json(
+        { success: false, error: { code: FORBIDDEN.code, message: "无置顶权限" } },
+        FORBIDDEN.statusCode as any
+      );
+    }
+    if (result.reason === "error") {
+      return c.json(
+        { success: false, error: { code: INTERNAL_ERROR.code, message: "取消失败，请稍后重试" } },
+        INTERNAL_ERROR.statusCode as any
+      );
+    }
     return c.json(
-      { success: false, error: { code: NOT_FOUND.code, message: "取消失败（置顶项不存在）" } },
+      { success: false, error: { code: NOT_FOUND.code, message: "该内容未置顶" } },
       NOT_FOUND.statusCode as any
     );
   }

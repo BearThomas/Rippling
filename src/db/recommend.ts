@@ -121,6 +121,9 @@ function timeDecay(createdAt: string): number {
  * @param lastScore - 游标：上一页最后一条的 score（第一页不传）
  * @param lastId    - 游标：上一页最后一条的 id（第一页不传）
  * @param limit     - 每页条数（默认 50）
+ * @param exclude   - 需要从列表里剔除的条目，键为 `${type}:${id}`
+ *                    （首页置顶区已经展示过的内容，避免同一篇出现两次。
+ *                    每一页都要剔除，否则第一页少一条、后面的游标会错位）
  * @returns 推荐内容列表（按 score 降序）
  */
 export async function listRecommendations(
@@ -128,7 +131,8 @@ export async function listRecommendations(
   user: CurrentUser | null,
   lastScore?: number,
   lastId?: string,
-  limit: number = PAGE_SIZE
+  limit: number = PAGE_SIZE,
+  exclude?: Set<string>
 ): Promise<RecommendResult> {
   // ----------------------------------------------------------
   //  1. 拉取各内容源的候选数据
@@ -370,10 +374,16 @@ export async function listRecommendations(
   // 按 score 降序，同 score 按 id 升序
   items.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
 
+  // 剔除已置顶的内容（它们在上面单独展示）
+  let visible = items;
+  if (exclude && exclude.size > 0) {
+    visible = items.filter((item) => !exclude.has(`${item.type}:${item.id}`));
+  }
+
   // 应用游标过滤
-  let filtered = items;
+  let filtered = visible;
   if (lastScore !== undefined && lastId) {
-    filtered = items.filter(
+    filtered = visible.filter(
       (item) => item.score < lastScore || (item.score === lastScore && item.id > lastId)
     );
   }

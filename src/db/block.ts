@@ -951,8 +951,10 @@ export async function transferBlockOwnership(
 export async function leaveBlock(
   db: D1Database,
   blockId: string,
-  userId: string
+  user: CurrentUser | null
 ): Promise<boolean> {
+  if (!user) return false;
+
   // 检查是否为官方固定板块（ownerId 为占位符）
   const ownerRow = await db
     .prepare("SELECT ownerId FROM block WHERE id = ?")
@@ -962,7 +964,9 @@ export async function leaveBlock(
   const isFixed = ownerRow?.ownerId === "__fixed__";
   if (isFixed) {
     // 只有拥有全站 manage_block 权限的用户才能退出
-    if (!can(userId, PERM_MANAGE_BLOCK)) {
+    // （这里原来传的是 userId 字符串，can() 做 bigint 位运算时会抛 TypeError，
+    //   于是退出官方固定板块直接 500 —— 必须传整个 CurrentUser）
+    if (!can(user, PERM_MANAGE_BLOCK)) {
       return false; // 普通成员不可退出
     }
   }
@@ -970,7 +974,7 @@ export async function leaveBlock(
   // 原有成员检查逻辑保持不变
   const member = await db
     .prepare("SELECT role FROM block_member WHERE blockId = ? AND userId = ?")
-    .bind(blockId, userId)
+    .bind(blockId, user.id)
     .first<{ role: string }>();
 
   if (!member) return false;
@@ -978,7 +982,7 @@ export async function leaveBlock(
 
   const result = await db
     .prepare("DELETE FROM block_member WHERE blockId = ? AND userId = ?")
-    .bind(blockId, userId)
+    .bind(blockId, user.id)
     .run();
 
   return (result.meta.changes ?? 0) > 0;

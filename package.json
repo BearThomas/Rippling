@@ -6,7 +6,7 @@
   "license": "MIT",
   "scripts": {
     "build": "node -e \"require('child_process').execSync('cp -r src/functions functions && cp -r src/auth src/config src/db src/middleware src/routes src/shared src/utils . && cd src/frontend && npm install && npm run build', { stdio: 'inherit' })\"",
-    "dev": "wrangler pages dev",
+    "dev": "wrangler pages dev public",
     "deploy": "wrangler pages deploy",
     "typecheck": "tsc --noEmit"
   },

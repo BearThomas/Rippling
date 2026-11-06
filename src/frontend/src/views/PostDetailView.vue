@@ -41,6 +41,7 @@ import {
   PERM_PIN_POST,
   PERM_EDIT_OTHERS_POST,
   PERM_DELETE_OTHERS_POST,
+  BLOCK_PERM_PIN_POST,
 } from "../utils/permission";
 import type { PostInfo } from "../types";
 
@@ -77,6 +78,8 @@ const authorQuestionBoxEnabled = ref<boolean | null>(null);
 
 /** 所属板块名（blockId 存在时查询） */
 const blockName = ref<string | null>(null);
+/** 当前用户在所属板块内的权限掩码（非成员为 null） */
+const blockPermissions = ref<string | null>(null);
 
 // ------------------------------------------------------------
 //  编辑 / 删除 / 置顶
@@ -90,8 +93,20 @@ const pinning = ref(false);
 
 /** 权限探测结果（十进制掩码字符串） */
 const myPermissions = ref<string>("0");
-/** 是否有 pin_post 权限（置顶按钮可见性） */
-const canPin = computed(() => hasPermission(myPermissions.value, PERM_PIN_POST));
+/**
+ * 置顶按钮可见性
+ *
+ * 两种权限任一即可：
+ *   · 全站 pin_post —— 非板块帖置顶
+ *   · 板块内 block_pin_post —— 板块帖置顶（板块长也应该看得到按钮，
+ *     原来只认全站权限，板块长点不到）
+ */
+const canPin = computed(
+  () =>
+    hasPermission(myPermissions.value, PERM_PIN_POST) ||
+    (blockPermissions.value !== null &&
+      hasPermission(blockPermissions.value, BLOCK_PERM_PIN_POST))
+);
 
 /** 是否作者本人（匿名帖 authorId 为 null，任何人都不视为作者） */
 const isAuthor = computed(
@@ -204,6 +219,7 @@ async function loadRelations(): Promise<void> {
     try {
       const block = await getBlockDetail(p.blockId);
       blockName.value = block.name;
+      blockPermissions.value = block.myPermissions;
     } catch {
       blockName.value = null;
     }
@@ -286,9 +302,9 @@ async function onTogglePin(): Promise<void> {
   if (!post.value || pinning.value) return;
   pinning.value = true;
   try {
-    await togglePinPost(postId);
-    post.value.isPinned = !post.value.isPinned;
-    showToast(post.value.isPinned ? "已置顶" : "已取消置顶", "success");
+    const result = await togglePinPost(postId);
+    post.value.isPinned = result.pinned;
+    showToast(result.pinned ? "已置顶" : "已取消置顶", "success");
   } catch {
     // client.ts 已自动 Toast
   } finally {

@@ -393,7 +393,7 @@ postRoutes.post("/comment", requirePermission(PERM_COMMENT), async (c) => {
 //  权限由 DAL 根据帖子是否属于板块区分：
 //    - 非板块帖：全站 pin_post 权限
 //    - 板块帖：block_pin_post 板块权限
-//  故不用 requirePermission 拦截，由 DAL 返回 false → 404。
+//  故不用 requirePermission 拦截，由 DAL 返回 { ok: false } → 404。
 // ------------------------------------------------------------
 
 postRoutes.post("/pin", async (c) => {
@@ -423,15 +423,17 @@ postRoutes.post("/pin", async (c) => {
     );
   }
 
-  const ok = await pinPost(c.env.DB, id, user);
-  if (!ok) {
+  const result = await pinPost(c.env.DB, id, user);
+  if (!result.ok) {
+    // 无权限与不存在都回 404：不区分它们，避免泄露"这个 id 存在"
     return c.json(
       { success: false, error: { code: NOT_FOUND.code, message: NOT_FOUND.message } },
       NOT_FOUND.statusCode as any
     );
   }
 
-  return c.json({ success: true });
+  // 回传切换后的状态，前端不再自己猜（之前是本地取反，置顶失败时状态会错）
+  return c.json({ success: true, data: { pinned: result.pinned } });
 });
 
 export default postRoutes;

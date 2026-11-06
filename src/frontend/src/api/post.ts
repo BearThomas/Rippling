@@ -51,9 +51,14 @@ export function deletePost(id: string): Promise<void> {
   return apiDelete<void>("/api/post", { params: { id } });
 }
 
-/** 置顶 / 取消置顶（切换语义；权限由后端按帖子归属判断） */
-export function togglePinPost(id: string): Promise<void> {
-  return apiPost<void>("/api/post/pin", { id });
+/**
+ * 置顶 / 取消置顶（切换语义；权限由后端按帖子归属判断）
+ *
+ * 返回值是切换后的真实状态：之前前端自己取反，一旦后端没改成功
+ * （无权限、帖子已被删）界面就会显示成"已置顶"，和首页对不上。
+ */
+export function togglePinPost(id: string): Promise<{ pinned: boolean }> {
+  return apiPost<{ pinned: boolean }>("/api/post/pin", { id });
 }
 
 // ============================================================

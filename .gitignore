@@ -16,3 +16,13 @@ dist/
 
 # OS files
 .DS_Store
+
+# 构建时从 src/ 复制到仓库根的副本（见 package.json 的 build 脚本）
+/functions/
+/auth/
+/config/
+/db/
+/middleware/
+/routes/
+/shared/
+/utils/

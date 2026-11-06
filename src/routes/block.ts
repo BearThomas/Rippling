@@ -468,7 +468,7 @@ blockRoutes.post("/leave", async (c) => {
   const blockId = body.blockId as string;
   if (!blockId) return badRequest(c, "缺少 blockId");
 
-  const ok = await leaveBlock(c.env.DB, blockId, user.id);
+  const ok = await leaveBlock(c.env.DB, blockId, user);
   if (!ok) return notFound(c); // 非成员 / owner 不可直接退出
 
   return c.json({ success: true });

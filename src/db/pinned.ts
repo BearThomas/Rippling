@@ -1,12 +1,24 @@
 /**
- * 置顶管理数据访问层
+ * 置顶数据访问层
  *
- * 底层表：pinned_item
- * 规则：
- *   - 仅 pin_post 权限用户可置顶 / 取消置顶
- *   - 可置顶类型：post / timeline / vote（表白墙不可置顶）
- *   - 支持期限（expiresAt）或永久（expiresAt = null）
- *   - 推荐流第一页返回置顶内容
+ * 置顶分两种，各自只有一个真相（不要两边都写，写两份必然漂移）：
+ *
+ *   1. 帖子置顶 —— `post.isPinned` 列
+ *      · 写入口只有一个：POST /api/post/pin（切换语义，返回置顶后的状态）
+ *      · 生效位置：首页置顶区（本文件 listActivePinned）+ 板块帖子流排序
+ *      · 无期限（列上没有 expiresAt），取消置顶 / 删除 / 归档后自然消失
+ *
+ *   2. 大事记 / 投票置顶 —— `pinned_item` 表
+ *      · 写入口：POST /api/recommend/pin，DELETE /api/recommend/pin
+ *      · 生效位置：首页置顶区
+ *      · 支持期限（expiresAt = null 表示永久）
+ *
+ * 历史数据：早期版本会把帖子也写进 pinned_item。读取时仍然兼容
+ * （见 listActivePinned 第二部分），但新写入会拒绝 targetType = "post"
+ * 并提示改用 /api/post/pin，避免同一件事有两个写入口。
+ *
+ * 权限：置顶 / 取消置顶需要 pin_post（帖子另按板块权限判定，见 db/post.ts）；
+ * 读取时逐项做可见性过滤，看不到的内容不返回。
  */
 
 import type { CurrentUser } from "../utils/permission";
@@ -21,11 +33,17 @@ import {
 } from "./enrichment";
 
 // ============================================================
-//  返回类型
+//  常量与返回类型
 // ============================================================
 
-/** 可置顶的内容类型 */
-const PINNABLE_TYPES = ["post", "timeline", "vote"] as const;
+/** 可以写入 pinned_item 的内容类型（帖子有自己的 isPinned 列，不在此列） */
+const WRITABLE_TYPES = ["timeline", "vote"] as const;
+
+/** 读取时认得的内容类型（post 仅用于兼容历史数据） */
+const READABLE_TYPES = ["post", "timeline", "vote"] as const;
+
+/** 首页置顶区最多返回的条数（防止一次置顶一堆把首页顶穿） */
+const PINNED_LIMIT = 30;
 
 /** 置顶项信息 */
 export interface PinnedItemInfo {
@@ -39,17 +57,43 @@ export interface PinnedItemInfo {
   data: Record<string, unknown> | null;
 }
 
+/** 置顶写入结果 */
+export type PinWriteResult =
+  | { ok: true }
+  /**
+   * forbidden      —— 没有 pin_post 权限
+   * invalid_type   —— 该类型不可置顶（含 targetType = "post"）
+   * invalid_target —— 目标不存在 / 不可见 / 未通过审核
+   * expired        —— expiresAt 不是有效时间或已经过去
+   * already_pinned —— 已经置顶过
+   * error          —— 数据库写入失败（不再静默当成"已置顶"）
+   */
+  | {
+      ok: false;
+      reason:
+        | "forbidden"
+        | "invalid_type"
+        | "invalid_target"
+        | "expired"
+        | "already_pinned"
+        | "error";
+    };
+
+/** 取消置顶结果 */
+export type UnpinResult =
+  | { ok: true }
+  | { ok: false; reason: "forbidden" | "not_pinned" | "error" };
+
 // ============================================================
-//  查询函数
+//  写入
 // ============================================================
 
 /**
- * 置顶内容
+ * 置顶一条大事记 / 投票
  *
- * 需要 pin_post 权限，targetType 仅限 post / timeline / vote。
- * 使用 UNIQUE 约束防止重复置顶。
- *
- * @returns false 表示无权限、类型不允许或已置顶
+ * 先校验目标真实存在且可见，再写库：
+ * 跳过校验的话，接口会对一个不存在的 id 返回成功，
+ * 而首页永远看不到它 —— 那种"成功但什么都没发生"最难查。
  */
 export async function pinItem(
   db: D1Database,
@@ -57,17 +101,46 @@ export async function pinItem(
   targetId: string,
   expiresAt: string | null,
   user: CurrentUser | null
-): Promise<boolean> {
-  if (!can(user, PERM_PIN_POST)) return false;
-  if (!user) return false;
-
-  // 类型检查：表白墙不可置顶
-  if (!PINNABLE_TYPES.includes(targetType as typeof PINNABLE_TYPES[number])) {
-    return false;
+): Promise<PinWriteResult> {
+  if (!user || !can(user, PERM_PIN_POST)) {
+    return { ok: false, reason: "forbidden" };
   }
 
-  const id = generateUUID();
-  const now = nowISO();
+  if (!WRITABLE_TYPES.includes(targetType as (typeof WRITABLE_TYPES)[number])) {
+    return { ok: false, reason: "invalid_type" };
+  }
+
+  // 期限校验：必须能解析、且在未来
+  let expires: string | null = null;
+  if (expiresAt !== null) {
+    const ts = Date.parse(expiresAt);
+    if (Number.isNaN(ts)) return { ok: false, reason: "expired" };
+    if (ts <= Date.now()) return { ok: false, reason: "expired" };
+    expires = new Date(ts).toISOString();
+  }
+
+  // 目标校验（与读取时的过滤条件保持一致，否则置顶成功也显示不出来）
+  const exists =
+    targetType === "timeline"
+      ? await db
+          .prepare(
+            "SELECT id FROM timeline_event WHERE id = ? AND status = 'approved' AND isArchived = 0"
+          )
+          .bind(targetId)
+          .first()
+      : await db
+          .prepare("SELECT id FROM vote WHERE id = ?")
+          .bind(targetId)
+          .first();
+
+  if (!exists) return { ok: false, reason: "invalid_target" };
+
+  const existing = await db
+    .prepare("SELECT id FROM pinned_item WHERE targetType = ? AND targetId = ?")
+    .bind(targetType, targetId)
+    .first();
+
+  if (existing) return { ok: false, reason: "already_pinned" };
 
   try {
     await db
@@ -75,63 +148,181 @@ export async function pinItem(
         `INSERT INTO pinned_item (id, targetType, targetId, createdBy, expiresAt, createdAt)
          VALUES (?, ?, ?, ?, ?, ?)`
       )
-      .bind(id, targetType, targetId, user.id, expiresAt, now)
+      .bind(generateUUID(), targetType, targetId, user.id, expires, nowISO())
       .run();
-  } catch {
-    // UNIQUE 约束冲突（已置顶）
-    return false;
+  } catch (error) {
+    console.error("[pinned] 写入置顶失败:", error);
+    return { ok: false, reason: "error" };
   }
 
-  return true;
+  return { ok: true };
 }
 
 /**
- * 取消置顶
+ * 取消置顶一条大事记 / 投票
  *
- * 需要 pin_post 权限。
- *
- * @returns false 表示无权限或置顶项不存在
+ * 帖子不走这里：帖子的置顶状态在 post.isPinned（见 db/post.ts 的 pinPost）。
  */
 export async function unpinItem(
   db: D1Database,
   targetType: string,
   targetId: string,
   user: CurrentUser | null
-): Promise<boolean> {
-  if (!can(user, PERM_PIN_POST)) return false;
-  if (!user) return false;
+): Promise<UnpinResult> {
+  if (!user || !can(user, PERM_PIN_POST)) {
+    return { ok: false, reason: "forbidden" };
+  }
 
-  const result = await db
-    .prepare("DELETE FROM pinned_item WHERE targetType = ? AND targetId = ?")
-    .bind(targetType, targetId)
-    .run();
+  if (targetType === "post") {
+    // 历史数据里可能还留着帖子置顶行：删掉它，并清掉 isPinned，
+    // 否则两处状态会互相打架（列表里有、按钮却是"未置顶"）。
+    try {
+      const removed = await db
+        .prepare("DELETE FROM pinned_item WHERE targetType = 'post' AND targetId = ?")
+        .bind(targetId)
+        .run();
+      const flagged = await db
+        .prepare("UPDATE post SET isPinned = 0 WHERE id = ? AND isPinned = 1")
+        .bind(targetId)
+        .run();
+      if ((removed.meta.changes ?? 0) === 0 && (flagged.meta.changes ?? 0) === 0) {
+        return { ok: false, reason: "not_pinned" };
+      }
+      return { ok: true };
+    } catch (error) {
+      console.error("[pinned] 取消帖子置顶失败:", error);
+      return { ok: false, reason: "error" };
+    }
+  }
 
-  return result.meta.changes > 0;
+  try {
+    const result = await db
+      .prepare("DELETE FROM pinned_item WHERE targetType = ? AND targetId = ?")
+      .bind(targetType, targetId)
+      .run();
+
+    if ((result.meta.changes ?? 0) === 0) return { ok: false, reason: "not_pinned" };
+    return { ok: true };
+  } catch (error) {
+    console.error("[pinned] 取消置顶失败:", error);
+    return { ok: false, reason: "error" };
+  }
+}
+
+// ============================================================
+//  读取
+// ============================================================
+
+/** 置顶引用（只含类型与 id，用于把置顶项从推荐流里剔除） */
+export interface PinnedRef {
+  targetType: string;
+  targetId: string;
 }
 
 /**
- * 列出当前有效的置顶项（未过期）
+ * 列出所有置顶项的类型与 id
  *
- * 对每个置顶项，根据 targetType 从对应表加载数据。
- * 应用权限过滤：无权限的内容不返回。
+ * 推荐流每一页都要用它剔除置顶内容（否则第一页剔、第二页不剔，游标会错位），
+ * 但不该为此付出"逐条加载作者 / 点赞 / 评论"的代价，所以单独留一个便宜版本。
+ * 这里故意不做可见性过滤：看不到的置顶项本来也不会出现在他的推荐流里。
+ */
+export async function listPinnedRefs(db: D1Database): Promise<PinnedRef[]> {
+  const [postRows, itemRows] = await Promise.all([
+    db
+      .prepare(
+        `SELECT id FROM post
+         WHERE isPinned = 1 AND parentId IS NULL AND isDeleted = 0 AND isArchived = 0`
+      )
+      .all<{ id: string }>(),
+    db
+      .prepare(
+        `SELECT targetType, targetId FROM pinned_item
+         WHERE expiresAt IS NULL OR expiresAt > ?`
+      )
+      .bind(nowISO())
+      .all<{ targetType: string; targetId: string }>(),
+  ]);
+
+  const seen = new Set<string>();
+  const refs: PinnedRef[] = [];
+
+  for (const row of postRows.results) {
+    const key = `post:${row.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push({ targetType: "post", targetId: row.id });
+  }
+
+  for (const row of itemRows.results) {
+    const key = `${row.targetType}:${row.targetId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push({ targetType: row.targetType, targetId: row.targetId });
+  }
+
+  return refs;
+}
+
+/**
+ * 列出当前有效的置顶项（首页置顶区）
  *
- * @returns 有效置顶项列表（含关联数据）
+ * 顺序：帖子置顶（按发布时间倒序）→ 大事记 / 投票置顶（按置顶时间倒序）。
+ * 每一项都做可见性过滤：无权限、已删除、已归档、未通过审核的都不返回。
  */
 export async function listActivePinned(
   db: D1Database,
   user: CurrentUser | null
 ): Promise<PinnedItemInfo[]> {
-  const now = nowISO();
+  const results: PinnedItemInfo[] = [];
+  const seen = new Set<string>();
 
-  // 查询未过期的置顶项
+  /** 去重压入：同一（类型, id）只出现一次 */
+  function push(item: PinnedItemInfo): void {
+    const key = `${item.targetType}:${item.targetId}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    results.push(item);
+  }
+
+  // ---------------- 1) 帖子：post.isPinned ----------------
+
+  const postRows = await db
+    .prepare(
+      `SELECT id, authorId, authorVisible, title, content, visibility, blockId, createdAt
+       FROM post
+       WHERE isPinned = 1 AND parentId IS NULL AND isDeleted = 0 AND isArchived = 0
+       ORDER BY createdAt DESC
+       LIMIT ?`
+    )
+    .bind(PINNED_LIMIT)
+    .all<PostRow>();
+
+  for (const row of postRows.results) {
+    const data = await buildPinnedPostData(db, row, user);
+    if (!data) continue;
+    push({
+      // 帖子没有置顶行 id，用合成 id 保证前端 key 唯一
+      id: `post:${row.id}`,
+      targetType: "post",
+      targetId: row.id,
+      createdBy: row.authorId,
+      expiresAt: null,
+      createdAt: row.createdAt,
+      data,
+    });
+  }
+
+  // ---------------- 2) pinned_item（大事记 / 投票 + 历史帖子行） ----------------
+
   const rows = await db
     .prepare(
       `SELECT id, targetType, targetId, createdBy, expiresAt, createdAt
        FROM pinned_item
        WHERE expiresAt IS NULL OR expiresAt > ?
-       ORDER BY createdAt DESC`
+       ORDER BY createdAt DESC
+       LIMIT ?`
     )
-    .bind(now)
+    .bind(nowISO(), PINNED_LIMIT)
     .all<{
       id: string;
       targetType: string;
@@ -141,37 +332,25 @@ export async function listActivePinned(
       createdAt: string;
     }>();
 
-  const results: PinnedItemInfo[] = [];
-
   for (const row of rows.results) {
-    let data: Record<string, unknown> | null = null;
-
-    switch (row.targetType) {
-      case "post":
-        data = await loadPostForPinned(db, row.targetId, user);
-        break;
-      case "timeline":
-        data = await loadTimelineForPinned(db, row.targetId);
-        break;
-      case "vote":
-        data = await loadVoteForPinned(db, row.targetId);
-        break;
-      default:
-        continue;
+    if (!READABLE_TYPES.includes(row.targetType as (typeof READABLE_TYPES)[number])) {
+      continue;
     }
 
-    // 无权限的内容跳过
-    if (!data) continue;
+    // 已经在第 1 部分出现过的帖子，不要重复展示
+    if (seen.has(`${row.targetType}:${row.targetId}`)) continue;
 
-    results.push({
-      id: row.id,
-      targetType: row.targetType,
-      targetId: row.targetId,
-      createdBy: row.createdBy,
-      expiresAt: row.expiresAt,
-      createdAt: row.createdAt,
-      data,
-    });
+    let data: Record<string, unknown> | null = null;
+    if (row.targetType === "post") {
+      data = await loadPostForPinned(db, row.targetId, user);
+    } else if (row.targetType === "timeline") {
+      data = await loadTimelineForPinned(db, row.targetId);
+    } else {
+      data = await loadVoteForPinned(db, row.targetId);
+    }
+
+    if (!data) continue;
+    push({ ...row, data });
   }
 
   return results;
@@ -181,65 +360,73 @@ export async function listActivePinned(
 //  内部辅助：加载关联数据
 // ============================================================
 
+/** 数据库里的帖子行（置顶相关字段） */
+interface PostRow {
+  id: string;
+  authorId: string;
+  authorVisible: number;
+  title: string | null;
+  content: string;
+  visibility: string;
+  blockId: string | null;
+  createdAt: string;
+}
+
 /** 加载帖子数据（含权限过滤 + 展示信息附加） */
 async function loadPostForPinned(
   db: D1Database,
   postId: string,
   user: CurrentUser | null
 ): Promise<Record<string, unknown> | null> {
-  const post = await db
+  const row = await db
     .prepare(
       `SELECT id, authorId, authorVisible, title, content, visibility, blockId, createdAt
        FROM post WHERE id = ? AND isDeleted = 0 AND isArchived = 0 AND parentId IS NULL`
     )
     .bind(postId)
-    .first<{
-      id: string;
-      authorId: string;
-      authorVisible: number;
-      title: string | null;
-      content: string;
-      visibility: string;
-      blockId: string | null;
-      createdAt: string;
-    }>();
+    .first<PostRow>();
 
-  if (!post) return null;
+  if (!row) return null;
+  return buildPinnedPostData(db, row, user);
+}
 
-  // visibility 检查
-  if (post.visibility === "private") return null;
-  if (post.visibility === "selected") {
-    if (!user || user.id !== post.authorId) {
-      const inList = await db
-        .prepare("SELECT id FROM post_visibility WHERE postId = ? AND userId = ?")
-        .bind(post.id, user?.id ?? "")
-        .first();
-      if (!inList) return null;
-    }
+/** 对已取到的帖子行做可见性检查 + 附加展示信息 */
+async function buildPinnedPostData(
+  db: D1Database,
+  row: PostRow,
+  user: CurrentUser | null
+): Promise<Record<string, unknown> | null> {
+  // private：任何人都不可见（作者自己也不该在公开置顶区看到）
+  if (row.visibility === "private") return null;
+
+  // selected：仅作者与白名单成员可见
+  if (row.visibility === "selected" && (!user || user.id !== row.authorId)) {
+    const inList = await db
+      .prepare("SELECT id FROM post_visibility WHERE postId = ? AND userId = ?")
+      .bind(row.id, user?.id ?? "")
+      .first();
+    if (!inList) return null;
   }
 
-  // 板块检查
-  if (post.blockId) {
-    const canAccess = await checkBlockAccess(db, post.blockId, user);
-    if (!canAccess) return null;
-  }
+  // 板块帖：需要板块访问权
+  if (row.blockId && !(await checkBlockAccess(db, row.blockId, user))) return null;
 
-  // 附加展示信息：作者 / 点赞数 / 评论数（置顶项数量少，逐项查询可接受）
   const [author, likeCount, commentCount] = await Promise.all([
-    getPostAuthorBrief(db, post.authorId, post.authorVisible === 1, user),
-    getTargetLikeCount(db, "post", post.id),
-    getChildCommentCount(db, post.id),
+    getPostAuthorBrief(db, row.authorId, row.authorVisible === 1, user),
+    getTargetLikeCount(db, "post", row.id),
+    getChildCommentCount(db, row.id),
   ]);
 
   return {
-    id: post.id,
-    title: post.title,
-    content: post.content,
+    id: row.id,
+    title: row.title,
+    content: row.content,
     author,
-    authorVisible: post.authorVisible === 1,
+    authorVisible: row.authorVisible === 1,
+    isPinned: true,
     likeCount,
     commentCount,
-    createdAt: post.createdAt,
+    createdAt: row.createdAt,
   };
 }
 
