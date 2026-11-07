@@ -17,6 +17,7 @@ import LoadingSpinner from "../components/common/LoadingSpinner.vue";
 import EmptyState from "../components/common/EmptyState.vue";
 import ErrorState from "../components/common/ErrorState.vue";
 import { getRecommendFeed } from "../api/recommend";
+import { setTourFirstPostId } from "../utils/onboarding";
 import type { PinnedItemInfo, RecommendItem } from "../types";
 
 const router = useRouter();
@@ -92,6 +93,9 @@ async function loadFeed(): Promise<void> {
     const feed = await getRecommendFeed();
     pinned.value = feed.pinned ?? [];
     items.value = feed.items ?? [];
+    // 给首次使用引导用：帖子详情那一步需要一条真实帖子
+    const firstPost = items.value.find((item) => item.type === "post");
+    setTourFirstPostId(firstPost ? firstPost.id : null);
     nextCursor.value = feed.nextCursor;
     // 置顶全部已查看过 → 默认折叠
     if (!pinnedTouched.value) {
@@ -213,7 +217,7 @@ function goCreatePost(): void {
 
     <template v-else>
       <!-- 置顶区（可折叠） -->
-      <section v-if="pinned.length > 0" class="mb-3">
+      <section v-if="pinned.length > 0" data-tour="home-pinned" class="mb-3">
         <button
           type="button"
           class="mb-2 flex w-full items-center gap-1 px-1 text-sm font-semibold text-accent"
@@ -235,7 +239,7 @@ function goCreatePost(): void {
       </section>
 
       <!-- 推荐流 -->
-      <section v-if="items.length > 0" class="space-y-3">
+      <section v-if="items.length > 0" data-tour="home-feed" class="space-y-3">
         <FeedItem v-for="item in items" :key="`${item.type}-${item.id}`" :item="item" />
       </section>
 
@@ -262,6 +266,7 @@ function goCreatePost(): void {
     <!-- 悬浮发帖按钮（位于最顶层，避开底部导航栏） -->
     <button
       type="button"
+      data-tour="home-fab"
       class="fixed right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-white shadow-lg transition-transform active:scale-95"
       style="bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px))"
       aria-label="发帖"

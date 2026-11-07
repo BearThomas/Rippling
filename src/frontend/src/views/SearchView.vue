@@ -219,7 +219,10 @@ async function onFollow(user: SearchUserResult): Promise<void> {
     </form>
 
     <!-- 类型筛选 tab -->
-    <div class="scrollbar-none -mx-3 mt-3 flex gap-2 overflow-x-auto px-3 pb-1">
+    <div
+      data-tour="search-tabs"
+      class="scrollbar-none -mx-3 mt-3 flex gap-2 overflow-x-auto px-3 pb-1"
+    >
       <button
         v-for="tab in TYPE_TABS"
         :key="tab.value"

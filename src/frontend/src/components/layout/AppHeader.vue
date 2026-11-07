@@ -67,6 +67,7 @@ function goBack(): void {
       <RouterLink
         v-if="isHome"
         to="/search"
+        data-tour="header-search"
         class="flex h-9 w-9 items-center justify-center rounded-full text-ink-soft active:bg-page"
         aria-label="搜索"
       >

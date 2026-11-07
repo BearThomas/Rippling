@@ -7,16 +7,49 @@
   主内容区最大宽度 960px 居中（固定侧边栏占位由 lg:pl-16 让出）。
 -->
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, watch } from "vue";
 import { useRoute } from "vue-router";
 import AppSidebar from "./AppSidebar.vue";
 import AppHeader from "./AppHeader.vue";
 import AppTabbar from "./AppTabbar.vue";
+import OnboardingTour from "../onboarding/OnboardingTour.vue";
+import { useAuthStore } from "../../stores/auth";
+import { getMyPermissions } from "../../utils/myPermissions";
+import { hasPermission, PERM_ACCESS_ADMIN_PANEL } from "../../utils/permission";
+import { buildTourSteps, readTourStatus, startTour } from "../../utils/onboarding";
 
 const route = useRoute();
+const auth = useAuthStore();
 
 /** 是否显示底部导航（默认显示） */
 const showTabbar = computed(() => route.meta.showTabbar !== false);
+
+/**
+ * 首次使用引导：只对已登录用户、且还从没看过的人自动弹一次。
+ * 跳过或走完都会记进 localStorage，不再打扰（设置页可以重看）。
+ */
+async function maybeAutoStart(): Promise<void> {
+  if (readTourStatus() !== "unseen") return;
+  try {
+    const mask = await getMyPermissions();
+    const steps = await buildTourSteps(hasPermission(mask, PERM_ACCESS_ADMIN_PANEL));
+    if (!steps.length) return;
+    startTour(steps);
+  } catch {
+    // 权限查询失败就当没有管理面板那一步，不影响引导其他部分
+    startTour(await buildTourSteps(false));
+  }
+}
+
+watch(
+  () => auth.loaded,
+  (loaded) => {
+    if (!loaded || !auth.isLoggedIn) return;
+    // 稍等一下，让首页内容先出来，第一步落在首页上更自然
+    setTimeout(() => void maybeAutoStart(), 700);
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -37,5 +70,8 @@ const showTabbar = computed(() => route.meta.showTabbar !== false);
     </main>
 
     <AppTabbar v-if="showTabbar" />
+
+    <!-- 首次使用引导（浮层，不影响布局） -->
+    <OnboardingTour />
   </div>
 </template>

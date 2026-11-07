@@ -468,7 +468,10 @@ onMounted(load);
         </div>
 
         <!-- 操作行 -->
-        <div class="mt-4 flex items-center gap-4 border-t border-line pt-3 text-xs text-ink-soft">
+        <div
+          data-tour="post-actions"
+          class="mt-4 flex items-center gap-4 border-t border-line pt-3 text-xs text-ink-soft"
+        >
           <button
             type="button"
             class="flex items-center gap-1 transition-colors"

@@ -27,6 +27,7 @@ const activeTab = computed<TabName | null>(() => resolveActiveNav(route.path));
 
 <template>
   <nav
+    data-tour="tabbar"
     class="fixed inset-x-0 bottom-0 z-40 mx-auto max-w-app border-t border-line bg-surface lg:hidden"
     style="padding-bottom: env(safe-area-inset-bottom)"
   >

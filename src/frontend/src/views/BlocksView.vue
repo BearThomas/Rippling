@@ -112,7 +112,7 @@ onMounted(load);
 </script>
 
 <template>
-  <div class="px-3 pb-6 pt-3">
+  <div data-tour="blocks-list" class="px-3 pb-6 pt-3">
     <!-- 顶部搜索框（点击跳搜索页） -->
     <button
       type="button"
