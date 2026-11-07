@@ -13,6 +13,8 @@
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MarkdownRenderer from "../components/markdown/MarkdownRenderer.vue";
+import ImageLightbox from "../components/common/ImageLightbox.vue";
+import { extractImageUrls } from "../utils/markdownImages";
 import LoadingSpinner from "../components/common/LoadingSpinner.vue";
 import ErrorState from "../components/common/ErrorState.vue";
 import EmptyState from "../components/common/EmptyState.vue";
@@ -90,6 +92,33 @@ const editContent = ref("");
 const savingEdit = ref(false);
 const deleting = ref(false);
 const pinning = ref(false);
+
+/** 正文里的图片（用于放大查看；点正文里的图时按下标打开） */
+const bodyImages = computed(() => extractImageUrls(post.value?.content));
+/** 大图查看：是否打开 + 当前第几张 */
+const lightboxOpen = ref(false);
+const lightboxIndex = ref(0);
+
+/** 正文容器点击委托：点中的是 img 就打开大图 */
+function onContentClick(event: MouseEvent): void {
+  const target = event.target as HTMLElement | null;
+  if (!target || target.tagName !== "IMG") return;
+
+  const container = event.currentTarget as HTMLElement | null;
+  if (!container) return;
+
+  // 按"正文里出现的顺序"定位被点的那张图
+  const imgs = [...container.querySelectorAll("img")];
+  const clicked = imgs.indexOf(target as HTMLImageElement);
+  const urls = bodyImages.value;
+  if (urls.length === 0) return;
+
+  // 用 src 再核对一次，避免正文里混入非 Markdown 图片时下标对不上
+  const src = (target as HTMLImageElement).getAttribute("src") ?? "";
+  const bySrc = urls.indexOf(src);
+  lightboxIndex.value = bySrc >= 0 ? bySrc : Math.max(0, Math.min(clicked, urls.length - 1));
+  lightboxOpen.value = true;
+}
 
 /** 权限探测结果（十进制掩码字符串） */
 const myPermissions = ref<string>("0");
@@ -443,8 +472,14 @@ onMounted(load);
         <!-- 标题 -->
         <h1 v-if="post.title" class="mb-2 text-lg font-bold">{{ post.title }}</h1>
 
-        <!-- 正文：查看 / 编辑 -->
-        <MarkdownRenderer v-if="!editing" :content="post.content" />
+        <!-- 正文：查看 / 编辑（点图片可放大查看，仅此页启用） -->
+        <div
+          v-if="!editing"
+          class="post-body cursor-zoom-in"
+          @click="onContentClick"
+        >
+          <MarkdownRenderer :content="post.content" />
+        </div>
         <div v-else>
           <textarea
             v-model="editContent"
@@ -571,5 +606,27 @@ onMounted(load);
         />
       </div>
     </template>
-  </div>
+  
+    <!-- 大图查看（只有帖子详情页有；帖子流里的横滑条不放大） -->
+    <ImageLightbox
+      :open="lightboxOpen"
+      :urls="bodyImages"
+      :index="lightboxIndex"
+      @update:index="lightboxIndex = $event"
+      @close="lightboxOpen = false"
+    />
+</div>
 </template>
+
+<style scoped>
+/* 正文里的图片：别让竖图占满整屏，统一圆角；可点开看大图 */
+.post-body :deep(img) {
+  display: block;
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  border-radius: 0.5rem;
+  margin: 0.5rem 0;
+  background: color-mix(in srgb, var(--c-text) 6%, transparent);
+}
+</style>
