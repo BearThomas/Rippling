@@ -15,6 +15,7 @@ import PostImageStrip from "./PostImageStrip.vue";
 import { extractImageUrls, hasTextBesidesImages } from "../../utils/markdownImages";
 import { formatRelativeTime, formatNumber, truncateText } from "../../utils/format";
 import type { PostAuthor } from "../../types";
+import UserAvatar from "../user/UserAvatar.vue";
 
 /** 卡片所需的帖子数据结构（PostInfo / RecommendPostData 均兼容） */
 interface PostCardData {
@@ -40,8 +41,6 @@ const isAnonymous = computed(() => !props.post.author);
 /** 作者显示名 */
 const authorName = computed(() => props.post.author?.username ?? "匿名用户");
 
-/** 头像占位：作者名首字 */
-const avatarChar = computed(() => authorName.value.slice(0, 1));
 
 /** 作者主页路由（作者存在且有 id 时返回；匿名为 null → 不可点击） */
 const authorProfileLink = computed(() => {
@@ -96,27 +95,13 @@ function openDetail(): void {
         class="flex min-w-0 items-center gap-2"
         @click.stop
       >
-        <img
-          v-if="post.author?.avatar"
-          :src="post.author.avatar"
-          :alt="authorName"
-          class="h-7 w-7 shrink-0 rounded-full object-cover"
+        <UserAvatar
+          :src="post.author?.avatar"
+          :name="authorName"
+          :name-color="post.author?.nameColor"
+          :anonymous="isAnonymous"
+          size="sm"
         />
-        <span
-          v-else
-          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-          :style="
-            post.author?.nameColor
-              ? {
-                  color: post.author.nameColor,
-                  background: 'color-mix(in srgb, ' + post.author.nameColor + ' 14%, transparent)',
-                }
-              : undefined
-          "
-          :class="isAnonymous ? 'bg-line text-ink-soft' : 'bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] text-primary'"
-        >
-          {{ avatarChar }}
-        </span>
         <span
           class="truncate text-sm font-medium"
           :style="{ color: post.author?.nameColor ?? undefined }"
@@ -127,11 +112,7 @@ function openDetail(): void {
 
       <!-- 匿名：头像 + 用户名不可点击 -->
       <template v-else>
-        <span
-          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-line text-xs font-semibold text-ink-soft"
-        >
-          {{ avatarChar }}
-        </span>
+        <UserAvatar :name="authorName" anonymous size="sm" />
         <span class="truncate text-sm font-medium">{{ authorName }}</span>
       </template>
       <span

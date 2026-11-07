@@ -46,6 +46,7 @@ import {
   BLOCK_PERM_PIN_POST,
 } from "../utils/permission";
 import type { PostInfo } from "../types";
+import UserAvatar from "../components/user/UserAvatar.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -171,8 +172,6 @@ const composerPlaceholder = computed(() =>
 /** 作者显示名 */
 const authorName = computed(() => post.value?.author?.username ?? "匿名");
 
-/** 头像占位首字 */
-const avatarChar = computed(() => authorName.value.slice(0, 1));
 
 /** 作者主页路由（作者存在且有 id 时返回；匿名帖为 null → 不可点击） */
 const authorProfileLink = computed(() => {
@@ -390,34 +389,15 @@ onMounted(load);
         <div class="mb-3 flex items-center gap-2">
           <!-- 头像（有作者时点击跳转用户主页；匿名不可点击） -->
           <RouterLink v-if="authorProfileLink" :to="authorProfileLink" class="shrink-0">
-            <img
-              v-if="post.author?.avatar"
-              :src="post.author.avatar"
-              :alt="authorName"
-              class="h-9 w-9 shrink-0 rounded-full object-cover"
+            <UserAvatar
+              :src="post.author?.avatar"
+              :name="authorName"
+              :name-color="post.author?.nameColor"
+              :anonymous="!post.author"
+              size="lg"
             />
-            <span
-              v-else
-              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
-              :style="
-                post.author?.nameColor
-                  ? {
-                      color: post.author.nameColor,
-                      background: 'color-mix(in srgb, ' + post.author.nameColor + ' 14%, transparent)',
-                    }
-                  : undefined
-              "
-              :class="post.author ? 'bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)]' : 'bg-line text-ink-soft'"
-            >
-              {{ avatarChar }}
-            </span>
           </RouterLink>
-          <span
-            v-else
-            class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-line text-sm font-semibold text-ink-soft"
-          >
-            {{ avatarChar }}
-          </span>
+          <UserAvatar v-else :name="authorName" anonymous size="lg" />
           <div class="min-w-0">
             <div class="flex items-center gap-1.5">
               <RouterLink

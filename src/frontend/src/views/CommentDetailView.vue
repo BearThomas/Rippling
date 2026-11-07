@@ -21,6 +21,7 @@ import { formatDateTime, formatNumber, truncateText } from "../utils/format";
 import { showToast } from "../utils/toast";
 import { useAuthStore } from "../stores/auth";
 import type { PostInfo } from "../types";
+import UserAvatar from "../components/user/UserAvatar.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -219,20 +220,13 @@ onMounted(load);
       <!-- 当前评论 -->
       <article class="card-base">
         <div class="mb-2 flex items-center gap-2">
-          <span
-            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-            :style="
-              comment.author?.nameColor
-                ? {
-                    color: comment.author.nameColor,
-                    background: 'color-mix(in srgb, ' + comment.author.nameColor + ' 14%, transparent)',
-                  }
-                : undefined
-            "
-            :class="comment.author ? 'bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)]' : 'bg-line text-ink-soft'"
-          >
-            {{ authorName.slice(0, 1) }}
-          </span>
+          <UserAvatar
+            :src="comment.author?.avatar"
+            :name="authorName"
+            :name-color="comment.author?.nameColor"
+            :anonymous="!comment.author"
+            size="sm"
+          />
           <span
             class="truncate text-sm font-medium"
             :style="{ color: comment.author?.nameColor ?? undefined }"

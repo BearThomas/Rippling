@@ -9,6 +9,7 @@
 <script setup lang="ts">
 import type { BlockJoinRequestInfo } from "../../api/block";
 import { formatDateTime } from "../../utils/format";
+import UserAvatar from "../user/UserAvatar.vue";
 
 defineProps<{
   request: BlockJoinRequestInfo;
@@ -23,11 +24,7 @@ const emit = defineEmits<{ approve: []; reject: [] }>();
   <div class="card-base !py-3">
     <div class="flex items-center gap-2">
       <!-- 头像占位（首字圆形） -->
-      <span
-        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] text-sm font-semibold text-primary"
-      >
-        {{ (request.username || "?").slice(0, 1) }}
-      </span>
+      <UserAvatar :name="request.username || '?'" size="md" />
 
       <div class="min-w-0 flex-1">
         <p class="truncate text-sm font-medium">{{ request.username || "未知用户" }}</p>

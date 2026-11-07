@@ -76,6 +76,8 @@ node scripts/test-recommend.mjs http://127.0.0.1:8788
 > 性能（跨境访问为什么慢、缓存怎么做的）：见 `docs/performance.md`。
 >
 > 主题（每个人的自定义 vs 全站默认，谁压谁）：见 `docs/theme.md`。
+>
+> UI 的两条硬规矩（默认头像只有一份 / 卡片行要撑满，都有脚本验）：见 `docs/ui.md`。
 
 ## 协议
 

@@ -8,6 +8,7 @@
 import { computed } from "vue";
 import FollowButton from "./FollowButton.vue";
 import type { UserPublicProfile } from "../../types";
+import UserAvatar from "./UserAvatar.vue";
 
 const props = defineProps<{
   /** 用户公开资料 */
@@ -21,28 +22,18 @@ const emit = defineEmits<{
   "follow-change": [next: boolean];
 }>();
 
-/** 头像占位：用户名首字 */
-const avatarChar = computed(() => props.profile.username.slice(0, 1) || "?");
 </script>
 
 <template>
   <div class="card-base">
     <div class="flex items-start gap-3">
       <!-- 头像（无头像时首字占位） -->
-      <template v-if="profile.avatar">
-        <img
-          :src="profile.avatar"
-          :alt="profile.username"
-          class="h-14 w-14 shrink-0 rounded-full object-cover"
-        />
-      </template>
-      <span
-        v-else
-        class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-semibold text-white"
-        style="background: var(--c-primary)"
-      >
-        {{ avatarChar }}
-      </span>
+      <UserAvatar
+        :src="profile.avatar"
+        :name="profile.username"
+        :name-color="profile.nameColor"
+        size="2xl"
+      />
 
       <!-- 用户名 + 牌子 + 关注按钮 -->
       <div class="min-w-0 flex-1">

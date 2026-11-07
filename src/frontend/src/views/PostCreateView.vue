@@ -21,6 +21,7 @@ import { search } from "../api/search";
 import { getBlockDetail, getBlockList } from "../api/block";
 import { showToast } from "../utils/toast";
 import type { BlockInfo, SearchUserResult } from "../types";
+import UserAvatar from "../components/user/UserAvatar.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -327,20 +328,12 @@ onMounted(() => {
             class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors active:bg-[color-mix(in_srgb,var(--c-primary)_8%,transparent)]"
             @click="addUser(user)"
           >
-            <!-- 头像（有头像显示图片，否则首字占位） -->
-            <img
-              v-if="user.avatar"
+            <UserAvatar
               :src="user.avatar"
-              :alt="user.username"
-              class="h-6 w-6 shrink-0 rounded-full object-cover"
+              :name="user.username"
+              :name-color="user.nameColor"
+              size="xs"
             />
-            <span
-              v-else
-              class="flex h-6 w-6 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] text-[10px] font-semibold"
-              :style="{ color: user.nameColor ?? undefined }"
-            >
-              {{ user.username.slice(0, 1) }}
-            </span>
             <span :style="{ color: user.nameColor ?? undefined }">{{ user.username }}</span>
             <span class="ml-auto text-xs text-primary">添加</span>
           </button>

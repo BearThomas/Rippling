@@ -10,6 +10,7 @@
 import { computed, ref } from "vue";
 import type { BlockMemberInfo } from "../../api/block";
 import { formatDateTime } from "../../utils/format";
+import UserAvatar from "../user/UserAvatar.vue";
 
 const props = defineProps<{ member: BlockMemberInfo }>();
 
@@ -43,11 +44,7 @@ function fire(kind: "edit-permissions" | "remove" | "blacklist"): void {
   <div class="card-base relative !py-3">
     <div class="flex items-center gap-2">
       <!-- 头像占位（首字圆形） -->
-      <span
-        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] text-sm font-semibold text-primary"
-      >
-        {{ (member.username || "?").slice(0, 1) }}
-      </span>
+      <UserAvatar :name="member.username || '?'" size="md" />
 
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-1.5">

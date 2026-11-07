@@ -27,6 +27,7 @@ import { buildTourSteps, restartTour } from "../utils/onboarding";
 import { PRESET_COLORS, PRESET_LABELS, PRESET_ORDER } from "../utils/themePresets";
 import type { ThemePreset } from "../utils/themePresets";
 import type { QuestionBoxInfo, SiteConfigTheme, UserDevice } from "../types";
+import UserAvatar from "../components/user/UserAvatar.vue";
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -39,6 +40,10 @@ const theme = useThemeStore();
 const isSuperAdmin = ref(false);
 const canSetBadge = ref(false);
 const myBadge = ref<string>("");
+/** 自己的名字颜色（默认头像的首字要用它染色，跟帖子页一致） */
+const myNameColor = ref<string | null>(null);
+/** 自己的头像地址（资料接口拿到的为准，会话里的 image 可能过期） */
+const myAvatarUrl = ref<string | null>(null);
 
 /** 重新观看首次使用引导（每次都从第一步开始，不影响其他设置） */
 async function onRestartTour(): Promise<void> {
@@ -58,6 +63,9 @@ onMounted(async () => {
     try {
       const profile = await getUserProfile(auth.userId);
       myBadge.value = profile.badge ?? "";
+      // 头像预览要用跟别处一模一样的规则（首字占位要按自己的名字颜色染）
+      myNameColor.value = profile.nameColor ?? null;
+      if (profile.avatar) myAvatarUrl.value = profile.avatar;
     } catch {
       myBadge.value = "";
     }
@@ -414,8 +422,8 @@ const ABOUT = {
   repoLabel: "BearThomas/Rippling",
 } as const;
 
-/** 当前头像（会话 image 字段） */
-const currentAvatar = computed(() => auth.session?.user?.image ?? null);
+/** 当前头像：资料接口优先，会话里的 image 兜底 */
+const currentAvatar = computed(() => myAvatarUrl.value ?? auth.session?.user?.image ?? null);
 </script>
 
 <template>
@@ -444,15 +452,14 @@ const currentAvatar = computed(() => auth.session?.user?.image ?? null);
         <span>修改头像</span>
         <span class="flex items-center gap-2 text-ink-soft">
           <template v-if="avatarUploading">上传中…</template>
-          <img
-            v-else-if="currentAvatar"
+          <UserAvatar
+            v-else
             :src="currentAvatar"
+            :name="auth.username ?? '?'"
+            :name-color="myNameColor"
+            size="md"
             alt="当前头像"
-            class="h-8 w-8 rounded-full object-cover"
           />
-          <span v-else class="flex h-8 w-8 items-center justify-center rounded-full text-white" style="background: var(--c-primary)">
-            <AppSvgIcon name="user" :size="16" />
-          </span>
         </span>
       </button>
       <input

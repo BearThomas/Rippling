@@ -60,6 +60,7 @@ import {
   hasPermission,
 } from "../utils/permission";
 import type { BlockDetailInfo, PostAuthor } from "../types";
+import UserAvatar from "../components/user/UserAvatar.vue";
 
 /** 板块帖子流条目的最小数据结构（与 PostCard 兼容） */
 interface BlockPostItem {
@@ -708,11 +709,7 @@ async function handleTransfer(): Promise<void> {
               :key="entry.id"
               class="card-base flex items-center gap-2 !py-3"
             >
-              <span
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-line text-sm font-semibold text-ink-soft"
-              >
-                {{ (entry.username || "?").slice(0, 1) }}
-              </span>
+              <UserAvatar :name="entry.username || '?'" size="md" />
               <div class="min-w-0 flex-1">
                 <p class="truncate text-sm font-medium">{{ entry.username || "未知用户" }}</p>
                 <p v-if="entry.reason" class="mt-0.5 truncate text-xs text-ink-soft">

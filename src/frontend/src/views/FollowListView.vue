@@ -23,6 +23,7 @@ import { listFollowing, listFollowers } from "../api/follow";
 import { getUserProfile } from "../api/user";
 import { useAuthStore } from "../stores/auth";
 import type { FollowUserInfo } from "../types";
+import UserAvatar from "../components/user/UserAvatar.vue";
 
 /** 分页大小 */
 const PAGE_SIZE = 20;
@@ -136,29 +137,12 @@ onMounted(load);
           class="card-base flex items-center gap-3 py-3 transition-opacity active:opacity-80"
         >
           <!-- 头像（无头像时首字占位，按名字颜色着色） -->
-          <img
-            v-if="user.avatar"
+          <UserAvatar
             :src="user.avatar"
-            :alt="user.username"
-            class="h-10 w-10 shrink-0 rounded-full object-cover"
+            :name="user.username"
+            :name-color="user.nameColor"
+            size="xl"
           />
-          <span
-            v-else
-            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
-            :style="
-              user.nameColor
-                ? {
-                    color: user.nameColor,
-                    background: 'color-mix(in srgb, ' + user.nameColor + ' 14%, transparent)',
-                  }
-                : {
-                    color: 'var(--c-primary)',
-                    background: 'color-mix(in srgb, var(--c-primary) 12%, transparent)',
-                  }
-            "
-          >
-            {{ user.username.slice(0, 1) }}
-          </span>
 
           <!-- 用户名 + 牌子 -->
           <div class="min-w-0 flex-1">

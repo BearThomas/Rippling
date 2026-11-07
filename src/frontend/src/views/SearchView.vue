@@ -23,6 +23,7 @@ import { formatRelativeTime, truncateText } from "../utils/format";
 import { showToast } from "../utils/toast";
 import { useAuthStore } from "../stores/auth";
 import type { SearchType } from "../types";
+import UserAvatar from "../components/user/UserAvatar.vue";
 import type {
   SearchPostResult,
   SearchUserResult,
@@ -285,19 +286,12 @@ async function onFollow(user: SearchUserResult): Promise<void> {
           <div class="card-base divide-y divide-line !py-1">
             <div v-for="user in users" :key="user.userId" class="flex items-center gap-2 py-2.5">
               <!-- 头像（有头像显示图片，否则首字占位） -->
-              <img
-                v-if="user.avatar"
+              <UserAvatar
                 :src="user.avatar"
-                :alt="user.username"
-                class="h-8 w-8 shrink-0 rounded-full object-cover"
+                :name="user.username"
+                :name-color="user.nameColor"
+                size="md"
               />
-              <span
-                v-else
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] text-xs font-semibold"
-                :style="{ color: user.nameColor ?? undefined }"
-              >
-                {{ user.username.slice(0, 1) }}
-              </span>
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1.5">
                   <span class="truncate text-sm font-medium" :style="{ color: user.nameColor ?? undefined }">

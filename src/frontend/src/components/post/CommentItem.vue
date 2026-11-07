@@ -18,6 +18,7 @@ import { toggleLike } from "../../api/like";
 import { showToast } from "../../utils/toast";
 import { useAuthStore } from "../../stores/auth";
 import type { PostInfo } from "../../types";
+import UserAvatar from "../user/UserAvatar.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -60,8 +61,6 @@ const childDepth = Math.min(props.depth + 1, 3);
 /** 作者显示名 */
 const authorName = props.comment.author?.username ?? "匿名用户";
 
-/** 头像占位首字 */
-const avatarChar = authorName.slice(0, 1);
 
 /** 作者主页路由（作者存在且有 id 时返回；匿名评论为 null → 不可点击） */
 const authorProfileLink = computed(() => {
@@ -141,26 +140,12 @@ function openCommentDetail(): void {
         class="flex min-w-0 items-center gap-2"
         @click.stop
       >
-        <img
-          v-if="comment.author?.avatar"
-          :src="comment.author.avatar"
-          :alt="authorName"
-          class="h-6 w-6 shrink-0 rounded-full object-cover"
+        <UserAvatar
+          :src="comment.author?.avatar"
+          :name="authorName"
+          :name-color="comment.author?.nameColor"
+          size="xs"
         />
-        <span
-          v-else
-          class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold"
-          :style="
-            comment.author?.nameColor
-              ? {
-                  color: comment.author.nameColor,
-                  background: 'color-mix(in srgb, ' + comment.author.nameColor + ' 14%, transparent)',
-                }
-              : undefined
-          "
-        >
-          {{ avatarChar }}
-        </span>
         <span
           class="truncate text-sm font-medium"
           :style="{ color: comment.author?.nameColor ?? undefined }"
@@ -171,11 +156,7 @@ function openCommentDetail(): void {
 
       <!-- 匿名：头像 + 用户名不可点击 -->
       <template v-else>
-        <span
-          class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-line text-[10px] font-semibold text-ink-soft"
-        >
-          {{ avatarChar }}
-        </span>
+        <UserAvatar :name="authorName" anonymous size="xs" />
         <span class="truncate text-sm font-medium">{{ authorName }}</span>
       </template>
       <span class="ml-auto shrink-0 text-[11px] text-ink-soft">
