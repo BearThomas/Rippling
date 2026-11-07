@@ -19,7 +19,7 @@
 /* eslint-env serviceworker */
 
 /** 缓存版本号：每次发版（sw.js 或资源结构变化）手动递增 */
-const VERSION = "v1";
+const VERSION = "v2";
 
 /** 静态资源缓存（App Shell：HTML / JS / CSS / 图标 / manifest） */
 const STATIC_CACHE = `rippling-static-${VERSION}`;
@@ -107,7 +107,14 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 其余同源静态资源（JS / CSS / 字体等）：SWR 不限期
+  // 带 hash 的构建产物（/assets/*）：cache-first —— 文件名一变 URL 就变，
+  // 命中之后永远不用再问网络（跨境环境下每个资源都能省一次往返）
+  if (url.origin === self.location.origin && url.pathname.startsWith("/assets/")) {
+    event.respondWith(cacheFirst(request));
+    return;
+  }
+
+  // 其余同源静态资源（字体 / 图标等）：SWR 不限期
   if (url.origin === self.location.origin) {
     event.respondWith(staleWhileRevalidate(request, STATIC_CACHE, 0));
   }
@@ -119,23 +126,49 @@ self.addEventListener("fetch", (event) => {
 // ============================================================
 
 /**
- * Network First：优先网络，成功后更新缓存，失败回退缓存
+ * Cache First：命中直接返回，没命中再走网络并写入缓存
  *
- * 用于页面导航：在线始终获取最新 index.html；
- * 离线时回退缓存的 App Shell（SPA 任意路由均回退 /）。
+ * 只用于带内容 hash 的构建产物 —— URL 变了内容才会变，所以永不失效。
+ */
+async function cacheFirst(request) {
+  const cache = await caches.open(STATIC_CACHE);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+
+  const response = await fetch(request);
+  if (response && response.ok) cache.put(request, response.clone());
+  return response;
+}
+
+/** 导航请求最多等这么久，超过就用缓存外壳先渲染（跨境链路经常是"不动"而不是"报错"） */
+const NAVIGATION_TIMEOUT_MS = 4000;
+
+/**
+ * Network First（带超时）：优先网络，成功后更新缓存，失败或超时回退缓存
+ *
+ * 用于页面导航：在线始终获取最新 index.html；离线/弱网时回退缓存的 App Shell
+ * （SPA 任意路由均回退 /）。
+ *
+ * 超时兜底很重要：跨境访问经常是不报错、就是不动。没有超时的话页面会一直白屏，
+ * 用户看到的就是"加载超时"。
  */
 async function networkFirst(request) {
+  const cache = await caches.open(STATIC_CACHE);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), NAVIGATION_TIMEOUT_MS);
+
   try {
-    const response = await fetch(request);
+    const response = await fetch(request, { signal: controller.signal });
     if (response.ok) {
-      const cache = await caches.open(STATIC_CACHE);
-      // SPA 所有路由由 index.html 承载，统一按 "/" 缓存
+      // SPA 所有路由由 index.html 承载，统一按 "/index.html" 缓存
       cache.put("/index.html", response.clone());
     }
     return response;
   } catch {
-    const cache = await caches.open(STATIC_CACHE);
-    return (await cache.match(request)) || (await cache.match("/")) || Response.error();
+    // 网络失败或超时：用缓存里的 App Shell 先把界面渲染出来
+    return (await cache.match(request)) || (await cache.match("/index.html")) || Response.error();
+  } finally {
+    clearTimeout(timer);
   }
 }
 
