@@ -462,3 +462,48 @@ wrangler 3 和 4 都能跑。如果本地起不来，先确认是不是用了旧
 | `CLOUDFLARE_API_TOKEN` | GitHub Actions | 归档脚本读写 D1 |
 | `CLOUDFLARE_ACCOUNT_ID` | GitHub Actions | Cloudflare 账户 ID |
 | `D1_DATABASE_ID` | GitHub Actions | D1 数据库 ID |
+
+---
+
+## 附录二：线上实际拓扑（2026-11-07 起）
+
+主站已经是 **Worker**，不再是 Pages Functions。`.pages.dev` 那几个地址现在只发"搬家公告"。
+
+| 地址 | 谁来服务 | 说明 |
+| --- | --- | --- |
+| `lg.618271.xyz` | Worker `longgaobei-final` | 主地址（短，公告里指向它） |
+| `longgaobei.618271.xyz` | 同一个 Worker | 第二个 Custom Domain，同一份代码 |
+| `rippling.618271.xyz` | 静态 Worker `lg-moved` | 老学生收藏的地址，发公告 |
+| `618271.xyz` / `www.618271.xyz` | 同一个 `lg-moved` | 普通 Route（见下） |
+| `longgao.pages.dev` / `rippling-test.pages.dev` | Pages | Git 集成的构建产物 = `announce/` |
+| `lg-announce.pages.dev` | Pages | 手动上传 `announce/` |
+| `longgaobei.pages.dev` | Pages | **连着另一个仓库 `LG-Site`，别动** |
+
+部署命令：
+
+```bash
+npm run build                                            # 前端 + 把 src/* 复制到根目录
+npx wrangler deploy --config wrangler.worker.jsonc       # 主站
+npx wrangler deploy --config wrangler.announce.jsonc     # 老地址的公告（纯静态）
+```
+
+### 三个坑
+
+1. **Pages 集成会把你推上来的代码重新 build 成"老站"**。`longgao` 一开始
+   `build_command=npm run build` + `destination_dir=public`，于是**每次 push 都把公告覆盖回应用**。
+   现在改成 `build_command=exit 0` + `destination_dir=announce`：推代码 → 发公告。
+2. **根域绑 Custom Domain 会被拒（code 100117）**：`618271.xyz` 上有一条"外部托管"的
+   A 记录（指向 `192.0.2.1`，所以以前一直是 522）。Custom Domain 要求先删记录，
+   而 wrangler 的 OAuth token **没有 DNS 写权限**。改用普通 Route 就行 ——
+   Route 不动 DNS，而且优先于回源。
+3. **`npx wrangler pages deploy <dir>` 在仓库根跑会被根目录那份 `functions/` 污染**
+   （`npm run build` 从 `src/` 拷过来的副本），直接 BuildFailure "Could not resolve ../db"。
+   要发静态页就从只放那个文件的干净目录发。
+
+### 环境变量搬到 Worker 上了
+
+`ADMIN_STUDENT_ID` / `ADMIN_PASSWORD` / `B2_*` / `ENCRYPTION_KEY` / `REGISTER_QUESTIONS`
+现在都是 Worker `longgaobei-final` 的 secret；Pages 项目上的同名变量已经清空
+（只留 `MAIL_PROVIDER_API_KEY`，它是唯一没在 Worker 上的）。
+注意：这个 token 下 `wrangler secret list` 会返回**空数组**，别据此判断"没配密钥"——
+发一次真实请求验证（比如 `/api/image` 能返回 JPEG 就说明 B2 密钥在）。
