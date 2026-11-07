@@ -29,7 +29,11 @@
 
   // 自定义域名：workers.dev 在国内基本不可达（共享域名），用自己的域名才行
   // 这是 Custom Domain（不是普通 Route），Cloudflare 会自动建 DNS 记录并签发证书
-  "routes": [{ "pattern": "longgaobei.618271.xyz", "custom_domain": true }],
+  "routes": [
+    { "pattern": "longgaobei.618271.xyz", "custom_domain": true },
+    // 短地址：学生手打更省事，老站点公告里就指向它
+    { "pattern": "lg.618271.xyz", "custom_domain": true }
+  ],
 
   "observability": { "enabled": true }
 }

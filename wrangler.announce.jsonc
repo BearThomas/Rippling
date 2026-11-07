@@ -1,0 +1,17 @@
+{
+  // 旧地址的"搬家公告"：只做一件事 —— 告诉来的人新站在哪，然后把人送过去
+  // 用法：npx wrangler deploy --config wrangler.announce.jsonc
+  // 同一个目录（announce/）也作为 Pages 项目 lg-announce 的静态资源
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "lg-moved",
+  "compatibility_date": "2025-07-18",
+
+  // 纯静态：没有 main，Worker 只负责把 announce/ 里的文件发出去
+  "assets": {
+    "directory": "./announce",
+    "not_found_handling": "single-page-application"
+  },
+
+  // 老学生收藏的就是这个地址（原来的 Worker 站），现在让它当"门房"
+  "routes": [{ "pattern": "rippling.618271.xyz", "custom_domain": true }]
+}
