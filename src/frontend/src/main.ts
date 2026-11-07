@@ -28,6 +28,10 @@ app.use(router);
 
 const theme = useThemeStore();
 const auth = useAuthStore();
+
+// 0) 本地主题先上来（存 localStorage，不等网络）——自己挑过主题的人不会看到
+//    "先按全站主题闪一下再变"；「跟随全站」的人这里什么都不会发生
+theme.init();
 const notification = useNotificationStore();
 
 // 1) 先用上次的 bootstrap 快照把站名 / 主题 / 登录态画出来（0 请求，不闪白）

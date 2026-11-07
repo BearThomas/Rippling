@@ -150,7 +150,7 @@ export async function buildTourSteps(): Promise<TourStep[]> {
       route: "/profile",
       target: '[data-tour="profile-menu"]',
       title: "我的",
-      body: "「编辑资料」「管理提问箱」在头像下面；工单、申请认证、退出登录在下面这一段；再往下是别人也能看到的帖子和评论。",
+      body: "「设置」「管理提问箱」在头像下面；工单、申请认证、退出登录在下面这一段；再往下是别人也能看到的帖子和评论。",
     },
     {
       id: "search",

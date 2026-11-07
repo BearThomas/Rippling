@@ -3,8 +3,8 @@
 
   账号设置：修改用户名（每月 4 次）/ 修改头像（前端压缩后上传 B2）/
             修改密码 / 注销账号（走工单）。
-  主题设置：预设主题切换（所有人本地预览）；颜色变量自定义与
-            自定义 CSS 仅超级管理员（edit_database 权限）可见。
+  主题：两层 —— 全站默认由管理员设；每个人都可以在这里换成自己的（只存本地）。
+        自己换过的人不会被"管理员改主题"带走；自定义 CSS 仍仅超管可见。
   提问箱设置：启用开关 + 仅粉丝可提问。
   关于：版本 / 开源协议 / 仓库链接。
 -->
@@ -23,6 +23,8 @@ import { compressImage } from "../utils/compressImage";
 import { formatDateTime } from "../utils/format";
 import { showToast } from "../utils/toast";
 import { buildTourSteps, restartTour } from "../utils/onboarding";
+import { PRESET_COLORS, PRESET_LABELS, PRESET_ORDER } from "../utils/themePresets";
+import type { ThemePreset } from "../utils/themePresets";
 import type { QuestionBoxInfo, SiteConfigTheme, UserDevice } from "../types";
 
 const auth = useAuthStore();
@@ -269,99 +271,66 @@ async function submitPassword(): Promise<void> {
 }
 
 // ============================================================
-//  主题设置
+//  主题（每台设备各自一份）
+//
+//  规则只有一条：**本地自定义优先于全站默认**。
+//  所以这里改的永远是 theme.setLocalTheme / clearLocalTheme，
+//  绝不碰站点配置 —— 碰了就是"改全站"，别人也变了。
 // ============================================================
 
-/** 四套预设的颜色变量（与 styles/theme.css 保持一致） */
-const PRESET_COLORS: Record<
-  SiteConfigTheme["preset"],
-  Omit<SiteConfigTheme, "preset">
-> = {
-  light: {
-    primaryColor: "#3b82f6",
-    backgroundColor: "#f9fafb",
-    textColor: "#1f2937",
-    accentColor: "#10b981",
-  },
-  dark: {
-    primaryColor: "#60a5fa",
-    backgroundColor: "#111827",
-    textColor: "#f9fafb",
-    accentColor: "#34d399",
-  },
-  campus: {
-    primaryColor: "#0d9488",
-    backgroundColor: "#f0fdfa",
-    textColor: "#134e4a",
-    accentColor: "#f59e0b",
-  },
-  warm: {
-    primaryColor: "#f97316",
-    backgroundColor: "#fffbeb",
-    textColor: "#431407",
-    accentColor: "#ef4444",
-  },
-};
+/** 当前生效的主题（给模板用；也是颜色框的初值） */
+const activeTheme = computed(() => theme.theme);
 
-const PRESET_LABELS: Record<SiteConfigTheme["preset"], string> = {
-  light: "明亮",
-  dark: "深色",
-  campus: "校园",
-  warm: "暖色",
-};
+/** 预设色块里的三个色点（从共享表取，别在这里再写一份颜色） */
+function presetDots(preset: ThemePreset): string[] {
+  return [
+    PRESET_COLORS[preset].primaryColor,
+    PRESET_COLORS[preset].accentColor,
+    PRESET_COLORS[preset].backgroundColor,
+  ];
+}
 
-/** 当前预览中的主题（本地状态，超管保存后落库） */
-const localTheme = ref<SiteConfigTheme>({
-  preset: theme.preset,
-  ...PRESET_COLORS[theme.preset],
-});
+/** 点预设 = 换一套（写本地，立即生效，刷新后还在） */
+function pickPreset(preset: ThemePreset): void {
+  theme.setPreset(preset);
+}
+
+/** 颜色框改一个值：其余颜色保持不变 */
+function onColorInput(field: keyof Omit<SiteConfigTheme, "preset">, event: Event): void {
+  theme.setColor(field, (event.target as HTMLInputElement).value);
+}
+
+/** "跟随全站"：把本地那份删掉，回到管理员设的默认 */
+function followSite(): void {
+  if (!theme.hasLocalTheme) return;
+  theme.clearLocalTheme();
+  showToast("已恢复跟随全站主题", "success");
+}
+
+/** 四条颜色变量的中文名（顺序与模板里的 as const 数组一致） */
+const COLOR_LABELS: Record<keyof Omit<SiteConfigTheme, "preset">, string> = {
+  primaryColor: "主色",
+  backgroundColor: "背景",
+  textColor: "文字",
+  accentColor: "强调色",
+};
 
 const themeSaving = ref(false);
 
-/** 切换预设（本地即时预览） */
-function applyPreset(preset: SiteConfigTheme["preset"]): void {
-  localTheme.value = { preset, ...PRESET_COLORS[preset] };
-  // 通过 theme store 应用到 CSS 变量（config 缺失时仅切 data-theme 兜底）
-  if (theme.config) {
-    theme.config.theme = { ...localTheme.value };
-    theme.applyTheme();
-  } else {
-    document.documentElement.setAttribute("data-theme", preset);
-  }
-}
-
-/** 颜色变量自定义（仅超管，本地即时预览） */
-function onColorInput(
-  field: keyof Omit<SiteConfigTheme, "preset">,
-  event: Event
-): void {
-  const value = (event.target as HTMLInputElement).value;
-  localTheme.value[field] = value;
-  if (theme.config) {
-    theme.config.theme = { ...localTheme.value };
-    theme.applyTheme();
-  } else {
-    document.documentElement.style.setProperty(
-      {
-        primaryColor: "--c-primary",
-        backgroundColor: "--c-bg",
-        textColor: "--c-text",
-        accentColor: "--c-accent",
-      }[field],
-      value
-    );
-  }
-}
-
-/** 保存主题（超管：拉完整配置 → 覆写 theme → 落库） */
-async function saveTheme(): Promise<void> {
+/**
+ * 超管：把"现在这套"存成全站默认
+ *
+ * 它只影响**没自定义过的人** —— 存完自己看到的还是自己那份，
+ * 这是设计如此（不然超管每次存完还得手动切一次）。Toast 里说清楚。
+ */
+async function saveAsSiteDefault(): Promise<void> {
   themeSaving.value = true;
   try {
     const config = await getAdminSiteConfig();
-    config.theme = { ...localTheme.value };
+    config.theme = { ...activeTheme.value };
     await updateAdminSiteConfig(config);
-    showToast("主题已保存并全站生效", "success");
-    await theme.loadConfig();
+    showToast("已存为全站默认（你自己仍在使用自定义主题）", "success");
+    await theme.loadConfig(true);
   } catch {
     // client.ts 已自动 Toast
   } finally {
@@ -536,80 +505,93 @@ const currentAvatar = computed(() => auth.session?.user?.image ?? null);
       </form>
     </section>
 
-    <!-- ===================== 主题设置 ===================== -->
+    <!-- ===================== 主题 ===================== -->
     <section class="card-base">
-      <h3 class="mb-3 font-semibold">主题设置</h3>
-
-      <!-- 预设主题 -->
-      <div class="grid grid-cols-4 gap-2">
-        <button
-          v-for="label in (Object.keys(PRESET_LABELS) as SiteConfigTheme['preset'][])"
-          :key="label"
-          type="button"
-          class="rounded-lg border py-2 text-sm transition-colors"
-          :class="localTheme.preset === label
-            ? 'border-primary text-primary'
-            : 'border-line text-ink-soft'"
-          @click="applyPreset(label)"
+      <div class="mb-3 flex items-center justify-between">
+        <h3 class="font-semibold">主题</h3>
+        <span
+          class="rounded-full px-2 py-0.5 text-xs"
+          :class="theme.hasLocalTheme ? 'bg-primary/10 text-primary' : 'bg-page text-ink-soft'"
         >
-          {{ PRESET_LABELS[label] }}
+          {{ theme.hasLocalTheme ? "我自己的" : "跟随全站" }}
+        </span>
+      </div>
+
+      <!-- 预设：每个按钮自带三个色点，选中的那套描边 -->
+      <div class="grid grid-cols-2 gap-2">
+        <button
+          v-for="preset in PRESET_ORDER"
+          :key="preset"
+          type="button"
+          class="flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors active:opacity-80"
+          :class="theme.hasLocalTheme && activeTheme.preset === preset
+            ? 'border-primary'
+            : 'border-line'"
+          @click="pickPreset(preset)"
+        >
+          <span class="flex shrink-0 gap-1">
+            <i
+              v-for="(dot, i) in presetDots(preset)"
+              :key="i"
+              class="h-3.5 w-3.5 rounded-full ring-1 ring-black/5"
+              :style="{ background: dot }"
+            ></i>
+          </span>
+          <span class="flex-1 text-sm">{{ PRESET_LABELS[preset] }}</span>
+          <AppSvgIcon
+            v-if="theme.hasLocalTheme && activeTheme.preset === preset"
+            name="check"
+            :size="15"
+            class="text-primary"
+          />
         </button>
       </div>
+
+      <!-- 颜色微调：所有人都能用，只改自己这份 -->
+      <h4 class="mb-2 mt-4 text-sm font-medium">颜色</h4>
+      <div class="space-y-2">
+        <label
+          v-for="field in (['primaryColor', 'backgroundColor', 'textColor', 'accentColor'] as const)"
+          :key="field"
+          class="flex items-center gap-3 text-sm"
+        >
+          <span class="flex-1">{{ COLOR_LABELS[field] }}</span>
+          <span class="font-mono text-xs text-ink-soft">{{ activeTheme[field] }}</span>
+          <input
+            type="color"
+            :value="activeTheme[field]"
+            class="h-8 w-12 shrink-0 cursor-pointer rounded-lg border border-line bg-surface"
+            @input="onColorInput(field, $event)"
+          />
+        </label>
+      </div>
       <p class="mt-2 text-xs text-ink-soft">
-        切换后本地即时预览；全站主题由管理员保存。
+        只存在这台设备上，别人看不到；管理员改全站主题时，你这套不会被改掉。
       </p>
 
-      <!-- 颜色变量自定义（仅超级管理员） -->
+      <button
+        v-if="theme.hasLocalTheme"
+        type="button"
+        class="btn-secondary mt-3 w-full"
+        @click="followSite"
+      >
+        恢复跟随全站
+      </button>
+
+      <!-- 超管：把现在这套存成所有人的默认 -->
       <template v-if="isSuperAdmin">
-        <h4 class="mb-2 mt-4 text-sm font-medium">颜色变量自定义</h4>
-        <div class="grid grid-cols-2 gap-3">
-          <label class="flex items-center justify-between text-sm">
-            <span>主色</span>
-            <input
-              type="color"
-              :value="localTheme.primaryColor"
-              class="h-8 w-12 cursor-pointer rounded border border-line bg-surface"
-              @input="onColorInput('primaryColor', $event)"
-            />
-          </label>
-          <label class="flex items-center justify-between text-sm">
-            <span>背景色</span>
-            <input
-              type="color"
-              :value="localTheme.backgroundColor"
-              class="h-8 w-12 cursor-pointer rounded border border-line bg-surface"
-              @input="onColorInput('backgroundColor', $event)"
-            />
-          </label>
-          <label class="flex items-center justify-between text-sm">
-            <span>文字色</span>
-            <input
-              type="color"
-              :value="localTheme.textColor"
-              class="h-8 w-12 cursor-pointer rounded border border-line bg-surface"
-              @input="onColorInput('textColor', $event)"
-            />
-          </label>
-          <label class="flex items-center justify-between text-sm">
-            <span>强调色</span>
-            <input
-              type="color"
-              :value="localTheme.accentColor"
-              class="h-8 w-12 cursor-pointer rounded border border-line bg-surface"
-              @input="onColorInput('accentColor', $event)"
-            />
-          </label>
-        </div>
         <button
           type="button"
           class="btn-primary mt-3 w-full"
           :disabled="themeSaving"
-          @click="saveTheme"
+          @click="saveAsSiteDefault"
         >
-          {{ themeSaving ? "保存中…" : "保存主题（全站生效）" }}
+          {{ themeSaving ? "保存中…" : "存为全站默认" }}
         </button>
+        <p class="mt-2 text-xs text-ink-soft">
+          只影响"跟随全站"的人；已经有自己主题的用户不会被改。
+        </p>
 
-        <!-- 自定义 CSS 入口（仅超管，本任务为本地预览） -->
         <h4 class="mb-2 mt-4 text-sm font-medium">自定义 CSS</h4>
         <textarea
           v-model="customCss"
@@ -625,12 +607,9 @@ const currentAvatar = computed(() => auth.session?.user?.image ?? null);
           应用预览
         </button>
         <p class="mt-2 text-xs text-ink-soft">
-          预览仅当前会话生效；全站持久化入口在管理面板（后续任务开放）。
+          预览仅当前会话生效；全站持久化入口在管理面板。
         </p>
       </template>
-      <p v-else class="mt-3 text-xs text-ink-soft">
-        颜色变量自定义与自定义 CSS 仅超级管理员可用。
-      </p>
     </section>
 
     <!-- ===================== 提问箱设置 ===================== -->

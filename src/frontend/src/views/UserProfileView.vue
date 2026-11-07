@@ -241,7 +241,7 @@ onMounted(() => {
       <!-- 本人：功能按钮行 -->
       <div v-if="isSelf" class="mt-3 flex gap-3">
         <RouterLink to="/settings" class="btn-secondary flex-1">
-          编辑资料
+          设置
         </RouterLink>
         <RouterLink
           :to="{ name: 'question-box', params: { userId: profile.userId } }"

@@ -19,6 +19,34 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="龙高北小站" />
     <title>龙高北小站</title>
+    <!--
+      首屏免闪烁：自己挑过主题的人，等 JS 包下载完再上色就会先闪一下全站默认色。
+      这里在解析 HTML 的阶段先把 data-theme 和四条颜色变量摆好。
+      键名必须和 src/stores/theme.ts 的 LOCAL_THEME_KEY 一致；读不出来就什么都不做，
+      store 起来以后会再用 normalizeTheme 严格校验一次（那份才是权威）。
+    -->
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem("rippling.theme.v1");
+          if (!raw) return;
+          var t = JSON.parse(raw);
+          var hex = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+          if (!t || !hex.test(t.primaryColor) || !hex.test(t.backgroundColor) ||
+              !hex.test(t.textColor) || !hex.test(t.accentColor)) return;
+          var root = document.documentElement;
+          if (typeof t.preset === "string") root.setAttribute("data-theme", t.preset);
+          root.setAttribute("data-theme-source", "local");
+          root.style.setProperty("--c-primary", t.primaryColor);
+          root.style.setProperty("--c-bg", t.backgroundColor);
+          root.style.setProperty("--c-text", t.textColor);
+          root.style.setProperty("--c-accent", t.accentColor);
+        } catch (e) {
+          // 隐私模式 / 半份 JSON：当作"没自定义过"，但别把原因吞掉
+          console.warn("[theme] 免闪烁脚本读本地主题失败:", e);
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>
