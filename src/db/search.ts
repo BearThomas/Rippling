@@ -7,14 +7,19 @@
  *
  * 安全规则：
  *   - 学号（studentId）永不返回
+ *   - 匿名帖 / 匿名评论不返回 authorId（除非有 view_anonymous_identity 权限）
  *   - 表白墙 authorId 永不返回
- *   - 帖子需经过 visibility + block 权限过滤
+ *   - 帖子需经过 visibility + block 权限过滤（private = 仅自己）
  *   - 锁定板块仅成员和 manage_block 可见
+ *
+ * 分页：offset / limit 作用在**可见结果**上。SQL 只按扫描上限取候选，权限过滤后再切片。
+ * 若让 SQL 先 LIMIT/OFFSET 再过滤，被过滤掉的行会占掉分页名额，第 2 页会重复第 1 页
+ * （"加载更多"点了没反应就是这个原因）。候选上限见 SCAN_LIMIT。
  */
 
 import type { CurrentUser } from "../utils/permission";
 import { can } from "../utils/permission";
-import { PERM_MANAGE_BLOCK } from "../shared/permissions";
+import { PERM_MANAGE_BLOCK, PERM_VIEW_ANONYMOUS_IDENTITY } from "../shared/permissions";
 import { computeNameColor, loadNameColors } from "../utils/userLevel";
 
 // ============================================================
@@ -78,6 +83,9 @@ export interface SearchAllResult {
   confessions?: SearchConfessionResult[];
 }
 
+/** 单次搜索最多扫描的候选行数（权限过滤在内存里做，必须先有一个上限） */
+const SCAN_LIMIT = 500;
+
 // ============================================================
 //  辅助函数
 // ============================================================
@@ -88,7 +96,13 @@ export interface SearchAllResult {
  * 防止用户输入的通配符影响搜索语义。
  */
 function escapeLike(str: string): string {
-  return str.replace(/[%_]/g, (m) => "\\" + m);
+  // 反斜杠本身是 ESCAPE 字符，必须一起转义，否则 "a\b" 这类关键词会把后一个字符吃掉
+  return str.replace(/[\\%_]/g, (m) => "\\" + m);
+}
+
+/** 有权查看匿名帖真实作者吗 */
+function hasAnonView(user: CurrentUser | null): boolean {
+  return can(user, PERM_VIEW_ANONYMOUS_IDENTITY);
 }
 
 /** 检查用户是否可访问指定板块 */
@@ -119,6 +133,49 @@ async function canAccessBlock(
  * 权限过滤：visibility + block 访问
  * 排序：rank ASC, createdAt DESC
  */
+/** 帖子行的可见性判断（private 仅作者、selected 仅作者与白名单） */
+async function canSeeVisibility(
+  db: D1Database,
+  row: { id: string; authorId: string; visibility: string },
+  user: CurrentUser | null
+): Promise<boolean> {
+  if (row.visibility === "private") {
+    // 创建页写的是"仅自己"：那就只有作者能搜到
+    return !!user && user.id === row.authorId;
+  }
+  if (row.visibility === "selected") {
+    if (user?.id === row.authorId) return true;
+    if (!user) return false;
+    const inList = await db
+      .prepare("SELECT id FROM post_visibility WHERE postId = ? AND userId = ?")
+      .bind(row.id, user.id)
+      .first();
+    return !!inList;
+  }
+  return true;
+}
+
+/** 帖子整体可见性：可见性 + 板块访问权 */
+async function canSeePostRow(
+  db: D1Database,
+  row: { id: string; authorId: string; visibility: string; blockId: string | null },
+  user: CurrentUser | null
+): Promise<boolean> {
+  if (!(await canSeeVisibility(db, row, user))) return false;
+  return canAccessBlock(db, row.blockId, user);
+}
+
+/**
+ * 搜索帖子（标题 + 内容）
+ *
+ * 只搜顶级帖（parentId IS NULL）—— 评论在"评论"结果里，不该在"帖子"里冒充帖子。
+ * 权限过滤：visibility + block 访问 + 匿名作者（authorVisible = 0 不返回 authorId）
+ * 排序：rank ASC, createdAt DESC
+ *
+ * 分页：权限过滤必须在 SQL 之后做（板块成员、白名单要额外查询），
+ * 所以 SQL 只取扫描上限，切片在可见结果上做。否则被过滤掉的行会占分页名额，
+ * 第 2 页会重复第 1 页 —— 表现就是"加载更多"点了没反应。
+ */
 export async function searchPosts(
   db: D1Database,
   q: string,
@@ -132,7 +189,7 @@ export async function searchPosts(
 
   const rows = await db
     .prepare(
-      `SELECT id, parentId, authorId, title, content, visibility, blockId, createdAt,
+      `SELECT id, parentId, authorId, authorVisible, title, content, visibility, blockId, createdAt,
          CASE
            WHEN title = ? THEN 0
            WHEN title LIKE ? ESCAPE '\\' THEN 1
@@ -141,15 +198,17 @@ export async function searchPosts(
          END as rank
        FROM post
        WHERE (title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')
+         AND parentId IS NULL
          AND isDeleted = 0 AND isArchived = 0
        ORDER BY rank ASC, createdAt DESC
-       LIMIT ? OFFSET ?`
+       LIMIT ?`
     )
-    .bind(q, likePrefix, likeContains, likeContains, likeContains, limit + 50, offset)
+    .bind(q, likePrefix, likeContains, likeContains, likeContains, SCAN_LIMIT)
     .all<{
       id: string;
       parentId: string | null;
       authorId: string;
+      authorVisible: number;
       title: string | null;
       content: string;
       visibility: string;
@@ -158,38 +217,23 @@ export async function searchPosts(
       rank: number;
     }>();
 
-  // 权限过滤
-  const results: SearchPostResult[] = [];
+  const visible: SearchPostResult[] = [];
   for (const row of rows.results) {
-    // visibility 检查
-    if (row.visibility === "private") continue;
-    if (row.visibility === "selected") {
-      if (!user || user.id !== row.authorId) {
-        const inList = await db
-          .prepare("SELECT id FROM post_visibility WHERE postId = ? AND userId = ?")
-          .bind(row.id, user?.id ?? "")
-          .first();
-        if (!inList) continue;
-      }
-    }
+    if (!(await canSeePostRow(db, row, user))) continue;
 
-    // block 访问检查
-    if (!(await canAccessBlock(db, row.blockId, user))) continue;
-
-    results.push({
+    visible.push({
       id: row.id,
       parentId: row.parentId,
-      authorId: row.authorId,
+      // 匿名帖不返回真实作者 id（与推荐流的处理保持一致）
+      authorId: row.authorVisible === 1 || hasAnonView(user) ? row.authorId : null,
       title: row.title,
       content: row.content,
       blockId: row.blockId,
       createdAt: row.createdAt,
     });
-
-    if (results.length >= limit) break;
   }
 
-  return results;
+  return visible.slice(offset, offset + limit);
 }
 
 // ============================================================
@@ -200,6 +244,13 @@ export async function searchPosts(
  * 搜索评论（内容）
  *
  * 只搜未删除且父帖可见的评论。
+ */
+/**
+ * 搜索评论（内容）
+ *
+ * 只搜未删除的评论，且父帖必须存在、可见（父帖的可见性/板块/删除状态都要看）。
+ * 匿名评论（authorVisible = 0）不返回 authorId。
+ * 分页同帖子搜索：扫描上限 + 在可见结果上切片。
  */
 export async function searchComments(
   db: D1Database,
@@ -213,72 +264,58 @@ export async function searchComments(
 
   const rows = await db
     .prepare(
-      `SELECT c.id, c.parentId, c.authorId, c.title, c.content, c.visibility, c.blockId, c.createdAt,
-         CASE WHEN c.content LIKE ? ESCAPE '\\' THEN 3 ELSE 3 END as rank
+      `SELECT c.id, c.parentId, c.authorId, c.authorVisible, c.content, c.blockId, c.createdAt
        FROM post c
        WHERE c.content LIKE ? ESCAPE '\\'
          AND c.parentId IS NOT NULL
          AND c.isDeleted = 0 AND c.isArchived = 0
        ORDER BY c.createdAt DESC
-       LIMIT ? OFFSET ?`
+       LIMIT ?`
     )
-    .bind(likeContains, likeContains, limit + 50, offset)
+    .bind(likeContains, SCAN_LIMIT)
     .all<{
       id: string;
       parentId: string | null;
       authorId: string;
-      title: string | null;
+      authorVisible: number;
       content: string;
-      visibility: string;
       blockId: string | null;
       createdAt: string;
-      rank: number;
     }>();
 
-  // 权限过滤：检查父帖可见性
-  const results: SearchPostResult[] = [];
+  const visible: SearchPostResult[] = [];
   for (const row of rows.results) {
-    // 检查父帖是否存在且可见
     if (!row.parentId) continue;
 
-    const parentPost = await db
+    // 父帖必须还在、且当前用户看得到
+    const parent = await db
       .prepare(
-        "SELECT id, visibility, blockId, authorId, isDeleted FROM post WHERE id = ?"
+        "SELECT id, authorId, visibility, blockId FROM post WHERE id = ? AND isDeleted = 0 AND isArchived = 0"
       )
       .bind(row.parentId)
-      .first<{ id: string; visibility: string; blockId: string | null; authorId: string; isDeleted: number }>();
+      .first<{
+        id: string;
+        authorId: string;
+        visibility: string;
+        blockId: string | null;
+      }>();
 
-    if (!parentPost || parentPost.isDeleted) continue;
+    if (!parent) continue;
+    if (!(await canSeePostRow(db, parent, user))) continue;
 
-    // 父帖 visibility 检查
-    if (parentPost.visibility === "private") continue;
-    if (parentPost.visibility === "selected") {
-      if (!user || user.id !== parentPost.authorId) {
-        const inList = await db
-          .prepare("SELECT id FROM post_visibility WHERE postId = ? AND userId = ?")
-          .bind(parentPost.id, user?.id ?? "")
-          .first();
-        if (!inList) continue;
-      }
-    }
-
-    // 父帖 block 访问检查
-    if (!(await canAccessBlock(db, parentPost.blockId, user))) continue;
-
-    results.push({
+    visible.push({
       id: row.id,
       parentId: row.parentId,
-      authorId: row.authorId,
-      title: row.title,
+      authorId: row.authorVisible === 1 || hasAnonView(user) ? row.authorId : null,
+      // 评论没有标题
+      title: null,
       content: row.content,
       blockId: row.blockId,
       createdAt: row.createdAt,
     });
-
-    if (results.length >= limit) break;
   }
 
-  return results;
+  return visible.slice(offset, offset + limit);
 }
 
 // ============================================================
@@ -371,9 +408,9 @@ export async function searchBlocks(
        WHERE (name LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\')
          AND isDeleted = 0
        ORDER BY rank ASC, createdAt DESC
-       LIMIT ? OFFSET ?`
+       LIMIT ?`
     )
-    .bind(q, likePrefix, likeContains, likeContains, likeContains, limit + 20, offset)
+    .bind(q, likePrefix, likeContains, likeContains, likeContains, SCAN_LIMIT)
     .all<{
       id: string;
       name: string;
@@ -384,21 +421,20 @@ export async function searchBlocks(
       rank: number;
     }>();
 
-  // 权限过滤：锁定板块仅成员和 manage_block 可见
-  const results: SearchBlockResult[] = [];
+  // 权限过滤（锁定板块仅成员和 manage_block 可见）+ 在可见结果上切片，
+  // 和帖子搜索一样：不能把 OFFSET 下推给 SQL，否则分页会重复
+  const visible: SearchBlockResult[] = [];
   for (const row of rows.results) {
-    if (row.isLocked) {
-      if (!can(user, PERM_MANAGE_BLOCK)) {
-        if (!user) continue;
-        const member = await db
-          .prepare("SELECT id FROM block_member WHERE blockId = ? AND userId = ?")
-          .bind(row.id, user.id)
-          .first();
-        if (!member) continue;
-      }
+    if (row.isLocked && !can(user, PERM_MANAGE_BLOCK)) {
+      if (!user) continue;
+      const member = await db
+        .prepare("SELECT id FROM block_member WHERE blockId = ? AND userId = ?")
+        .bind(row.id, user.id)
+        .first();
+      if (!member) continue;
     }
 
-    results.push({
+    visible.push({
       id: row.id,
       name: row.name,
       description: row.description,
@@ -406,11 +442,9 @@ export async function searchBlocks(
       isLocked: !!row.isLocked,
       createdAt: row.createdAt,
     });
-
-    if (results.length >= limit) break;
   }
 
-  return results;
+  return visible.slice(offset, offset + limit);
 }
 
 // ============================================================

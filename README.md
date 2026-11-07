@@ -64,9 +64,12 @@ cp .env.example .env
 
 ```bash
 npm install
-npm run dev        # 本地开发
+npm run dev        # 本地开发（wrangler pages dev public）
 npm run typecheck  # 类型检查
 npm run deploy     # 部署到 Cloudflare Pages
+
+# 搜索不变量检查（需要本地站点已初始化并正在运行）
+node scripts/test-search.mjs http://127.0.0.1:8788
 ```
 
 ## 协议

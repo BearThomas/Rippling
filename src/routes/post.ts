@@ -152,6 +152,9 @@ postRoutes.post("/", requirePermission(PERM_CREATE_POST), async (c) => {
     content,
     visibility: (body.visibility as string) ?? undefined,
     blockId: (body.blockId as string) ?? undefined,
+    // 匿名：DAL 早就支持，但这里一直没传 → 客户端传了 authorVisible:false
+    // 会被静默忽略，帖子照样实名。只有显式传 false 才匿名。
+    authorVisible: typeof body.authorVisible === "boolean" ? body.authorVisible : undefined,
   };
 
   let id: string | null;
