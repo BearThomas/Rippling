@@ -6,7 +6,7 @@
     - 正文 Markdown 编辑器（textarea + 预览切换，1000 字限制）
     - 可见性：公开 / 仅自己 / 指定用户（搜索选择用户）
     - 板块：选择板块发帖（发帖需为该板块成员，后端校验）
-    - 图片上传：UI 预留，点击提示「即将上线」
+    - 图片上传：选图 → 压缩 → 传 B2 → 在光标处插入 Markdown 图片
   提交成功 → 跳转帖子详情。
 -->
 <script setup lang="ts">
@@ -15,6 +15,8 @@ import { useRoute, useRouter } from "vue-router";
 import MarkdownRenderer from "../components/markdown/MarkdownRenderer.vue";
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
 import { createPost } from "../api/post";
+import { uploadImage, MAX_IMAGE_SIZE } from "../api/upload";
+import { compressImage } from "../utils/compressImage";
 import { search } from "../api/search";
 import { getBlockDetail, getBlockList } from "../api/block";
 import { showToast } from "../utils/toast";
@@ -150,9 +152,57 @@ async function onSubmit(): Promise<void> {
   }
 }
 
-/** 图片上传（UI 预留，Task 24 实现） */
+/** 隐藏的文件选择框 / 正文输入框（插入图片时要用光标位置） */
+const imageInputEl = ref<HTMLInputElement | null>(null);
+const contentEl = ref<HTMLTextAreaElement | null>(null);
+/** 上传中（避免连点） */
+const uploadingImage = ref(false);
+
+/** 点「图片」→ 打开系统文件选择 */
 function onUploadImage(): void {
-  showToast("图片上传即将上线", "info");
+  if (uploadingImage.value) return;
+  imageInputEl.value?.click();
+}
+
+/** 选完图：压缩 → 上传 → 在光标处插入 Markdown */
+async function onImagePicked(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = ""; // 允许重复选同一张
+  if (!file) return;
+
+  if (!file.type.startsWith("image/")) {
+    showToast("只能选图片文件", "error");
+    return;
+  }
+  if (file.size > MAX_IMAGE_SIZE) {
+    // 大于 2MB 会先压缩；压完还超才会被后端拒绝
+    showToast("图片较大，正在压缩…", "info");
+  }
+
+  uploadingImage.value = true;
+  try {
+    const compressed = await compressImage(file, MAX_IMAGE_SIZE);
+    const { url } = await uploadImage(compressed);
+
+    // 在光标处插入，光标不在正文里就追加到末尾
+    const textarea = contentEl.value;
+    const markdown = `\n![图片](${url})\n`;
+    const start = textarea?.selectionStart ?? content.value.length;
+    const end = textarea?.selectionEnd ?? content.value.length;
+    content.value = content.value.slice(0, start) + markdown + content.value.slice(end);
+    const caret = start + markdown.length;
+    requestAnimationFrame(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(caret, caret);
+    });
+
+    showToast("图片已插入", "success");
+  } catch {
+    // uploadTo 已经 Toast 过具体原因（含"图床未配置"）
+  } finally {
+    uploadingImage.value = false;
+  }
 }
 
 /** 预览内容（空时占位） */
@@ -199,6 +249,7 @@ onMounted(() => {
       </div>
       <textarea
         v-else
+        ref="contentEl"
         v-model="content"
         class="min-h-[200px] w-full resize-y bg-transparent text-sm leading-relaxed outline-none placeholder:text-ink-soft/60"
         placeholder="正文（支持 Markdown，1000 字以内）"
@@ -208,12 +259,20 @@ onMounted(() => {
       <div class="mt-2 flex items-center gap-3 border-t border-line pt-2">
         <button
           type="button"
-          class="flex items-center gap-1 text-xs text-ink-soft transition-colors active:text-primary"
+          class="flex items-center gap-1 text-xs text-ink-soft transition-colors active:text-primary disabled:opacity-50"
+          :disabled="uploadingImage"
           @click="onUploadImage"
         >
           <AppSvgIcon name="image" :size="15" />
-          图片
+          {{ uploadingImage ? "上传中…" : "图片" }}
         </button>
+        <input
+          ref="imageInputEl"
+          type="file"
+          accept="image/*"
+          class="hidden"
+          @change="onImagePicked"
+        />
         <button
           type="button"
           class="text-xs text-ink-soft transition-colors active:text-primary"
