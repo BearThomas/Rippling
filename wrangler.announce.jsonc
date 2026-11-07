@@ -13,5 +13,12 @@
   },
 
   // 老学生收藏的就是这个地址（原来的 Worker 站），现在让它当"门房"
-  "routes": [{ "pattern": "rippling.618271.xyz", "custom_domain": true }]
+  "routes": [
+    { "pattern": "rippling.618271.xyz", "custom_domain": true },
+    // 根域也归门房管：直接输 618271.xyz 的人原来看到的是 522（DNS 有个指向 192.0.2.1 的
+    // 代理记录），不如给张纸条。根域的 A 记录是"外部托管"的，Custom Domain 会被拒绝
+    // （code 100117），所以这里用普通 Route —— Route 不需要动 DNS，且优先于回源
+    { "pattern": "618271.xyz/*", "zone_name": "618271.xyz" },
+    { "pattern": "www.618271.xyz/*", "zone_name": "618271.xyz" }
+  ]
 }
