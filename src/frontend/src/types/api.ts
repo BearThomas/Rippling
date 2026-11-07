@@ -596,6 +596,18 @@ export interface SiteConfigTypeBonus {
   vote: number;
 }
 
+/** /api/bootstrap 返回：首屏一次拿齐的四样东西 */
+export interface BootstrapData {
+  /** 是否已完成初始化向导 */
+  initialized: boolean;
+  /** 站点配置 */
+  config: SiteConfig;
+  /** 会话（游客为 null） */
+  session: SessionInfo | null;
+  /** 权限掩码十进制字符串，游客为 "0" */
+  permissions: string;
+}
+
 /** 站点配置（/api/config 返回） */
 export interface SiteConfig {
   siteName: string;

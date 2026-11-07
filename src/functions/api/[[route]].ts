@@ -39,6 +39,7 @@ import { errorHandler } from "../../middleware/error";
 import { authMiddleware } from "../../middleware/auth";
 import type { AppContextVars } from "../../middleware/auth";
 import { deviceMiddleware } from "../../middleware/device";
+import { edgeCache } from "../../middleware/edgeCache";
 import { postRoutes, likeRoutes, confessionRoutes, timelineRoutes, voteRoutes, recommendRoutes, searchRoutes, followRoutes, questionRoutes, notificationRoutes, blockRoutes, ticketRoutes, adminRoutes, adminLogRoutes, permissionRoutes, uploadRoutes, imageRoutes, userRoutes, setupRoutes } from "../../routes";
 import { nowISO } from "../../utils/time";
 import { NOT_FOUND } from "../../utils/errors";
@@ -55,6 +56,9 @@ export const app = new Hono<{ Bindings: CloudflareEnv; Variables: AppContextVars
 
 app.use("*", loggerMiddleware);
 app.use("*", errorHandler);
+
+// 边缘缓存：命中的 GET 请求直接返回，连下面的认证/数据库都不走
+app.use("/api/*", edgeCache);
 
 // ============================================================
 //  公开路由（无需认证）
@@ -89,6 +93,33 @@ app.route("/api/setup", setupRoutes);
 
 app.use("/api/*", authMiddleware);
 app.use("/api/*", deviceMiddleware);
+
+// ------------------------------------------------------------
+//  GET /api/bootstrap — 首屏一次性拿齐（配置 / 是否初始化 / 会话 / 权限）
+//
+//  以前前端启动要打 4 个接口：/api/setup/status、/api/config、
+//  /api/auth/get-session、/api/permissions/me。跨境环境下每个都要
+//  0.7~2 秒，串起来就是首屏卡半天的原因。合成一个之后只剩一次往返。
+// ------------------------------------------------------------
+
+app.get("/api/bootstrap", async (c) => {
+  const user = c.get("user");
+  const dbConfig = await getSiteConfig(c.env.DB);
+
+  return c.json({
+    success: true,
+    data: {
+      /** 是否已完成初始化向导（前端路由守卫用它，不再每次导航都请求） */
+      initialized: dbConfig?.initialized === true,
+      /** 站点配置（D1 优先，没有就回退静态模板） */
+      config: dbConfig ?? siteConfig,
+      /** 原始会话（游客为 null），形状与 /api/auth/get-session 一致 */
+      session: c.get("authSession") ?? null,
+      /** 权限掩码十进制字符串，游客为 "0" */
+      permissions: user ? user.permissions.toString() : "0",
+    },
+  });
+});
 
 // 帖子 / 评论
 app.route("/api/post", postRoutes);
@@ -166,6 +197,6 @@ app.all("*", (c) => {
 // ============================================================
 
 export const onRequest: PagesFunction<CloudflareEnv> = async (context) => {
-  // 项目内无 waitUntil 需求，省略 executionCtx 参数
-  return app.fetch(context.request, context.env);
+  // 传 executionCtx：边缘缓存中间件要用 waitUntil 把响应写进缓存
+  return app.fetch(context.request, context.env, context as unknown as ExecutionContext);
 };

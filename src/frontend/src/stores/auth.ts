@@ -6,7 +6,9 @@
  */
 
 import { defineStore } from "pinia";
-import { getSession, signOut as apiSignOut } from "../api/auth";
+import { signOut as apiSignOut } from "../api/auth";
+import { getBootstrap, getBootstrapSnapshot, refreshBootstrap } from "../api/bootstrap";
+import { clearPermissionCache, primePermissions } from "../utils/myPermissions";
 import type { SessionInfo } from "../types";
 
 export const useAuthStore = defineStore("auth", {
@@ -27,10 +29,28 @@ export const useAuthStore = defineStore("auth", {
   },
 
   actions: {
-    /** 拉取当前会话（游客返回 null，不弹错误） */
-    async fetchSession(): Promise<void> {
-      this.session = await getSession();
+    /** 用 BootstrapData 里的会话应用登录态（首屏快照 / 拉取结果都走这里） */
+    applyBootstrap(data: { session: SessionInfo | null; permissions: string }): void {
+      this.session = data.session;
       this.loaded = true;
+      primePermissions(data.permissions);
+    },
+
+    /**
+     * 拉取当前会话（游客返回 null，不弹错误）
+     *
+     * 走 /api/bootstrap：一次请求同时拿到会话 + 权限，慢网络下少两个往返。
+     * 先用 localStorage 快照把登录态画出来，再用真实结果覆盖。
+     */
+    async fetchSession(): Promise<void> {
+      const snapshot = getBootstrapSnapshot();
+      if (snapshot) this.applyBootstrap(snapshot);
+
+      try {
+        this.applyBootstrap(await getBootstrap(true));
+      } catch {
+        this.loaded = true;
+      }
     },
 
     /**
@@ -45,12 +65,15 @@ export const useAuthStore = defineStore("auth", {
       }
     },
 
-    /** 登出并清空本地会话 */
+    /** 登出并清空本地会话（顺带清掉权限缓存与 bootstrap 快照里的登录态） */
     async signOut(): Promise<void> {
       try {
         await apiSignOut();
       } finally {
         this.session = null;
+        clearPermissionCache();
+        // 让下次请求拿到"游客"的 bootstrap（失败也不影响本地已清空）
+        void refreshBootstrap().catch(() => undefined);
       }
     },
   },

@@ -58,3 +58,13 @@ export function clearPermissionCache(): void {
   cachedPermissions = null;
   fetchPromise = null;
 }
+
+/**
+ * 直接写入权限缓存
+ *
+ * bootstrap 已经把权限一起返回了，再单独打一次 /api/permissions/me 纯属浪费
+ * 一次跨境往返 —— 这里把结果灌进缓存，其它页面调用 getMyPermissions() 直接命中。
+ */
+export function primePermissions(mask: string): void {
+  cachedPermissions = mask ?? "0";
+}

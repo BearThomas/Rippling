@@ -25,6 +25,48 @@ const router = useRouter();
 /** 已查看置顶 ID 的 localStorage 键 */
 const VIEWED_PINNED_KEY = "rippling.viewedPinned";
 
+/** 首页第一页的本地快照（跨境环境下，先把上次的内容画出来再刷新） */
+const FEED_CACHE_KEY = "rippling.feed.v1";
+/** 快照最多用 5 分钟：太旧就别假装是最新的 */
+const FEED_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+
+interface FeedSnapshot {
+  savedAt: number;
+  pinned: PinnedItemInfo[];
+  items: RecommendItem[];
+  nextCursor: { lastScore: number; lastId: string } | null;
+}
+
+/** 读取上次的首页快照（过期 / 损坏都返回 null） */
+function readFeedSnapshot(): FeedSnapshot | null {
+  try {
+    const raw = localStorage.getItem(FEED_CACHE_KEY);
+    if (!raw) return null;
+    const snap = JSON.parse(raw) as FeedSnapshot;
+    if (!Array.isArray(snap?.items) || Date.now() - snap.savedAt > FEED_CACHE_MAX_AGE_MS) {
+      return null;
+    }
+    return snap;
+  } catch {
+    return null;
+  }
+}
+
+/** 写入首页快照（配额满 / 隐私模式写不进去就跳过） */
+function writeFeedSnapshot(): void {
+  try {
+    const snap: FeedSnapshot = {
+      savedAt: Date.now(),
+      pinned: pinned.value,
+      items: items.value,
+      nextCursor: nextCursor.value,
+    };
+    localStorage.setItem(FEED_CACHE_KEY, JSON.stringify(snap));
+  } catch {
+    // 忽略
+  }
+}
+
 // ------------------------------------------------------------
 //  状态
 // ------------------------------------------------------------
@@ -84,19 +126,20 @@ function markPinnedViewed(targetId: string): void {
 //  数据加载
 // ------------------------------------------------------------
 
-/** 拉取第一页（含置顶） */
-async function loadFeed(): Promise<void> {
-  loading.value = true;
+/** 拉取第一页（含置顶）；silent = 已有快照内容，不显示 loading 骨架 */
+async function loadFeed(silent = false): Promise<void> {
+  if (!silent) loading.value = true;
   error.value = false;
   loadMoreError.value = false;
   try {
     const feed = await getRecommendFeed();
     pinned.value = feed.pinned ?? [];
     items.value = feed.items ?? [];
+    nextCursor.value = feed.nextCursor;
+    writeFeedSnapshot();
     // 给首次使用引导用：帖子详情那一步需要一条真实帖子
     const firstPost = items.value.find((item) => item.type === "post");
     setTourFirstPostId(firstPost ? firstPost.id : null);
-    nextCursor.value = feed.nextCursor;
     // 置顶全部已查看过 → 默认折叠
     if (!pinnedTouched.value) {
       const viewed = new Set(readViewedPinned());
@@ -183,7 +226,17 @@ function setupObserver(): void {
 }
 
 onMounted(() => {
-  void loadFeed().then(setupObserver);
+  // 有快照就先画出来（0 请求、0 等待），同时后台拉最新的一页
+  const snapshot = readFeedSnapshot();
+  if (snapshot) {
+    pinned.value = snapshot.pinned ?? [];
+    items.value = snapshot.items;
+    nextCursor.value = snapshot.nextCursor;
+    loading.value = false;
+    const firstPost = items.value.find((item) => item.type === "post");
+    setTourFirstPostId(firstPost ? firstPost.id : null);
+  }
+  void loadFeed(Boolean(snapshot)).then(setupObserver);
 });
 
 onBeforeUnmount(() => {
