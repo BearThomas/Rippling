@@ -19,8 +19,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "rippling-worker-test",
-      "database_id": "4631325c-84b7-4344-b944-e4e22c275086"
+      "database_name": "longgao",
+      "database_id": "88689860-1a54-43ab-b1f7-47a2df08ca59"
     }
   ],
 
@@ -29,7 +29,7 @@
 
   // 自定义域名：workers.dev 在国内基本不可达（共享域名），用自己的域名才行
   // 这是 Custom Domain（不是普通 Route），Cloudflare 会自动建 DNS 记录并签发证书
-  "routes": [{ "pattern": "rippling.618271.xyz", "custom_domain": true }],
+  "routes": [{ "pattern": "longgaobei.618271.xyz", "custom_domain": true }],
 
   "observability": { "enabled": true }
 }
