@@ -588,6 +588,26 @@ export interface SiteConfigAutoBlock {
   classNameFormat: string;
 }
 
+/** 各类型内容在推荐流里的基础分 */
+export interface SiteConfigTypeBonus {
+  post: number;
+  confession: number;
+  timeline: number;
+  vote: number;
+}
+
+/** /api/bootstrap 返回：首屏一次拿齐的四样东西 */
+export interface BootstrapData {
+  /** 是否已完成初始化向导 */
+  initialized: boolean;
+  /** 站点配置 */
+  config: SiteConfig;
+  /** 会话（游客为 null） */
+  session: SessionInfo | null;
+  /** 权限掩码十进制字符串，游客为 "0" */
+  permissions: string;
+}
+
 /** 站点配置（/api/config 返回） */
 export interface SiteConfig {
   siteName: string;
@@ -600,6 +620,8 @@ export interface SiteConfig {
   archiveDays: number;
   theme: SiteConfigTheme;
   recommendWeights: SiteConfigRecommendWeights;
+  /** 各类型基础分（旧配置可能缺失，缺失时后端用默认值） */
+  recommendTypeBonus?: SiteConfigTypeBonus;
   /** 用户等级颜色（旧配置可能缺失） */
   nameColors: SiteConfigNameColors;
   /** 学号自动分板块配置 */

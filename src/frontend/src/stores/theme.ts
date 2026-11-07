@@ -9,7 +9,7 @@
  */
 
 import { defineStore } from "pinia";
-import { getSiteConfig } from "../api/config";
+import { getBootstrap, getBootstrapSnapshot } from "../api/bootstrap";
 import type { SiteConfig } from "../types";
 
 /** 自定义 CSS 注入的 style 标签 ID */
@@ -33,16 +33,34 @@ export const useThemeStore = defineStore("theme", {
   },
 
   actions: {
-    /** 加载站点配置并应用主题（失败时静默回退默认主题） */
-    async loadConfig(): Promise<void> {
-      try {
-        this.config = await getSiteConfig();
-      } catch {
-        this.config = null;
-      }
+    /** 直接用 BootstrapData 里的配置应用主题（首屏快照路径） */
+    applyBootstrap(data: { config: SiteConfig }): void {
+      this.config = data.config;
       this.applyTheme();
       this.applySiteIdentity();
       this.loaded = true;
+    },
+
+    /**
+     * 加载站点配置并应用主题（失败时静默回退默认主题）
+     *
+     * @param force true 时绕过 bootstrap 缓存（管理面板保存配置后调用）
+     */
+    async loadConfig(force = false): Promise<void> {
+      // 先用快照把主题/站名画出来（同步，不闪）
+      const snapshot = getBootstrapSnapshot();
+      if (snapshot) this.applyBootstrap(snapshot);
+
+      try {
+        this.applyBootstrap(await getBootstrap(force));
+      } catch {
+        if (!snapshot) {
+          this.config = null;
+          this.applyTheme();
+          this.applySiteIdentity();
+        }
+        this.loaded = true;
+      }
     },
 
     /**

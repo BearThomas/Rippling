@@ -13,6 +13,7 @@
  */
 
 import { createRouter, createWebHistory } from "vue-router";
+import { isSiteInitialized } from "../api/bootstrap";
 import type { RouteRecordRaw } from "vue-router";
 import AppLayout from "../components/layout/AppLayout.vue";
 import { useAuthStore } from "../stores/auth";
@@ -266,14 +267,12 @@ const router = createRouter({
 
 // 全局前置守卫：初始化检查 + 登录校验 + 页面标题
 router.beforeEach(async (to) => {
-  // 初始化状态检查（公开接口，失败时静默放行，不阻塞页面访问）
+  // 初始化状态检查
+  //
+  // 以前这里每次导航都 fetch 一次 /api/setup/status —— 站内点一下就是一个
+  // 跨境往返。现在走 bootstrap：有快照时同步返回，没有才请求一次并记住。
   try {
-    const resp = await fetch("/api/setup/status", { credentials: "include" });
-    const data = (await resp.json()) as {
-      success?: boolean;
-      data?: { initialized?: boolean };
-    };
-    const initialized = data?.success === true && data?.data?.initialized === true;
+    const initialized = await isSiteInitialized();
 
     // 已初始化 → 访问 /setup 时跳转首页
     if (initialized && to.path === "/setup") {

@@ -2,14 +2,18 @@
  * 动态 PWA manifest
  *
  * PWA 安装时直接读取此接口，因此名称和图标可以跟随后台站点配置。
+ * Pages 用 onRequest 暴露，Worker 入口（src/worker.ts）直接调 handleManifest。
  */
 
 import type { CloudflareEnv } from "../auth";
 import { getSiteConfig } from "../db";
 import siteConfig from "../config/site.config.json";
 
-export const onRequest: PagesFunction<CloudflareEnv> = async (context) => {
-  const config = (await getSiteConfig(context.env.DB)) ?? siteConfig;
+export async function handleManifest(
+  _request: Request,
+  env: CloudflareEnv
+): Promise<Response> {
+  const config = (await getSiteConfig(env.DB)) ?? siteConfig;
   const icon = config.siteIcon || "/icon-512.png";
 
   return new Response(
@@ -53,4 +57,8 @@ export const onRequest: PagesFunction<CloudflareEnv> = async (context) => {
       },
     }
   );
-};
+}
+
+/** Pages 入口（Worker 入口直接用 handleManifest） */
+export const onRequest: PagesFunction<CloudflareEnv> = (context) =>
+  handleManifest(context.request, context.env);

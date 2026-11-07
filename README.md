@@ -68,9 +68,12 @@ npm run dev        # 本地开发（wrangler pages dev public）
 npm run typecheck  # 类型检查
 npm run deploy     # 部署到 Cloudflare Pages
 
-# 搜索不变量检查（需要本地站点已初始化并正在运行）
+# 搜索 / 推荐流的不变量检查（需要本地站点已初始化并正在运行）
 node scripts/test-search.mjs http://127.0.0.1:8788
+node scripts/test-recommend.mjs http://127.0.0.1:8788
 ```
+
+> 性能（跨境访问为什么慢、缓存怎么做的）：见 `docs/performance.md`。
 
 ## 协议
 

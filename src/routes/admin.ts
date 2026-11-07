@@ -67,6 +67,7 @@ import {
   VALIDATION_ERROR,
 } from "../utils/errors";
 import staticSiteConfig from "../config/site.config.json";
+import { purgeEdgeCache } from "../middleware/edgeCache";
 
 // ============================================================
 //  类型定义
@@ -406,6 +407,13 @@ adminRoutes.put("/config", async (c) => {
   const ok = await updateSiteConfig(c.env.DB, body as SiteConfig, user as CurrentUser);
   if (!ok) {
     return errorResponse(c, VALIDATION_ERROR, "配置结构不完整或非法");
+  }
+
+  // 配置变了，边缘缓存里那份不能继续用（否则要等 60 秒才生效）
+  try {
+    await purgeEdgeCache(c.req.url);
+  } catch (error) {
+    console.error("[admin] 清理站点配置边缘缓存失败:", error);
   }
 
   return c.json({ success: true });

@@ -55,7 +55,7 @@ const APPS = [
 </script>
 
 <template>
-  <div class="space-y-3 px-3 pt-3">
+  <div data-tour="apps-list" class="space-y-3 px-3 pt-3">
     <RouterLink
       v-for="app in APPS"
       :key="app.name"

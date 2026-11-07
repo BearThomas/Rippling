@@ -79,6 +79,22 @@ const WEIGHT_FIELDS = [
   { key: "random", label: "随机权重" },
 ] as const;
 
+/** 各类型基础分字段（越大越容易被推荐上来） */
+const TYPE_BONUS_FIELDS = [
+  { key: "post", label: "帖子基础分" },
+  { key: "confession", label: "表白墙基础分" },
+  { key: "timeline", label: "大事记基础分" },
+  { key: "vote", label: "投票基础分" },
+] as const;
+
+/** 各类型基础分默认值（与后端 DEFAULT_TYPE_BONUS 一致） */
+const DEFAULT_TYPE_BONUS = {
+  post: 0,
+  confession: 5,
+  timeline: 8,
+  vote: 6,
+};
+
 /** 主题颜色字段 */
 const THEME_FIELDS = [
   { key: "primaryColor", label: "主色" },
@@ -161,6 +177,10 @@ async function load(): Promise<void> {
     // 兼容旧配置：缺 autoBlock 时初始化
     if (!form.value.autoBlock) {
       form.value.autoBlock = { ...DEFAULT_AUTO_BLOCK };
+    }
+    // 兼容旧配置：缺类型基础分时用默认值（以前这些值是写死在后端的）
+    if (!form.value.recommendTypeBonus) {
+      form.value.recommendTypeBonus = { ...DEFAULT_TYPE_BONUS };
     }
   } catch {
     error.value = true;
@@ -398,6 +418,27 @@ onMounted(load);
                 type="number"
                 min="0"
                 step="0.1"
+                class="input-base w-full"
+              />
+            </label>
+          </div>
+        </div>
+
+        <!-- 推荐流 · 各类型基础分 -->
+        <div class="card-base space-y-3">
+          <h3 class="text-sm font-semibold text-ink-soft">推荐流 · 类型基础分</h3>
+          <p class="text-[11px] leading-relaxed text-ink-soft">
+            在权重算完之后直接加到这个类型的每一条内容上。想让大事记/表白墙更容易出现就调大它。
+          </p>
+          <div class="grid grid-cols-2 gap-3">
+            <label v-for="field in TYPE_BONUS_FIELDS" :key="field.key" class="block">
+              <span class="mb-1 block text-xs text-ink-soft">{{ field.label }}</span>
+              <input
+                v-if="form.recommendTypeBonus"
+                v-model.number="form.recommendTypeBonus[field.key]"
+                type="number"
+                min="0"
+                step="0.5"
                 class="input-base w-full"
               />
             </label>

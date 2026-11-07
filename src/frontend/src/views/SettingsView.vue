@@ -22,6 +22,7 @@ import { hasPermission, PERM_EDIT_DATABASE, PERM_SET_NAME_BADGE } from "../utils
 import { compressImage } from "../utils/compressImage";
 import { formatDateTime } from "../utils/format";
 import { showToast } from "../utils/toast";
+import { buildTourSteps, restartTour } from "../utils/onboarding";
 import type { QuestionBoxInfo, SiteConfigTheme, UserDevice } from "../types";
 
 const auth = useAuthStore();
@@ -34,6 +35,15 @@ const theme = useThemeStore();
 const isSuperAdmin = ref(false);
 const canSetBadge = ref(false);
 const myBadge = ref<string>("");
+
+/** 重新观看首次使用引导（每次都从第一步开始，不影响其他设置） */
+async function onRestartTour(): Promise<void> {
+  try {
+    restartTour(await buildTourSteps());
+  } catch {
+    // 拼装失败就不弹，别打扰用户
+  }
+}
 
 onMounted(async () => {
   const mask = await getMyPermissions();
@@ -666,6 +676,14 @@ const currentAvatar = computed(() => auth.session?.user?.image ?? null);
           <AppSvgIcon name="link" :size="14" />
           GitHub 仓库
         </a>
+        <button
+          type="button"
+          class="flex items-center gap-1 text-primary active:opacity-70"
+          @click="onRestartTour"
+        >
+          <AppSvgIcon name="sliders" :size="14" />
+          重新观看使用引导
+        </button>
       </div>
     </section>
   </div>

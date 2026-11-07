@@ -20,9 +20,17 @@ export interface AuthUser {
   permissions: bigint;
 }
 
+/** Better Auth 的 getSession 返回体（形状由库决定，这里只用到 user/session 两个字段） */
+export type BetterAuthSession = {
+  user?: { id?: string; name?: string; email?: string; image?: string | null };
+  session?: { id?: string; token?: string; expiresAt?: string };
+} | null;
+
 /** Hono context 变量类型 */
 export interface AppContextVars {
   user: AuthUser | null;
+  /** 原始会话（bootstrap 一次性返回给前端，省掉一次 /api/auth/get-session） */
+  authSession: BetterAuthSession;
   deviceId: string | null;
 }
 
@@ -39,9 +47,11 @@ export const authMiddleware = createMiddleware<{
   const auth = createAuth(c.env);
 
   // 调用 Better Auth 验证 session（自动从 Cookie 读取 token）
-  const sessionData = await auth.api.getSession({
+  const sessionData = (await auth.api.getSession({
     headers: c.req.raw.headers,
-  });
+  })) as BetterAuthSession;
+
+  c.set("authSession", sessionData ?? null);
 
   if (!sessionData?.user?.id) {
     c.set("user", null);

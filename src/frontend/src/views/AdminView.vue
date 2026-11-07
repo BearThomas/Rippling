@@ -87,7 +87,7 @@ onMounted(async () => {
 
     <template v-else>
       <!-- 顶部 Tab（横向滚动，移动端友好） -->
-      <div class="-mx-3 mb-3 overflow-x-auto px-3">
+      <div data-tour="admin-tabs" class="-mx-3 mb-3 overflow-x-auto px-3">
         <div class="flex gap-2 whitespace-nowrap">
           <button
             v-for="tab in visibleTabs"

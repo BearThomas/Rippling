@@ -38,6 +38,18 @@ export interface SiteConfigRecommendWeights {
   random: number;
 }
 
+/** 各类型内容在推荐流里的基础分（越大越容易被推上来） */
+export interface SiteConfigTypeBonus {
+  /** 普通帖子 */
+  post: number;
+  /** 表白墙 */
+  confession: number;
+  /** 大事记 */
+  timeline: number;
+  /** 投票 */
+  vote: number;
+}
+
 /** 用户等级名称颜色配置（key 与 utils/userLevel.ts 的 UserLevel 一致） */
 export interface SiteConfigNameColors {
   /** 普通用户 */
@@ -86,6 +98,8 @@ export interface SiteConfig {
   archiveDays: number;
   theme: SiteConfigTheme;
   recommendWeights: SiteConfigRecommendWeights;
+  /** 各类型基础分（旧配置可能没有，缺省时用内置默认值） */
+  recommendTypeBonus?: SiteConfigTypeBonus;
   /** 用户等级名称颜色 */
   nameColors: SiteConfigNameColors;
   /** 学号自动分板块配置 */

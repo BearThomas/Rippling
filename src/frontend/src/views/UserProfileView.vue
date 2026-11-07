@@ -263,7 +263,7 @@ onMounted(() => {
       </RouterLink>
 
       <!-- 本人：功能菜单 -->
-      <div v-if="isSelf" class="mt-3 space-y-3">
+      <div v-if="isSelf" data-tour="profile-menu" class="mt-3 space-y-3">
         <RouterLink
           to="/tickets"
           class="card-base flex items-center gap-3 py-3 transition-opacity active:opacity-80"

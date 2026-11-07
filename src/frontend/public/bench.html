@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>网络测速 · 判断是不是跨境慢</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+         margin: 0; padding: 20px 16px 40px; max-width: 560px; background: #f7f7f8; color: #1c1c1e; }
+  @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } .card { background: #1c1c1e !important; } }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 16px; color: #8e8e93; font-size: 13px; }
+  .card { background: #fff; border-radius: 14px; padding: 14px 16px; margin-bottom: 12px;
+          box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .row { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(128,128,128,.15); }
+  .row:last-child { border-bottom: 0; }
+  .name { flex: 1; font-size: 13px; }
+  .val { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .good { color: #34c759; } .warn { color: #ff9f0a; } .bad { color: #ff3b30; }
+  button { width: 100%; padding: 12px; font-size: 15px; border: 0; border-radius: 12px;
+           background: #007aff; color: #fff; font-weight: 600; }
+  button:disabled { opacity: .5; }
+  .hint { color: #8e8e93; font-size: 12px; margin-top: 10px; }
+  code { font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>网络测速</h1>
+  <p class="sub">用来判断"慢"是本机/运营商/跨境哪一段的问题。请在<b>不走代理</b>的网络下打开（手机流量更准）。</p>
+
+  <div class="card" id="env"></div>
+  <div class="card"><div id="out"><div class="hint">点下面的按钮开始，大约 10 秒</div></div></div>
+  <button id="run">开始测试</button>
+  <p class="hint">
+    判断标准：<code>首页 HTML</code> &lt; 300ms 正常，300~800ms 偏慢，&gt; 1500ms 或失败就是跨境链路问题；
+    <code>API</code> 比 HTML 慢 1 秒以上，说明 Worker 那一跳（跨境 + 冷启动）吃力。
+  </p>
+
+<script>
+const N = 5;
+const out = document.getElementById("out");
+const env = document.getElementById("env");
+
+function ms(v) { return v === null ? "失败" : Math.round(v) + " ms"; }
+function cls(v) {
+  if (v === null) return "bad";
+  if (v < 300) return "good";
+  if (v < 1200) return "warn";
+  return "bad";
+}
+function median(a) {
+  const s = a.filter((x) => x !== null).sort((x, y) => x - y);
+  return s.length ? s[Math.floor(s.length / 2)] : null;
+}
+
+const conn = navigator.connection || {};
+env.innerHTML = `<div class="row"><span class="name">当前地址</span><span class="val" style="font-size:12px">${location.host}</span></div>
+  <div class="row"><span class="name">网络类型</span><span class="val">${conn.effectiveType || "-"} ${conn.downlink ? conn.downlink + "Mbps" : ""}</span></div>
+  <div class="row"><span class="name">RTT 估计</span><span class="val">${conn.rtt ? conn.rtt + " ms" : "-"}</span></div>`;
+
+async function timeOnce(url, init) {
+  const t0 = performance.now();
+  try {
+    const res = await fetch(url, { cache: "no-store", ...init });
+    await res.arrayBuffer();
+    if (!res.ok) return null;
+    return performance.now() - t0;
+  } catch {
+    return null;
+  }
+}
+
+async function run() {
+  const btn = document.getElementById("run");
+  btn.disabled = true;
+  out.innerHTML = "";
+
+  const targets = [
+    { label: "首页 HTML", url: () => location.origin + "/index.html?__bench=" + Math.random() },
+    { label: "静态 JS", url: () => location.origin + "/manifest.json?__bench=" + Math.random() },
+    { label: "API /api/health", url: () => location.origin + "/api/health?__bench=" + Math.random() },
+    { label: "API /api/config", url: () => location.origin + "/api/config?__bench=" + Math.random() },
+    { label: "API /api/recommend", url: () => location.origin + "/api/recommend?__bench=" + Math.random() },
+  ];
+
+  const rows = [];
+  for (const t of targets) {
+    const samples = [];
+    for (let i = 0; i < N; i++) samples.push(await timeOnce(t.url()));
+    const m = median(samples);
+    const fails = samples.filter((x) => x === null).length;
+    rows.push(`<div class="row"><span class="name">${t.label}</span>
+      <span class="val ${cls(m)}">${ms(m)}${fails ? " （失败 " + fails + "/" + N + "）" : ""}</span></div>`);
+    out.innerHTML = rows.join("") + '<div class="hint">测试中…</div>';
+  }
+  out.innerHTML = rows.join("");
+  btn.disabled = false;
+  btn.textContent = "再测一次";
+}
+
+document.getElementById("run").addEventListener("click", run);
+</script>
+</body>
+</html>

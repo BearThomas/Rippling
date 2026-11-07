@@ -16,6 +16,8 @@ import LoadingSpinner from "../components/common/LoadingSpinner.vue";
 import EmptyState from "../components/common/EmptyState.vue";
 import ErrorState from "../components/common/ErrorState.vue";
 import { search } from "../api/search";
+import PostImageStrip from "../components/post/PostImageStrip.vue";
+import { extractImageUrls, stripImages } from "../utils/markdownImages";
 import { followUser } from "../api/follow";
 import { formatRelativeTime, truncateText } from "../utils/format";
 import { showToast } from "../utils/toast";
@@ -166,6 +168,11 @@ function selectType(type: SearchType): void {
 //  结果交互
 // ------------------------------------------------------------
 
+/** 列表预览：去掉图片 Markdown（图片已经单独展示），再截断 */
+function previewText(content: string): string {
+  return truncateText(stripImages(content), 100);
+}
+
 /** 打开帖子详情 */
 function openPost(post: SearchPostResult): void {
   router.push({ name: "post-detail", params: { id: post.id } });
@@ -219,7 +226,10 @@ async function onFollow(user: SearchUserResult): Promise<void> {
     </form>
 
     <!-- 类型筛选 tab -->
-    <div class="scrollbar-none -mx-3 mt-3 flex gap-2 overflow-x-auto px-3 pb-1">
+    <div
+      data-tour="search-tabs"
+      class="scrollbar-none -mx-3 mt-3 flex gap-2 overflow-x-auto px-3 pb-1"
+    >
       <button
         v-for="tab in TYPE_TABS"
         :key="tab.value"
@@ -260,7 +270,10 @@ async function onFollow(user: SearchUserResult): Promise<void> {
               @click="openPost(post)"
             >
               <h4 v-if="post.title" class="mb-1 text-sm font-semibold">{{ post.title }}</h4>
-              <p class="break-all text-sm text-ink">{{ truncateText(post.content, 100) }}</p>
+              <p v-if="previewText(post.content)" class="break-all text-sm text-ink">
+                {{ previewText(post.content) }}
+              </p>
+              <PostImageStrip :urls="extractImageUrls(post.content)" @open="openPost(post)" />
               <div class="mt-2 text-[11px] text-ink-soft">{{ formatRelativeTime(post.createdAt) }}</div>
             </article>
           </div>

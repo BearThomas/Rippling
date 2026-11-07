@@ -39,6 +39,37 @@ export interface RequestOptions {
   body?: unknown;
   /** 静默模式：不自动弹 Toast（如会话查询等高频请求） */
   silentError?: boolean;
+  /** 超时毫秒数（默认 DEFAULT_TIMEOUT_MS） */
+  timeoutMs?: number;
+}
+
+/**
+ * 默认请求超时
+ *
+ * 跨境链路常见的故障不是"报错"，而是"请求挂着不动" —— 不设超时的话页面会一直
+ * 停在加载态，用户看到的就是"加载超时/白屏"。12 秒足够慢网完成一次正常请求，
+ * 又不至于让人干等。
+ */
+const DEFAULT_TIMEOUT_MS = 12000;
+
+/** 发起一次带超时的 fetch（超时抛 ApiError，交给调用方统一处理） */
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError("TIMEOUT", "请求超时，请检查网络后重试");
+    }
+    throw new ApiError("NETWORK_ERROR", "网络错误，请稍后重试");
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** 拼接查询字符串 */
@@ -52,6 +83,16 @@ function buildQuery(params?: RequestOptions["params"]): string {
   }
   const qs = search.toString();
   return qs ? `?${qs}` : "";
+}
+
+/**
+ * 是不是认证接口
+ *
+ * 认证接口的 401 是"账号或密码不对"，不是"会话过期" ——
+ * 以前不分青红皂白一律跳登录页 + 提示"登录已过期"，用户根本看不懂。
+ */
+function isAuthEndpoint(path: string): boolean {
+  return path.startsWith("/api/auth/sign-in") || path.startsWith("/api/auth/sign-up");
 }
 
 /** 401 时跳转登录页（动态 import 避免与 router / store 循环依赖） */
@@ -79,9 +120,9 @@ export async function requestRaw<T>(
   method: HttpMethod = "GET",
   options: RequestOptions = {}
 ): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(`${path}${buildQuery(options.params)}`, {
+  const response = await fetchWithTimeout(
+    `${path}${buildQuery(options.params)}`,
+    {
       method,
       credentials: "include",
       headers: {
@@ -91,13 +132,12 @@ export async function requestRaw<T>(
         "X-Device-ID": getDeviceId(),
       },
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-    });
-  } catch {
-    throw new ApiError("NETWORK_ERROR", "网络错误，请稍后重试");
-  }
+    },
+    options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  );
 
-  // 未登录 → 跳转登录页
-  if (response.status === 401) {
+  // 未登录 → 跳转登录页（认证接口除外：那里的 401 是密码错，交给下面透传原文）
+  if (response.status === 401 && !isAuthEndpoint(path)) {
     await redirectToLogin();
     throw new ApiError("UNAUTHORIZED", "登录已过期，请重新登录", 401);
   }
@@ -134,24 +174,30 @@ export async function api<T>(
 ): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${path}${buildQuery(options.params)}`, {
-      method,
-      credentials: "include",
-      headers: {
-        ...(options.body !== undefined
-          ? { "Content-Type": "application/json" }
-          : {}),
-        "X-Device-ID": getDeviceId(),
+    response = await fetchWithTimeout(
+      `${path}${buildQuery(options.params)}`,
+      {
+        method,
+        credentials: "include",
+        headers: {
+          ...(options.body !== undefined
+            ? { "Content-Type": "application/json" }
+            : {}),
+          "X-Device-ID": getDeviceId(),
+        },
+        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
       },
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-    });
-  } catch {
-    if (!options.silentError) showToast("网络错误，请稍后重试", "error");
-    throw new ApiError("NETWORK_ERROR", "网络错误，请稍后重试");
+      options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+    );
+  } catch (error) {
+    const message =
+      error instanceof ApiError ? error.message : "网络错误，请稍后重试";
+    if (!options.silentError) showToast(message, "error");
+    throw error instanceof ApiError ? error : new ApiError("NETWORK_ERROR", message);
   }
 
-  // 未登录 → 跳转登录页
-  if (response.status === 401) {
+  // 未登录 → 跳转登录页（认证接口除外，见 isAuthEndpoint）
+  if (response.status === 401 && !isAuthEndpoint(path)) {
     await redirectToLogin();
     throw new ApiError("UNAUTHORIZED", "登录已过期，请重新登录", 401);
   }
