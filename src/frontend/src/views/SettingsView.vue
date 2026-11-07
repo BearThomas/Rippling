@@ -2,7 +2,7 @@
   设置页
 
   账号设置：修改用户名（每月 4 次）/ 修改头像（前端压缩后上传 B2）/
-            修改密码 / 注销账号（走工单）。
+            修改密码 / 退出登录 / 注销账号（走工单）。
   主题：两层 —— 全站默认由管理员设；每个人都可以在这里换成自己的（只存本地）。
         自己换过的人不会被"管理员改主题"带走；自定义 CSS 仍仅超管可见。
   提问箱设置：启用开关 + 仅粉丝可提问。
@@ -10,6 +10,7 @@
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
 import { updateUsername, updateAvatar, updatePassword, updateBadge, getUserProfile, getUserDevices, deleteUserDevice, setMainDevice } from "../api/user";
 import { uploadImage } from "../api/upload";
@@ -17,7 +18,7 @@ import { getAdminSiteConfig, updateAdminSiteConfig } from "../api/admin";
 import { getQuestionBox, updateQuestionBox } from "../api/question";
 import { useAuthStore } from "../stores/auth";
 import { useThemeStore } from "../stores/theme";
-import { getMyPermissions } from "../utils/myPermissions";
+import { clearPermissionCache, getMyPermissions } from "../utils/myPermissions";
 import { hasPermission, PERM_EDIT_DATABASE, PERM_SET_NAME_BADGE } from "../utils/permission";
 import { compressImage } from "../utils/compressImage";
 import { formatDateTime } from "../utils/format";
@@ -27,6 +28,7 @@ import { PRESET_COLORS, PRESET_LABELS, PRESET_ORDER } from "../utils/themePreset
 import type { ThemePreset } from "../utils/themePresets";
 import type { QuestionBoxInfo, SiteConfigTheme, UserDevice } from "../types";
 
+const router = useRouter();
 const auth = useAuthStore();
 const theme = useThemeStore();
 
@@ -271,6 +273,28 @@ async function submitPassword(): Promise<void> {
 }
 
 // ============================================================
+//  退出登录
+//
+//  跟「我的」页那个按钮是同一套动作：清会话 → 清权限缓存（不然换个人登录
+//  还会拿着上一个人的权限位）→ 回登录页。退出是可逆的，不弹确认框。
+// ============================================================
+
+const signingOut = ref(false);
+
+async function handleSignOut(): Promise<void> {
+  if (signingOut.value) return;
+  signingOut.value = true;
+  try {
+    await auth.signOut();
+    clearPermissionCache();
+    showToast("已退出登录", "success");
+    router.push("/login");
+  } finally {
+    signingOut.value = false;
+  }
+}
+
+// ============================================================
 //  主题（每台设备各自一份）
 //
 //  规则只有一条：**本地自定义优先于全站默认**。
@@ -464,6 +488,18 @@ const currentAvatar = computed(() => auth.session?.user?.image ?? null);
           <span v-if="devices.length > 0">{{ devices.length }} 台设备</span>
           <AppSvgIcon name="back" :size="16" class="rotate-180" />
         </div>
+      </button>
+
+      <!-- 退出登录（注销是走工单的不可逆操作，跟它分开摆，别手滑） -->
+      <button
+        v-if="auth.isLoggedIn"
+        type="button"
+        class="flex w-full items-center justify-between border-b border-line py-3 text-sm"
+        :disabled="signingOut"
+        @click="handleSignOut"
+      >
+        <span>{{ signingOut ? "退出中…" : "退出登录" }}</span>
+        <AppSvgIcon name="logout" :size="16" class="text-ink-soft" />
       </button>
 
       <!-- 注销账号 -->
