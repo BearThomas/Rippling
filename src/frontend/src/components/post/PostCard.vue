@@ -11,6 +11,8 @@
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import AppSvgIcon from "../layout/AppSvgIcon.vue";
+import PostImageStrip from "./PostImageStrip.vue";
+import { extractImageUrls, hasTextBesidesImages } from "../../utils/markdownImages";
 import { formatRelativeTime, formatNumber, truncateText } from "../../utils/format";
 import type { PostAuthor } from "../../types";
 
@@ -64,6 +66,12 @@ const preview = computed(() => {
     .trim();
   return truncateText(plain, 120);
 });
+
+/** 正文里的图片（卡片里直接展示，横滑） */
+const imageUrls = computed(() => extractImageUrls(props.post.content));
+
+/** 正文除了图片还有没有文字（纯图帖就不再显示空预览行） */
+const hasText = computed(() => hasTextBesidesImages(props.post.content));
 
 /** 跳转帖子详情 */
 function openDetail(): void {
@@ -149,10 +157,13 @@ function openDetail(): void {
       {{ post.title }}
     </h3>
 
-    <!-- 内容预览 -->
-    <p class="whitespace-pre-line break-all text-sm leading-relaxed text-ink">
+    <!-- 内容预览（纯图帖不显示空行） -->
+    <p v-if="hasText" class="whitespace-pre-line break-all text-sm leading-relaxed text-ink">
       {{ preview }}
     </p>
+
+    <!-- 配图：横向滑动，点图进详情 -->
+    <PostImageStrip :urls="imageUrls" @open="openDetail" />
 
     <!-- 统计行 -->
     <div class="mt-3 flex items-center gap-4 text-xs text-ink-soft">
