@@ -1,0 +1,28 @@
+{
+  // 测试 Worker 的配置（独立于 Pages 的 wrangler.toml）
+  // 用法：npx wrangler deploy --config wrangler.worker.jsonc
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "rippling-worker",
+  "main": "src/worker.ts",
+  "compatibility_date": "2025-07-18",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // 静态资源：public/ 就是 vite build 的输出目录
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "single-page-application"
+  },
+
+  // D1：先连测试库，切生产时只改这一处
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rippling-worker-test",
+      "database_id": "4631325c-84b7-4344-b944-e4e22c275086"
+    }
+  ],
+
+  "observability": { "enabled": true }
+}

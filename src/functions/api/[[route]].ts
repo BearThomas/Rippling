@@ -45,7 +45,9 @@ import { NOT_FOUND } from "../../utils/errors";
 import { getSiteConfig } from "../../db";
 import siteConfig from "../../config/site.config.json";
 
-const app = new Hono<{ Bindings: CloudflareEnv; Variables: AppContextVars }>();
+// export：Worker 入口（src/worker.ts）复用同一个 app 实例，
+// Pages 入口继续用下面的 onRequest 包装。
+export const app = new Hono<{ Bindings: CloudflareEnv; Variables: AppContextVars }>();
 
 // ============================================================
 //  全局中间件
