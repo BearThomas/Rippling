@@ -275,7 +275,7 @@ onMounted(() => {
         <!-- 申请认证入口（仅登录后可见，isSelf 已保证已登录） -->
         <button
           type="button"
-          class="card-base flex items-center gap-3 py-3 transition-opacity active:opacity-80"
+          class="card-base flex w-full items-center gap-3 py-3 text-left transition-opacity active:opacity-80"
           @click="handleVerificationClick"
         >
           <AppSvgIcon name="check" :size="18" class="text-ink-soft" />
