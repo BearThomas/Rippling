@@ -385,7 +385,9 @@ async function saveQuestionBox(): Promise<void> {
 const ABOUT = {
   version: "0.1.0",
   license: "MIT License",
-  repo: "https://github.com/",
+  /** 这个站自己的仓库（原来写的是 https://github.com/ 首页，等于没填） */
+  repo: "https://github.com/BearThomas/Rippling",
+  repoLabel: "BearThomas/Rippling",
 } as const;
 
 /** 当前头像（会话 image 字段） */
@@ -653,7 +655,7 @@ const currentAvatar = computed(() => auth.session?.user?.image ?? null);
           class="flex items-center gap-1 text-primary"
         >
           <AppSvgIcon name="link" :size="14" />
-          GitHub 仓库
+          GitHub · {{ ABOUT.repoLabel }}
         </a>
         <button
           type="button"
