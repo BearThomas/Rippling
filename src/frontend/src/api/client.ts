@@ -85,6 +85,16 @@ function buildQuery(params?: RequestOptions["params"]): string {
   return qs ? `?${qs}` : "";
 }
 
+/**
+ * 是不是认证接口
+ *
+ * 认证接口的 401 是"账号或密码不对"，不是"会话过期" ——
+ * 以前不分青红皂白一律跳登录页 + 提示"登录已过期"，用户根本看不懂。
+ */
+function isAuthEndpoint(path: string): boolean {
+  return path.startsWith("/api/auth/sign-in") || path.startsWith("/api/auth/sign-up");
+}
+
 /** 401 时跳转登录页（动态 import 避免与 router / store 循环依赖） */
 async function redirectToLogin(): Promise<void> {
   try {
@@ -126,8 +136,8 @@ export async function requestRaw<T>(
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   );
 
-  // 未登录 → 跳转登录页
-  if (response.status === 401) {
+  // 未登录 → 跳转登录页（认证接口除外：那里的 401 是密码错，交给下面透传原文）
+  if (response.status === 401 && !isAuthEndpoint(path)) {
     await redirectToLogin();
     throw new ApiError("UNAUTHORIZED", "登录已过期，请重新登录", 401);
   }
@@ -186,8 +196,8 @@ export async function api<T>(
     throw error instanceof ApiError ? error : new ApiError("NETWORK_ERROR", message);
   }
 
-  // 未登录 → 跳转登录页
-  if (response.status === 401) {
+  // 未登录 → 跳转登录页（认证接口除外，见 isAuthEndpoint）
+  if (response.status === 401 && !isAuthEndpoint(path)) {
     await redirectToLogin();
     throw new ApiError("UNAUTHORIZED", "登录已过期，请重新登录", 401);
   }

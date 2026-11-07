@@ -25,7 +25,8 @@ import { getSiteConfig, type SiteConfigAutoBlock } from "../db/siteConfig";
 import { generateUUID } from "../utils/uuid";
 import { nowISO } from "../utils/time";
 import { uploadImageToB2, ALLOWED_IMAGE_TYPES } from "../utils/b2";
-import staticConfig from "../config/site.config.json";
+import staticConfig from "../config/site.config.json";
+import { purgeEdgeCache } from "../middleware/edgeCache";
 
 const app = new Hono<{ Bindings: CloudflareEnv }>();
 
@@ -307,6 +308,14 @@ app.post("/initialize", async (c) => {
       )
       .bind(generateUUID(), CONFIG_KEY, configValue, now, configValue, now)
       .run();
+
+    // 初始化刚把配置写进库：边缘缓存里那份"未初始化"必须马上清掉，
+    // 否则 /api/setup/status 还会回 false，前端会一直把用户往 /setup 赶
+    try {
+      await purgeEdgeCache(c.req.url);
+    } catch (error) {
+      console.error("[setup] 清理边缘缓存失败:", error);
+    }
 
     return c.json({
       success: true,

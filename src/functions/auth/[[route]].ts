@@ -249,7 +249,12 @@ export async function handleAuthRequest(
       const username = (body.username as string) ?? emailValue.split("@")[0];
       const password = (body.password as string) ?? "";
       const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
-      const studentIdRegex = new RegExp(siteConfig.studentIdPattern);
+
+      // 用数据库里的站点配置（管理员可能在后台改过学号规则 / 提示语），
+      // 只有 D1 没有配置时才回退静态模板
+      const dbConfig = await getSiteConfig(env.DB);
+      const activeConfig = dbConfig ?? siteConfig;
+      const studentIdRegex = new RegExp(activeConfig.studentIdPattern);
       const registerQuestions = parseRegisterQuestions(env.REGISTER_QUESTIONS);
 
       // 1. 学号格式验证（superadmin 学号 00000000 不匹配正则，无法通过普通注册）
@@ -257,7 +262,10 @@ export async function handleAuthRequest(
         return new Response(
           JSON.stringify({
             success: false,
-            error: { code: "VALIDATION_ERROR", message: siteConfig.studentIdHint },
+            error: {
+              code: "INVALID_STUDENT_ID",
+              message: `学号格式不对 —— ${activeConfig.studentIdHint}`,
+            },
           }),
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
@@ -288,8 +296,17 @@ export async function handleAuthRequest(
           body.answer1 === undefined ||
           body.answer2 === undefined;
 
+        if (fieldsMissing || !a1.trim() || !a2.trim()) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: { code: "MISSING_ANSWERS", message: "两个验证问题都要回答" },
+            }),
+            { status: 400, headers: { "Content-Type": "application/json" } }
+          );
+        }
+
         if (
-          fieldsMissing ||
           isNaN(q1) || isNaN(q2) ||
           !Number.isInteger(q1) || !Number.isInteger(q2) ||
           q1 < 0 || q1 >= registerQuestions.length ||
@@ -299,7 +316,10 @@ export async function handleAuthRequest(
           return new Response(
             JSON.stringify({
               success: false,
-              error: { code: "VALIDATION_ERROR", message: "验证问题答案错误" },
+              error: {
+                code: "STALE_QUESTIONS",
+                message: "验证问题已失效，刷新页面重新获取题目",
+              },
             }),
             { status: 400, headers: { "Content-Type": "application/json" } }
           );
@@ -312,7 +332,10 @@ export async function handleAuthRequest(
           return new Response(
             JSON.stringify({
               success: false,
-              error: { code: "VALIDATION_ERROR", message: "验证问题答案错误" },
+              error: {
+                code: "WRONG_ANSWERS",
+                message: "验证问题答案不对（答案区分大小写，注意不要多打空格）",
+              },
             }),
             { status: 400, headers: { "Content-Type": "application/json" } }
           );
