@@ -3,7 +3,11 @@
 
   默认 64px 窄图标栏，鼠标悬停展开为 220px 并显示文字；
   激活项与底部 Tabbar 共用同一套路由归属规则（utils/navActive.ts）。
-  底部附设置 / 管理面板入口（管理面板按 access_admin_panel 权限显隐）。
+  底部只留管理面板入口（按 access_admin_panel 权限显隐）。
+
+  设置**不在这里**：统一从「我的」页进（/profile 上的「设置」按钮）。
+  一个入口两个地方摆，用户就得猜哪个才是"真的"；而且 /settings 本来就归属
+  「我的」这一栏（见 navActive.ts），从那一栏点进去才顺。
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
@@ -29,9 +33,6 @@ const theme = useThemeStore();
 
 /** 激活的导航项（与底部 Tabbar 同一套规则） */
 const activeName = computed<MenuName | null>(() => resolveActiveNav(route.path));
-
-/** 设置入口是否处于激活页（/settings） */
-const isSettings = computed(() => route.path === "/settings");
 
 /** 管理面板入口是否处于激活页（/admin、/admin-log） */
 const isAdminPage = computed(() => route.path === "/admin" || route.path.startsWith("/admin-"));
@@ -97,28 +98,9 @@ onMounted(async () => {
       </RouterLink>
     </nav>
 
-    <!-- 底部入口：设置 + 管理面板（按权限显隐） -->
-    <div class="shrink-0 space-y-1 border-t border-line p-2">
+    <!-- 底部入口：只剩管理面板（按权限显隐；没有权限时整块不渲染，不留空分隔线） -->
+    <div v-if="canAdmin" class="shrink-0 space-y-1 border-t border-line p-2">
       <RouterLink
-        to="/settings"
-        class="flex h-11 items-center gap-3 rounded-lg px-2.5 transition-colors"
-        :class="
-          isSettings
-            ? 'bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] text-primary'
-            : 'text-ink-soft hover:bg-page hover:text-ink'
-        "
-        title="设置"
-      >
-        <AppSvgIcon name="settings" :size="22" class="shrink-0" />
-        <span
-          class="truncate whitespace-nowrap text-sm font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100"
-        >
-          设置
-        </span>
-      </RouterLink>
-
-      <RouterLink
-        v-if="canAdmin"
         to="/admin"
         class="flex h-11 items-center gap-3 rounded-lg px-2.5 transition-colors"
         :class="
