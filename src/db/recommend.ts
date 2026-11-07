@@ -6,7 +6,9 @@
  * 评分公式：
  *   score = like*w1 + comment*w2 + follow*w3 + block*w4 + time_decay*w5 + random*w6 + type_bonus
  *
- * 权重从 site.config.json 的 recommendWeights 读取。
+ * 权重与各类型基础分**都从站点配置读**（D1 的 site_config，没有就回落到下面的默认值）。
+ * 以前这里写死成 DEFAULT_WEIGHTS，管理面板里改了权重推荐流根本不看 —— 已修。
+ *
  * random 使用基于内容 ID 的稳定 hash（避免游标分页重复/漏掉）。
  *
  * 内容源：
@@ -22,6 +24,7 @@ import type { CurrentUser } from "../utils/permission";
 import { can } from "../utils/permission";
 import { PERM_MANAGE_BLOCK, PERM_VIEW_ANONYMOUS_IDENTITY } from "../shared/permissions";
 import { nowISO } from "../utils/time";
+import { getSiteConfig } from "./siteConfig";
 import { computeNameColor, loadNameColors, type UserLevel } from "../utils/userLevel";
 
 // ============================================================
@@ -31,19 +34,42 @@ import { computeNameColor, loadNameColors, type UserLevel } from "../utils/userL
 /** 推荐流默认每页条数 */
 const PAGE_SIZE = 50;
 
-/** 每类内容源最多拉取的条数（用于内存计算） */
-const FETCH_LIMIT = 100;
+/**
+ * 每类内容源最多拉取的候选条数
+ *
+ * 评分和权限过滤都在内存里做，所以必须先框定候选池：超过这个数的老内容不会
+ * 出现在推荐流里（想全部参与就得把评分下推到 SQL，见 docs/recommend.md）。
+ */
+const FETCH_LIMIT = 300;
 
-/** type_bonus 内置常量 */
-const TYPE_BONUS = {
+/** 各类型基础分默认值（表白墙/大事记/投票天生比普通帖更值得被推荐） */
+const DEFAULT_TYPE_BONUS: RecommendTypeBonus = {
   post: 0,
   confession: 5.0,
   timeline: 8.0,
   vote: 6.0,
-} as const;
+};
 
-/** 推荐权重默认值（与 site.config.json 的 recommendWeights 一致） */
-const DEFAULT_WEIGHTS = {
+/** 推荐权重（可在管理面板 → 站点配置 → 推荐流权重里改） */
+export interface RecommendWeights {
+  like: number;
+  comment: number;
+  follow: number;
+  block: number;
+  time: number;
+  random: number;
+}
+
+/** 各类型基础分（可在管理面板里改；改大某个类型，它会更容易排在前面） */
+export interface RecommendTypeBonus {
+  post: number;
+  confession: number;
+  timeline: number;
+  vote: number;
+}
+
+/** 默认权重（与 site.config.json 的 recommendWeights 一致） */
+const DEFAULT_WEIGHTS: RecommendWeights = {
   like: 1.0,
   comment: 1.5,
   follow: 3.0,
@@ -51,6 +77,37 @@ const DEFAULT_WEIGHTS = {
   time: 2.0,
   random: 0.5,
 };
+
+/** 权重 / 基础分的上限：防止手滑填个 1e9 把推荐流顶死 */
+const WEIGHT_MAX = 1000;
+
+/** 逐项取有效值，非法（NaN / 负数 / 非数字）回落到默认值 */
+function normalizeWeights(raw: unknown): RecommendWeights {
+  const result: RecommendWeights = { ...DEFAULT_WEIGHTS };
+  if (!raw || typeof raw !== "object") return result;
+
+  for (const key of Object.keys(DEFAULT_WEIGHTS) as (keyof RecommendWeights)[]) {
+    const value = Number((raw as Record<string, unknown>)[key]);
+    if (Number.isFinite(value) && value >= 0) {
+      result[key] = Math.min(value, WEIGHT_MAX);
+    }
+  }
+  return result;
+}
+
+/** 同上，处理各类型基础分 */
+function normalizeTypeBonus(raw: unknown): RecommendTypeBonus {
+  const result: RecommendTypeBonus = { ...DEFAULT_TYPE_BONUS };
+  if (!raw || typeof raw !== "object") return result;
+
+  for (const key of Object.keys(DEFAULT_TYPE_BONUS) as (keyof RecommendTypeBonus)[]) {
+    const value = Number((raw as Record<string, unknown>)[key]);
+    if (Number.isFinite(value) && value >= 0) {
+      result[key] = Math.min(value, WEIGHT_MAX);
+    }
+  }
+  return result;
+}
 
 // ============================================================
 //  返回类型
@@ -138,7 +195,8 @@ export async function listRecommendations(
   //  1. 拉取各内容源的候选数据
   // ----------------------------------------------------------
 
-  const [posts, confessions, timelines, votes] = await Promise.all([
+  // 站点配置和候选数据一起取：权重/基础分以数据库为准（没有就用默认值）
+  const [posts, confessions, timelines, votes, siteConfig] = await Promise.all([
     // 顶级帖子（未删除、未归档）
     db
       .prepare(
@@ -206,6 +264,7 @@ export async function listRecommendations(
         isClosed: number;
         createdAt: string;
       }>(),
+    getSiteConfig(db),
   ]);
 
   // ----------------------------------------------------------
@@ -250,7 +309,8 @@ export async function listRecommendations(
   //  4. 计算分数并合并
   // ----------------------------------------------------------
 
-  const weights = DEFAULT_WEIGHTS;
+  const weights = normalizeWeights(siteConfig?.recommendWeights);
+  const typeBonus = normalizeTypeBonus(siteConfig?.recommendTypeBonus);
   const items: RecommendItem[] = [];
 
   // 帖子
@@ -267,7 +327,7 @@ export async function listRecommendations(
       blockBonus * weights.block +
       timeDecay(post.createdAt) * weights.time +
       stableRandom(post.id) * weights.random +
-      TYPE_BONUS.post;
+      typeBonus.post;
 
     // 匿名规则：authorVisible=0 且无匿名查看权限 → 不返回作者信息
     const showAuthor = post.authorVisible === 1 || can(user, PERM_VIEW_ANONYMOUS_IDENTITY);
@@ -301,7 +361,7 @@ export async function listRecommendations(
       likeCount * weights.like +
       timeDecay(confession.createdAt) * weights.time +
       stableRandom(confession.id) * weights.random +
-      TYPE_BONUS.confession;
+      typeBonus.confession;
 
     items.push({
       type: "confession",
@@ -324,7 +384,7 @@ export async function listRecommendations(
       likeCount * weights.like +
       timeDecay(event.createdAt) * weights.time +
       stableRandom(event.id) * weights.random +
-      TYPE_BONUS.timeline;
+      typeBonus.timeline;
 
     items.push({
       type: "timeline",
@@ -349,7 +409,7 @@ export async function listRecommendations(
       likeCount * weights.like +
       timeDecay(vote.createdAt) * weights.time +
       stableRandom(vote.id) * weights.random +
-      TYPE_BONUS.vote;
+      typeBonus.vote;
 
     items.push({
       type: "vote",

@@ -588,6 +588,14 @@ export interface SiteConfigAutoBlock {
   classNameFormat: string;
 }
 
+/** 各类型内容在推荐流里的基础分 */
+export interface SiteConfigTypeBonus {
+  post: number;
+  confession: number;
+  timeline: number;
+  vote: number;
+}
+
 /** 站点配置（/api/config 返回） */
 export interface SiteConfig {
   siteName: string;
@@ -600,6 +608,8 @@ export interface SiteConfig {
   archiveDays: number;
   theme: SiteConfigTheme;
   recommendWeights: SiteConfigRecommendWeights;
+  /** 各类型基础分（旧配置可能缺失，缺失时后端用默认值） */
+  recommendTypeBonus?: SiteConfigTypeBonus;
   /** 用户等级颜色（旧配置可能缺失） */
   nameColors: SiteConfigNameColors;
   /** 学号自动分板块配置 */
