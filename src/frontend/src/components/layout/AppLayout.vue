@@ -14,8 +14,6 @@ import AppHeader from "./AppHeader.vue";
 import AppTabbar from "./AppTabbar.vue";
 import OnboardingTour from "../onboarding/OnboardingTour.vue";
 import { useAuthStore } from "../../stores/auth";
-import { getMyPermissions } from "../../utils/myPermissions";
-import { hasPermission, PERM_ACCESS_ADMIN_PANEL } from "../../utils/permission";
 import { buildTourSteps, readTourStatus, startTour } from "../../utils/onboarding";
 
 const route = useRoute();
@@ -31,13 +29,11 @@ const showTabbar = computed(() => route.meta.showTabbar !== false);
 async function maybeAutoStart(): Promise<void> {
   if (readTourStatus() !== "unseen") return;
   try {
-    const mask = await getMyPermissions();
-    const steps = await buildTourSteps(hasPermission(mask, PERM_ACCESS_ADMIN_PANEL));
+    const steps = await buildTourSteps();
     if (!steps.length) return;
     startTour(steps);
   } catch {
-    // 权限查询失败就当没有管理面板那一步，不影响引导其他部分
-    startTour(await buildTourSteps(false));
+    // 引导拼装失败就当没这回事，不影响正常使用
   }
 }
 

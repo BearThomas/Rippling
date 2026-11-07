@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#f7f7f8" />
+<title>搬家啦 · 龙高北小站</title>
+<style>
+  :root {
+    --ink: #1c1c1e; --soft: #8e8e93; --line: rgba(60,60,67,.12);
+    --blue: #007aff; --paper: #fff; --bg: #f2f2f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #f2f2f7; --soft: #9a9aa0; --line: rgba(255,255,255,.12);
+            --paper: #1c1c1e; --bg: #0b0b0d; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
+    -webkit-font-smoothing: antialiased;
+  }
+  .card {
+    width: 100%; max-width: 420px; background: var(--paper); border-radius: 22px;
+    padding: 26px 22px 22px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 40px rgba(0,0,0,.06);
+    text-align: center;
+  }
+  h1 { font-size: 21px; margin: 14px 0 6px; letter-spacing: -.01em; }
+  p { margin: 0; }
+  .lede { color: var(--soft); font-size: 14px; }
+
+  /* 搬家动画：小房子 → 小盒子 → 新家 */
+  .scene { position: relative; height: 96px; margin: 4px 0 6px; }
+  .ground {
+    position: absolute; left: 8%; right: 8%; bottom: 14px; height: 2px;
+    background: repeating-linear-gradient(90deg, var(--line) 0 10px, transparent 10px 18px);
+  }
+  .house { position: absolute; bottom: 16px; font-size: 30px; line-height: 1; }
+  .house.old { left: 6%; opacity: .55; }
+  .house.new { right: 6%; animation: pop 2.6s ease-in-out infinite; }
+  .box {
+    position: absolute; bottom: 16px; left: 20%;
+    font-size: 26px; line-height: 1;
+    animation: move 3.2s cubic-bezier(.5,.05,.45,.95) infinite;
+  }
+  @keyframes move {
+    0%   { left: 20%; transform: translateY(0) rotate(-6deg); }
+    18%  { transform: translateY(-14px) rotate(8deg); }
+    36%  { transform: translateY(0) rotate(-4deg); }
+    55%  { left: 52%; transform: translateY(-16px) rotate(6deg); }
+    72%  { transform: translateY(0) rotate(-2deg); }
+    100% { left: 72%; transform: translateY(0) rotate(0); opacity: 1; }
+  }
+  @keyframes pop {
+    0%, 60%, 100% { transform: scale(1); }
+    70% { transform: scale(1.16); }
+    80% { transform: scale(.98); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .box, .house.new { animation: none; }
+    .box { left: 46%; }
+  }
+
+  .addr {
+    display: inline-block; margin: 16px 0 6px; padding: 10px 14px;
+    border: 1px dashed var(--line); border-radius: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+    color: var(--ink); word-break: break-all;
+  }
+  .go {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    width: 100%; margin-top: 16px; padding: 13px 16px;
+    background: var(--blue); color: #fff; text-decoration: none;
+    border: 0; border-radius: 14px; font-size: 16px; font-weight: 600;
+    transition: transform .16s ease, opacity .16s ease;
+  }
+  .go:active { transform: scale(.985); }
+  .go:hover { opacity: .92; }
+  .go span.arrow { transition: transform .16s ease; }
+  .go:hover span.arrow { transform: translateX(3px); }
+
+  .countdown { margin-top: 12px; color: var(--soft); font-size: 12px; }
+  .countdown b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .stay {
+    margin-top: 6px; background: none; border: 0; padding: 4px;
+    color: var(--soft); font-size: 12px; text-decoration: underline; cursor: pointer;
+  }
+  .note { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line);
+          color: var(--soft); font-size: 12px; line-height: 1.7; }
+  .note b { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="scene" aria-hidden="true">
+      <span class="house old">🏚️</span>
+      <span class="box">📦</span>
+      <span class="house new">🏡</span>
+      <div class="ground"></div>
+    </div>
+
+    <h1>我们搬家啦</h1>
+    <p class="lede">帖子、图片、大事记、表白墙……全都打包搬走了，这里以后只留这张纸条。</p>
+
+    <div class="addr">longgaobei.618271.xyz</div>
+    <p class="lede" style="font-size:12px">↑ 新地址，记得重新存一下书签</p>
+
+    <a class="go" href="https://longgaobei.618271.xyz/" id="go">
+      去新家看看 <span class="arrow">→</span>
+    </a>
+
+    <p class="countdown" id="countdown">搬家车马上发车，<b>10</b> 秒后自动带你过去</p>
+    <button class="stay" id="stay" type="button">我想在这儿多待一会儿</button>
+
+    <div class="note">
+      旧地址会保留一段时间，但 <b>不会再更新内容</b>。<br />
+      如果你在群里看到别人的旧链接，随手帮我们转一下新的 🙂
+    </div>
+  </main>
+
+<script>
+  var TARGET = "https://longgaobei.618271.xyz/";
+  var left = 10;
+  var timer = null;
+  var countdown = document.getElementById("countdown");
+  var stay = document.getElementById("stay");
+
+  function tick() {
+    left -= 1;
+    if (left <= 0) {
+      location.replace(TARGET);
+      return;
+    }
+    countdown.innerHTML = '搬家车马上发车，<b>' + left + '</b> 秒后自动带你过去';
+  }
+
+  // 用户点了"多待一会儿"就停表，别跟人抢方向盘
+  stay.addEventListener("click", function () {
+    if (timer) clearInterval(timer);
+    timer = null;
+    countdown.textContent = "好啦，你自己点上面的按钮过去吧 👆";
+    stay.hidden = true;
+  });
+
+  timer = setInterval(tick, 1000);
+</script>
+</body>
+</html>

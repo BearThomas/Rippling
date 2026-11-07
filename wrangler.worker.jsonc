@@ -2,7 +2,7 @@
   // 测试 Worker 的配置（独立于 Pages 的 wrangler.toml）
   // 用法：npx wrangler deploy --config wrangler.worker.jsonc
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "rippling-worker",
+  "name": "longgaobei-final",
   "main": "src/worker.ts",
   "compatibility_date": "2025-07-18",
   "compatibility_flags": ["nodejs_compat"],

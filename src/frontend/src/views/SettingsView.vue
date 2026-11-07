@@ -23,7 +23,6 @@ import { compressImage } from "../utils/compressImage";
 import { formatDateTime } from "../utils/format";
 import { showToast } from "../utils/toast";
 import { buildTourSteps, restartTour } from "../utils/onboarding";
-import { PERM_ACCESS_ADMIN_PANEL } from "../utils/permission";
 import type { QuestionBoxInfo, SiteConfigTheme, UserDevice } from "../types";
 
 const auth = useAuthStore();
@@ -40,10 +39,9 @@ const myBadge = ref<string>("");
 /** 重新观看首次使用引导（每次都从第一步开始，不影响其他设置） */
 async function onRestartTour(): Promise<void> {
   try {
-    const mask = await getMyPermissions();
-    restartTour(await buildTourSteps(hasPermission(mask, PERM_ACCESS_ADMIN_PANEL)));
+    restartTour(await buildTourSteps());
   } catch {
-    restartTour(await buildTourSteps(false));
+    // 拼装失败就不弹，别打扰用户
   }
 }
 

@@ -54,14 +54,12 @@ export interface TourStep {
   target?: string;
   title: string;
   body: string;
-  /** 只有能进管理面板的人才会看到这一步 */
-  adminOnly?: boolean;
 }
 
 export const WELCOME_STEP: TourStep = {
   id: "welcome",
   title: "第一次来？用一分钟熟悉一下",
-  body: "接下来会带你走一遍首页、板块、应用、我的、帖子详情、搜索和管理面板，每条只说一件事。随时可以跳过 —— 之后在「设置」里还能再看一遍。",
+  body: "接下来会带你走一遍首页、板块、应用、我的、帖子详情和搜索，每条只说一件事。随时可以跳过 —— 之后在「设置」里还能再看一遍。",
 };
 
 export const FINISH_STEP: TourStep = {
@@ -92,9 +90,8 @@ async function resolveFirstPostId(): Promise<string | null> {
 /**
  * 组装步骤序列
  *
- * @param canAdmin 当前用户能否进入管理面板
  */
-export async function buildTourSteps(canAdmin: boolean): Promise<TourStep[]> {
+export async function buildTourSteps(): Promise<TourStep[]> {
   const firstPostId = await resolveFirstPostId();
 
   const steps: TourStep[] = [
@@ -153,7 +150,7 @@ export async function buildTourSteps(canAdmin: boolean): Promise<TourStep[]> {
       route: "/profile",
       target: '[data-tour="profile-menu"]',
       title: "我的",
-      body: "「编辑资料」「管理提问箱」在头像下面；工单、申请认证、管理面板（有权限才显示）、退出登录在下面这一段；再往下是别人也能看到的帖子和评论。",
+      body: "「编辑资料」「管理提问箱」在头像下面；工单、申请认证、退出登录在下面这一段；再往下是别人也能看到的帖子和评论。",
     },
     {
       id: "search",
@@ -170,17 +167,7 @@ export async function buildTourSteps(canAdmin: boolean): Promise<TourStep[]> {
       route: `/post/${firstPostId}`,
       target: '[data-tour="post-actions"]',
       title: "帖子详情",
-      body: "点赞、评论、置顶（有权限才显示）、编辑和删除都在这一行；评论支持 Markdown，匿名发评论会显示「匿名用户」。",
-    });
-  }
-
-  if (canAdmin) {
-    steps.push({
-      id: "admin",
-      route: "/admin",
-      target: '[data-tour="admin-tabs"]',
-      title: "管理面板",
-      body: "概览 / 用户管理 / 站点配置 / 数据库 / 归档。站名、主题、学号规则都在站点配置里改，保存后立即生效。",
+      body: "点赞、评论、编辑和删除都在这一行；评论支持 Markdown，匿名发评论会显示「匿名用户」。",
     });
   }
 
