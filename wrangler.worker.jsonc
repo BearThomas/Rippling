@@ -24,5 +24,12 @@
     }
   ],
 
+  // workers.dev 保留（国内不可达，但本地/隧道里调试方便，也是旧链接的兜底）
+  "workers_dev": true,
+
+  // 自定义域名：workers.dev 在国内基本不可达（共享域名），用自己的域名才行
+  // 这是 Custom Domain（不是普通 Route），Cloudflare 会自动建 DNS 记录并签发证书
+  "routes": [{ "pattern": "rippling.618271.xyz", "custom_domain": true }],
+
   "observability": { "enabled": true }
 }
