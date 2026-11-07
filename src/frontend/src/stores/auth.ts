@@ -7,7 +7,8 @@
 
 import { defineStore } from "pinia";
 import { signOut as apiSignOut } from "../api/auth";
-import { getBootstrap, getBootstrapSnapshot, refreshBootstrap } from "../api/bootstrap";
+import { clearBootstrapSnapshot, getBootstrap, getBootstrapSnapshot, refreshBootstrap } from "../api/bootstrap";
+import { clearFeedCache } from "../utils/feedCache";
 import { clearPermissionCache, primePermissions } from "../utils/myPermissions";
 import type { SessionInfo } from "../types";
 
@@ -72,6 +73,11 @@ export const useAuthStore = defineStore("auth", {
       } finally {
         this.session = null;
         clearPermissionCache();
+        // 本地缓存必须一起清：bootstrap 快照里有 session + permissions，
+        // 首页快照里是这个人刷出来的那页帖子 —— 不清的话同一台手机上
+        // 下一个人会先看到上一个人的状态和内容（有了登录墙这个问题更扎眼）
+        clearBootstrapSnapshot();
+        clearFeedCache();
         // 让下次请求拿到"游客"的 bootstrap（失败也不影响本地已清空）
         void refreshBootstrap().catch(() => undefined);
       }

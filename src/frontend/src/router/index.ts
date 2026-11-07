@@ -13,7 +13,8 @@
  */
 
 import { createRouter, createWebHistory } from "vue-router";
-import { isSiteInitialized } from "../api/bootstrap";
+import { getLoginWallMode, isSiteInitialized } from "../api/bootstrap";
+import { wallAllowsPath } from "../utils/loginWall";
 import type { RouteRecordRaw } from "vue-router";
 import AppLayout from "../components/layout/AppLayout.vue";
 import { useAuthStore } from "../stores/auth";
@@ -287,13 +288,27 @@ router.beforeEach(async (to) => {
     console.error("检查初始化状态失败:", error);
   }
 
-  // 原有的登录校验逻辑
-  if (to.meta.requiresAuth) {
-    const auth = useAuthStore();
-    // 会话尚未加载完成时先视为游客，由页面自行处理加载态
-    if (auth.loaded && !auth.isLoggedIn) {
+  const auth = useAuthStore();
+
+  // 已登录的人不该再停在登录/注册页（登录成功后由页面自己 replace，这里兜个底）
+  if ((to.path === "/login" || to.path === "/register") && auth.loaded && auth.isLoggedIn) {
+    return "/";
+  }
+
+  // 登录墙：整站按档位拦（none 不拦；soft 放单条帖子详情；hard 只放登录/注册/初始化）
+  try {
+    const mode = await getLoginWallMode();
+    if (!wallAllowsPath(mode, to.path) && auth.loaded && !auth.isLoggedIn) {
       return { path: "/login", query: { redirect: to.fullPath } };
     }
+  } catch (error) {
+    // 拿不到档位时别把人锁在外面：交给页面自己处理（后端仍然是权威）
+    console.error("读取登录墙档位失败:", error);
+  }
+
+  // 单页的登录要求（/settings、/admin 这类，比墙更严）
+  if (to.meta.requiresAuth && auth.loaded && !auth.isLoggedIn) {
+    return { path: "/login", query: { redirect: to.fullPath } };
   }
   return true;
 });

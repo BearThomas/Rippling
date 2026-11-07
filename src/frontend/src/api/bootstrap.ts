@@ -12,7 +12,8 @@
  */
 
 import { apiGet } from "./client";
-import type { BootstrapData, SessionInfo, SiteConfig } from "../types";
+import type { BootstrapData, LoginWallMode, SessionInfo, SiteConfig } from "../types";
+import { normalizeLoginWall } from "../utils/loginWall";
 
 /** 快照存储键（版本化，结构变了直接作废旧快照） */
 const SNAPSHOT_KEY = "rippling.bootstrap.v1";
@@ -90,9 +91,37 @@ export async function isSiteInitialized(): Promise<boolean> {
   return data.initialized;
 }
 
+/**
+ * 当前登录墙档位（路由守卫用）
+ *
+ * 有快照就同步读，没有才等一次 bootstrap —— 跟 isSiteInitialized 共用同一个
+ * memo，不会因此多一次请求。
+ */
+export async function getLoginWallMode(): Promise<LoginWallMode> {
+  const snapshot = getBootstrapSnapshot();
+  const config = snapshot?.config ?? (await getBootstrap()).config;
+  return normalizeLoginWall(config?.loginWall);
+}
+
 /** 清空缓存并重新拉取（登录 / 登出 / 保存配置后调用） */
 export function refreshBootstrap(): Promise<BootstrapData> {
   return getBootstrap(true);
+}
+
+/**
+ * 清掉快照（登出时必调）
+ *
+ * 快照里存着 session 和 permissions，不清的话同一台手机上换个人登录，
+ * 会先看到上一个人"已登录"的状态闪一下。有了登录墙这个问题更扎眼。
+ */
+export function clearBootstrapSnapshot(): void {
+  cached = null;
+  inflight = null;
+  try {
+    localStorage.removeItem(SNAPSHOT_KEY);
+  } catch {
+    // 隐私模式忽略
+  }
 }
 
 /** 供主题 / 认证 store 直接用快照里的字段 */

@@ -225,13 +225,12 @@ onMounted(() => {
 
 <template>
   <div class="px-3 pt-3">
-    <!-- 未登录访问 /profile：登录引导 -->
-    <div v-if="auth.loaded && !auth.isLoggedIn && !targetUserId" class="card-base text-center">
-      <p class="mb-4 text-sm text-ink-soft">登录后体验完整功能</p>
-      <RouterLink to="/login" class="btn-primary w-full">登录 / 注册</RouterLink>
-    </div>
+    <!--
+      以前这里有一块"未登录也能进 /profile"的登录引导。
+      现在路由守卫按登录墙直接跳 /login，这段永远走不到，删掉免得误导。
+    -->
 
-    <LoadingSpinner v-else-if="loading" />
+    <LoadingSpinner v-if="loading" />
     <ErrorState v-else-if="error" @retry="loadAll" />
 
     <template v-else-if="profile">

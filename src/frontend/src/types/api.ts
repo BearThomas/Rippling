@@ -533,6 +533,9 @@ export interface AdminLogInfo {
 //  站点配置
 // ============================================================
 
+/** 登录墙档位：无墙 / 软墙（只放单条帖子）/ 硬墙 */
+export type LoginWallMode = "none" | "soft" | "hard";
+
 /** 主题配置（与 config/site.config.json 的 theme 字段一致） */
 export interface SiteConfigTheme {
   preset: "light" | "dark" | "campus" | "warm";
@@ -626,5 +629,7 @@ export interface SiteConfig {
   nameColors: SiteConfigNameColors;
   /** 学号自动分板块配置 */
   autoBlock?: SiteConfigAutoBlock;
+  /** 登录墙档位（旧配置可能缺失 → 按 hard 处理，见 utils/loginWall.ts） */
+  loginWall?: LoginWallMode;
 }
 

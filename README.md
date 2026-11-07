@@ -78,6 +78,8 @@ node scripts/test-recommend.mjs http://127.0.0.1:8788
 > 主题（每个人的自定义 vs 全站默认，谁压谁）：见 `docs/theme.md`。
 >
 > UI 的两条硬规矩（默认头像只有一份 / 卡片行要撑满，都有脚本验）：见 `docs/ui.md`。
+>
+> 登录墙（无墙 / 软墙 / 硬墙，改 site_config.loginWall）：见 `docs/login-wall.md`。
 
 ## 协议
 

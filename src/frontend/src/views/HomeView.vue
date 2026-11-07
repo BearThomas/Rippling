@@ -18,54 +18,16 @@ import EmptyState from "../components/common/EmptyState.vue";
 import ErrorState from "../components/common/ErrorState.vue";
 import { getRecommendFeed } from "../api/recommend";
 import { setTourFirstPostId } from "../utils/onboarding";
+import { readFeedSnapshot, writeFeedSnapshot } from "../utils/feedCache";
+import { useAuthStore } from "../stores/auth";
 import type { PinnedItemInfo, RecommendItem } from "../types";
 
 const router = useRouter();
+// 快照要按人分开存，所以这里要拿到当前用户
+const auth = useAuthStore();
 
 /** 已查看置顶 ID 的 localStorage 键 */
 const VIEWED_PINNED_KEY = "rippling.viewedPinned";
-
-/** 首页第一页的本地快照（跨境环境下，先把上次的内容画出来再刷新） */
-const FEED_CACHE_KEY = "rippling.feed.v1";
-/** 快照最多用 5 分钟：太旧就别假装是最新的 */
-const FEED_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
-
-interface FeedSnapshot {
-  savedAt: number;
-  pinned: PinnedItemInfo[];
-  items: RecommendItem[];
-  nextCursor: { lastScore: number; lastId: string } | null;
-}
-
-/** 读取上次的首页快照（过期 / 损坏都返回 null） */
-function readFeedSnapshot(): FeedSnapshot | null {
-  try {
-    const raw = localStorage.getItem(FEED_CACHE_KEY);
-    if (!raw) return null;
-    const snap = JSON.parse(raw) as FeedSnapshot;
-    if (!Array.isArray(snap?.items) || Date.now() - snap.savedAt > FEED_CACHE_MAX_AGE_MS) {
-      return null;
-    }
-    return snap;
-  } catch {
-    return null;
-  }
-}
-
-/** 写入首页快照（配额满 / 隐私模式写不进去就跳过） */
-function writeFeedSnapshot(): void {
-  try {
-    const snap: FeedSnapshot = {
-      savedAt: Date.now(),
-      pinned: pinned.value,
-      items: items.value,
-      nextCursor: nextCursor.value,
-    };
-    localStorage.setItem(FEED_CACHE_KEY, JSON.stringify(snap));
-  } catch {
-    // 忽略
-  }
-}
 
 // ------------------------------------------------------------
 //  状态
@@ -136,7 +98,11 @@ async function loadFeed(silent = false): Promise<void> {
     pinned.value = feed.pinned ?? [];
     items.value = feed.items ?? [];
     nextCursor.value = feed.nextCursor;
-    writeFeedSnapshot();
+    writeFeedSnapshot(auth.userId ?? null, {
+      pinned: pinned.value,
+      items: items.value,
+      nextCursor: nextCursor.value,
+    });
     // 给首次使用引导用：帖子详情那一步需要一条真实帖子
     const firstPost = items.value.find((item) => item.type === "post");
     setTourFirstPostId(firstPost ? firstPost.id : null);
@@ -227,7 +193,7 @@ function setupObserver(): void {
 
 onMounted(() => {
   // 有快照就先画出来（0 请求、0 等待），同时后台拉最新的一页
-  const snapshot = readFeedSnapshot();
+  const snapshot = readFeedSnapshot(auth.userId ?? null);
   if (snapshot) {
     pinned.value = snapshot.pinned ?? [];
     items.value = snapshot.items;

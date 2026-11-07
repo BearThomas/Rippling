@@ -66,6 +66,25 @@ const previewClassBlock = computed(() => {
   return fmt.replace(/\{grade\}/g, grade).replace(/\{class\}/g, cls);
 });
 
+/** 登录墙档位选项（存 site_config.loginWall） */
+const LOGIN_WALL_OPTIONS = [
+  {
+    value: "none" as const,
+    label: "无墙",
+    desc: "不登录也能刷推荐流、搜索、板块（想让人先看看再注册）",
+  },
+  {
+    value: "soft" as const,
+    label: "软墙",
+    desc: "内容要登录，但单条帖子详情公开 —— 群里转发链接点开能看",
+  },
+  {
+    value: "hard" as const,
+    label: "硬墙",
+    desc: "除登录/注册/初始化外全部要登录（只给本校的人用）",
+  },
+];
+
 /** 主题预设选项 */
 const PRESETS = ["light", "dark", "campus", "warm"] as const;
 
@@ -181,6 +200,10 @@ async function load(): Promise<void> {
     // 兼容旧配置：缺类型基础分时用默认值（以前这些值是写死在后端的）
     if (!form.value.recommendTypeBonus) {
       form.value.recommendTypeBonus = { ...DEFAULT_TYPE_BONUS };
+    }
+    // 兼容旧配置：没有登录墙字段时按硬墙显示（跟后端缺省一致）
+    if (!form.value.loginWall) {
+      form.value.loginWall = "hard";
     }
   } catch {
     error.value = true;
@@ -405,6 +428,36 @@ onMounted(load);
               <div>🎯 对应班级板块：<span class="font-medium text-ink">{{ previewClassBlock }}</span></div>
             </div>
           </div>
+        </div>
+
+        <!-- 访问控制（登录墙） -->
+        <div class="card-base space-y-3">
+          <h3 class="text-sm font-semibold text-ink-soft">访问控制</h3>
+          <p class="text-xs text-ink-soft">没登录的人能看到什么。</p>
+          <div class="space-y-2">
+            <label
+              v-for="opt in LOGIN_WALL_OPTIONS"
+              :key="opt.value"
+              class="flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 transition-colors"
+              :class="(form.loginWall ?? 'hard') === opt.value
+                ? 'border-primary bg-[color-mix(in_srgb,var(--c-primary)_6%,transparent)]'
+                : 'border-line'"
+            >
+              <input
+                v-model="form.loginWall"
+                type="radio"
+                :value="opt.value"
+                class="mt-0.5 h-4 w-4 accent-[var(--c-primary)]"
+              />
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-medium">{{ opt.label }}</span>
+                <span class="block text-xs text-ink-soft">{{ opt.desc }}</span>
+              </span>
+            </label>
+          </div>
+          <p class="text-[11px] text-ink-soft">
+            保存后最多 10 秒生效（档位在服务端有短缓存）。只影响浏览入口，接口那边同样按这个挡。
+          </p>
         </div>
 
         <!-- 推荐流权重 -->

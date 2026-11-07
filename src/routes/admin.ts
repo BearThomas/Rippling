@@ -68,6 +68,7 @@ import {
 } from "../utils/errors";
 import staticSiteConfig from "../config/site.config.json";
 import { purgeEdgeCache } from "../middleware/edgeCache";
+import { bustLoginWallCache } from "../middleware/loginWall";
 
 // ============================================================
 //  类型定义
@@ -408,6 +409,9 @@ adminRoutes.put("/config", async (c) => {
   if (!ok) {
     return errorResponse(c, VALIDATION_ERROR, "配置结构不完整或非法");
   }
+
+  // 墙档位有 10 秒进程内缓存，改完顺手失效当前 isolate 的（其它 isolate 靠 TTL）
+  bustLoginWallCache();
 
   // 配置变了，边缘缓存里那份不能继续用（否则要等 60 秒才生效）
   try {

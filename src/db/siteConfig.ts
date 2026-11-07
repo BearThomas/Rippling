@@ -87,6 +87,26 @@ export interface SiteConfigAutoBlock {
 }
 
 /** 站点配置 */
+/**
+ * 登录墙档位
+ *
+ *   none —— 无墙：没登录也能刷（推荐流/搜索/板块/帖子）
+ *   soft —— 软墙：只能看**单条帖子详情**，其余要登录（群里转发链接友好）
+ *   hard —— 硬墙：除登录/注册/初始化外全部要登录
+ */
+export type LoginWallMode = "none" | "soft" | "hard";
+
+/** 认不出来的值一律当硬墙（宁严不松） */
+export function normalizeLoginWall(value: unknown): LoginWallMode {
+  return value === "none" || value === "soft" || value === "hard" ? value : "hard";
+}
+
+/** 从一份配置里取墙档位（配置缺失 / 缺字段 → hard） */
+export function loginWallOf(config: SiteConfig | null | undefined): LoginWallMode {
+  if (!config) return "hard";
+  return normalizeLoginWall(config.loginWall);
+}
+
 export interface SiteConfig {
   siteName: string;
   /** 站点图标（图片 URL，可为空串表示未设置） */
@@ -104,6 +124,13 @@ export interface SiteConfig {
   nameColors: SiteConfigNameColors;
   /** 学号自动分板块配置 */
   autoBlock?: SiteConfigAutoBlock;
+  /**
+   * 登录墙档位（缺省 = hard）
+   *
+   * 缺字段也当 hard：老部署升级上来第一件事应该是"至少跟以前一样安全"，
+   * 而不是"悄悄变成谁都进得来"。
+   */
+  loginWall?: LoginWallMode;
   /** 是否已初始化 */
   initialized?: boolean;
 }
@@ -157,7 +184,12 @@ function isValidSiteConfig(config: unknown): config is SiteConfig {
     typeof c.archiveDays === "number" &&
     !!c.theme && typeof c.theme === "object" &&
     !!c.recommendWeights && typeof c.recommendWeights === "object" &&
-    !!c.nameColors && typeof c.nameColors === "object"
+    !!c.nameColors && typeof c.nameColors === "object" &&
+    // 可选字段，但写了就必须是三个合法值之一（写错别悄悄按 hard 处理掉）
+    (c.loginWall === undefined ||
+      c.loginWall === "none" ||
+      c.loginWall === "soft" ||
+      c.loginWall === "hard")
   );
 }
 

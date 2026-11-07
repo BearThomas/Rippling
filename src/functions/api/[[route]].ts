@@ -37,6 +37,7 @@ import type { CloudflareEnv } from "../../auth";
 import { loggerMiddleware } from "../../middleware/logger";
 import { errorHandler } from "../../middleware/error";
 import { authMiddleware } from "../../middleware/auth";
+import { loginWall } from "../../middleware/loginWall";
 import type { AppContextVars } from "../../middleware/auth";
 import { deviceMiddleware } from "../../middleware/device";
 import { edgeCache } from "../../middleware/edgeCache";
@@ -92,6 +93,11 @@ app.route("/api/setup", setupRoutes);
 // ============================================================
 
 app.use("/api/*", authMiddleware);
+
+// 登录墙：默认拒绝、白名单放行（wall 挡掉的请求不该再去碰设备表，所以放在 device 之前）
+// 档位来自 site_config.loginWall，详见 docs/login-wall.md
+app.use("/api/*", loginWall);
+
 app.use("/api/*", deviceMiddleware);
 
 // ------------------------------------------------------------

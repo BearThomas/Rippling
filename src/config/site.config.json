@@ -38,5 +38,6 @@
     "classStart": 5,
     "classLength": 2,
     "classNameFormat": "{grade}年级{class}班板块"
-  }
+  },
+  "loginWall": "hard"
 }
