@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 布局体检：卡片行是不是都跟容器一样宽
+ * 布局体检：卡片行是不是都跟容器一样宽 + 折叠区域的内容真的显示出来了
  *
  * 用法：node scripts/check-layout.mjs [http://127.0.0.1:8788]
  * 前提：本地 `npx wrangler dev --config wrangler.worker.jsonc --port 8788` 起着，
@@ -157,6 +157,18 @@ const PROBE = `(() => {
   return rows;
 })()`;
 
+let passed = 0;
+const softFailures = [];
+function check(name, ok, detail = "") {
+  if (ok) {
+    passed += 1;
+    console.log(`  ✓ ${name}`);
+  } else {
+    softFailures.push(`${name}${detail ? ` — ${detail}` : ""}`);
+    console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`);
+  }
+}
+
 const problems = [];
 let checked = 0;
 try {
@@ -171,13 +183,91 @@ try {
       problems.push(`${path} <${r.tag}>「${r.text}」 宽 ${r.width}px / 容器 ${r.container}px`);
     }
   }
+
+// ============================================================
+//  首页置顶区：折叠组件里的内容必须真的显示出来
+//
+//  加这条是因为真的坏过：折叠组件一开始叫 .collapse，而 **Tailwind 自带
+//  一个 .collapse 工具类（visibility: collapse）**，工具类排在组件层后面，
+//  于是首页整块置顶内容被隐藏 —— 宽度体检完全看不出来（它高度是 0）。
+// ============================================================
+await send("Page.navigate", { url: `${BASE}/` });
+await sleep(3800);
+
+const pinnedState = await evaluate(`(() => {
+  const section = document.querySelector('[data-tour="home-pinned"]');
+  if (!section) return { present: false };
+  const disclosure = section.querySelector(".disclosure");
+  const items = section.querySelectorAll('[data-pinned-id]');
+  const cs = disclosure ? getComputedStyle(disclosure) : null;
+  return {
+    present: true,
+    hasDisclosure: !!disclosure,
+    visibility: cs ? cs.visibility : null,
+    rows: cs ? cs.gridTemplateRows : null,
+    height: disclosure ? Math.round(disclosure.getBoundingClientRect().height) : 0,
+    itemCount: items.length,
+    firstItemHeight: items.length ? Math.round(items[0].getBoundingClientRect().height) : 0,
+  };
+})()`);
+
+if (!pinnedState.present) {
+  console.log("  - SKIP：首页没有置顶内容，折叠区这条验不到");
+} else {
+  check("置顶区用 .disclosure（不是被 Tailwind 占掉的 .collapse）", pinnedState.hasDisclosure === true);
+  check(
+    "置顶内容真的显示出来了（visibility 可见且高度 > 0）",
+    pinnedState.visibility === "visible" && pinnedState.height > 20,
+    `visibility=${pinnedState.visibility} height=${pinnedState.height}`
+  );
+  check("置顶里的每一条也有高度", pinnedState.firstItemHeight > 20, `first=${pinnedState.firstItemHeight}`);
+
+  // 点一下标题 → 收起；再点 → 展开
+  // 注意每一步都要防 null：折叠块找不到的时候（正是这次要抓的 bug）
+  // 直接读 rect 会让脚本自己崩掉，那还不如让它报一条清楚的失败。
+  const readHeight = () =>
+    evaluate(`(() => {
+      const el = document.querySelector('[data-tour="home-pinned"] .disclosure');
+      return el ? Math.round(el.getBoundingClientRect().height) : null;
+    })()`);
+  const clickTitle = () =>
+    evaluate(`(() => {
+      const btn = document.querySelector('[data-tour="home-pinned"] button');
+      if (!btn) return false;
+      btn.click();
+      return true;
+    })()`);
+
+  const clicked1 = await clickTitle();
+  await sleep(500);
+  const collapsed = await readHeight();
+  check(
+    "点标题能收起（高度归零）",
+    clicked1 === true && collapsed !== null && collapsed <= 2,
+    collapsed === null ? "折叠块都不存在" : `height=${collapsed}`
+  );
+
+  const clicked2 = await clickTitle();
+  await sleep(600);
+  const reopened = await readHeight();
+  check(
+    "再点能展开回来",
+    clicked2 === true && reopened !== null && reopened > 20,
+    reopened === null ? "折叠块都不存在" : `height=${reopened}`
+  );
+}
+
 } finally {
   await rawSend("Browser.close").catch(() => undefined);
   chrome.kill("SIGKILL");
 }
+const failures = [
+  ...problems.map((p) => `不齐：${p}`),
+  ...softFailures,
+];
 
-if (problems.length) {
-  console.log(`\n✗ ${problems.length} 处不齐（共 ${checked} 行）：\n  - ${problems.join("\n  - ")}`);
+if (failures.length) {
+  console.log(`\n✗ ${failures.length} 处问题（共 ${checked} 行卡片、${passed} 项其它检查通过）：\n  - ${failures.join("\n  - ")}`);
   process.exit(1);
 }
-console.log(`\n✓ ${checked} 个卡片行全部跟容器同宽`);
+console.log(`\n✓ ${checked} 个卡片行全部跟容器同宽；折叠区、按钮对齐 ${passed} 项通过`);

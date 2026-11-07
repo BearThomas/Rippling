@@ -160,22 +160,26 @@
   }
 
   /**
-   * 展开 / 收起
+   * 展开 / 收起（.disclosure）
+   *
+   * 名字不能叫 .collapse：**Tailwind 自带一个 .collapse 工具类（visibility: collapse）**，
+   * 而工具类那一层排在组件层后面 —— 结果内容真的被隐藏了（首页置顶区整块消失）。
+   * 跟 Qt 里 --style 被 Qt 自己占了是同一类问题：换个名字最省事。
    *
    * 用 grid-template-rows: 0fr → 1fr，不需要事先知道内容高度，
    * 也不会像 max-height 那样"到点了还空着一段"。
    * 老 Safari（iOS < 16.4）不支持对 grid-template-rows 做动画，那边就是瞬间展开
    * —— 可接受的降级，不会坏。
    */
-  .collapse {
+  .disclosure {
     display: grid;
     grid-template-rows: 0fr;
     transition: grid-template-rows var(--dur-base) var(--ease-out);
   }
-  .collapse.is-open {
+  .disclosure.is-open {
     grid-template-rows: 1fr;
   }
-  .collapse > * {
+  .disclosure > * {
     overflow: hidden;
     min-height: 0;
   }
