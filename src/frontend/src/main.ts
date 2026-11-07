@@ -14,6 +14,7 @@ import App from "./App.vue";
 import router from "./router";
 import "./styles/main.css";
 import { useThemeStore } from "./stores/theme";
+import { useMotionStore } from "./stores/motion";
 import { useAuthStore } from "./stores/auth";
 import { useNotificationStore } from "./stores/notification";
 import { registerServiceWorker, setupOfflineListener } from "./utils/pwa";
@@ -32,6 +33,9 @@ const auth = useAuthStore();
 // 0) 本地主题先上来（存 localStorage，不等网络）——自己挑过主题的人不会看到
 //    "先按全站主题闪一下再变"；「跟随全站」的人这里什么都不会发生
 theme.init();
+
+// 动效偏好同样先落到 <html> 上：想安静的人不该先看一次动画
+useMotionStore().init();
 const notification = useNotificationStore();
 
 // 1) 先用上次的 bootstrap 快照把站名 / 主题 / 登录态画出来（0 请求，不闪白）

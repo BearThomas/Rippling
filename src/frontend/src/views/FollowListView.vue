@@ -134,7 +134,7 @@ onMounted(load);
           v-for="user in list"
           :key="user.id"
           :to="{ name: 'user-profile', params: { id: user.id } }"
-          class="card-base flex items-center gap-3 py-3 transition-opacity active:opacity-80"
+          class="card-base flex items-center gap-3 py-3 pressable"
         >
           <!-- 头像（无头像时首字占位，按名字颜色着色） -->
           <UserAvatar

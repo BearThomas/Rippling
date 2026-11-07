@@ -202,7 +202,7 @@ onMounted(async () => {
             v-for="action in actions"
             :key="action"
             type="button"
-            class="rounded-lg px-4 py-2 text-sm font-medium transition-opacity active:opacity-80 disabled:opacity-40"
+            class="rounded-lg px-4 py-2 text-sm font-medium pressable disabled:opacity-40"
             :class="
               action === 'approve'
                 ? 'bg-primary text-white'

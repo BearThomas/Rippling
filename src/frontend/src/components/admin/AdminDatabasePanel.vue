@@ -172,7 +172,7 @@ onMounted(loadTables);
           v-for="table in tables"
           :key="table.name"
           type="button"
-          class="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition-opacity active:opacity-70"
+          class="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm pressable"
           :class="activeTable === table.name ? 'text-primary' : ''"
           @click="openTable(table.name)"
         >

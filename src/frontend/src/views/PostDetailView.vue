@@ -426,7 +426,7 @@ onMounted(load);
             <RouterLink
               v-if="post.authorId && authorQuestionBoxEnabled"
               :to="{ name: 'question-box', params: { userId: post.authorId } }"
-              class="flex items-center gap-1 rounded-full border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink-soft transition-opacity active:opacity-70"
+              class="flex items-center gap-1 rounded-full border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink-soft pressable"
             >
               <AppSvgIcon name="inbox" :size="14" />
               提问箱

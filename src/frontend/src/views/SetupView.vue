@@ -158,7 +158,7 @@
                 <div
                   v-for="i in 8"
                   :key="i"
-                  class="h-1 flex-1 rounded-full transition-all duration-200"
+                  class="h-1 flex-1 rounded-full transition-colors duration-200"
                   :class="getPasswordStrengthClass(i)"
                 ></div>
               </div>

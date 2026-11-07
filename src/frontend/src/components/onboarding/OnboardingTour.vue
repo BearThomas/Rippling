@@ -255,7 +255,7 @@ const tooltipStyle = computed(() => {
         <span class="text-xs font-semibold">{{ step.title }}</span>
         <button
           type="button"
-          class="ml-auto flex items-center gap-0.5 text-[11px] text-ink-soft active:opacity-70"
+          class="ml-auto flex items-center gap-0.5 text-[11px] text-ink-soft pressable"
           @click="skip"
         >
           跳过
@@ -271,7 +271,7 @@ const tooltipStyle = computed(() => {
           <span
             v-for="(s, i) in tourSteps"
             :key="s.id"
-            class="h-1.5 rounded-full transition-all"
+            class="h-1.5 rounded-full transition-colors"
             :class="i === tourIndex ? 'w-4 bg-primary' : 'w-1.5 bg-line'"
           />
         </div>

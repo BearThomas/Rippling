@@ -154,7 +154,7 @@ function openVotePage(): void {
 
     <!-- 标题（点击跳转投票页） -->
     <h3
-      class="mb-1 cursor-pointer text-base font-semibold transition-opacity active:opacity-70"
+      class="mb-1 cursor-pointer text-base font-semibold pressable"
       @click="openVotePage"
     >
       {{ title }}
@@ -184,7 +184,7 @@ function openVotePage(): void {
           selectedIds.has(option.id)
             ? 'border-primary text-primary'
             : 'border-line text-ink',
-          showResult || ended ? 'cursor-default' : 'cursor-pointer active:opacity-80',
+          showResult || ended ? 'cursor-default' : 'cursor-pointer pressable',
         ]"
         @click="toggleOption(option, isMultiple)"
       >

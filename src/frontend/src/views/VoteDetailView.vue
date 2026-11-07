@@ -223,7 +223,7 @@ onUnmounted(() => {
               selectedIds.has(option.id) || myVoteSet.has(option.id)
                 ? 'border-primary text-primary'
                 : 'border-line text-ink',
-              canCast ? 'cursor-pointer active:opacity-80' : 'cursor-default',
+              canCast ? 'cursor-pointer pressable' : 'cursor-default',
             ]"
             @click="toggleOption(option.id)"
           >

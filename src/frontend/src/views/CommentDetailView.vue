@@ -206,7 +206,7 @@ onMounted(load);
           v-for="node in chain"
           :key="node.id"
           type="button"
-          class="card-base block w-full !p-2.5 text-left text-xs text-ink-soft transition-opacity active:opacity-70"
+          class="card-base block w-full !p-2.5 text-left text-xs text-ink-soft pressable"
           @click="openChainNode(node)"
         >
           <span class="mb-0.5 flex items-center gap-1 text-[10px] text-primary">

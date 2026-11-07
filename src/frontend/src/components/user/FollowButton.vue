@@ -69,7 +69,7 @@ async function handleToggle(): Promise<void> {
 <template>
   <button
     type="button"
-    class="rounded-full px-4 py-1.5 text-sm font-medium transition-opacity active:opacity-70 disabled:opacity-50"
+    class="rounded-full px-4 py-1.5 text-sm font-medium pressable disabled:opacity-50"
     :class="state ? 'border border-line bg-surface text-ink-soft' : 'text-white'"
     :style="state ? '' : 'background: var(--c-primary)'"
     :disabled="busy"

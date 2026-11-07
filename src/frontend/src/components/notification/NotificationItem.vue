@@ -48,7 +48,7 @@ const iconClass = computed(() => {
 
 <template>
   <div
-    class="card-base flex cursor-pointer items-start gap-3 transition-opacity active:opacity-80"
+    class="card-base flex cursor-pointer items-start gap-3 pressable"
     role="button"
     @click="emit('click')"
   >

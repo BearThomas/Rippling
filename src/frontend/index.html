@@ -45,6 +45,16 @@
           // 隐私模式 / 半份 JSON：当作"没自定义过"，但别把原因吞掉
           console.warn("[theme] 免闪烁脚本读本地主题失败:", e);
         }
+
+        // 动效偏好：跟系统一样的效果，越早越好（不然想安静的人会先看到一次动画）
+        try {
+          var motion = localStorage.getItem("rippling.motion.v1");
+          if (motion === "reduced" || motion === "full") {
+            document.documentElement.setAttribute("data-motion", motion);
+          }
+        } catch (e) {
+          console.warn("[motion] 读动效偏好失败:", e);
+        }
       })();
     </script>
   </head>

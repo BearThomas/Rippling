@@ -334,7 +334,7 @@ onMounted(load);
                   type="checkbox"
                   class="peer sr-only"
                 />
-                <div class="peer h-5 w-9 rounded-full bg-line transition-colors peer-checked:bg-primary after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full"></div>
+                <div class="peer h-5 w-9 rounded-full bg-line transition-colors peer-checked:bg-primary after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform after:content-[''] peer-checked:after:translate-x-full"></div>
               </label>
             </div>
             <div v-if="form.autoBlock.gradeEnabled" class="grid grid-cols-2 gap-3 pt-1">
@@ -378,7 +378,7 @@ onMounted(load);
                   type="checkbox"
                   class="peer sr-only"
                 />
-                <div class="peer h-5 w-9 rounded-full bg-line transition-colors peer-checked:bg-primary after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full"></div>
+                <div class="peer h-5 w-9 rounded-full bg-line transition-colors peer-checked:bg-primary after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform after:content-[''] peer-checked:after:translate-x-full"></div>
               </label>
             </div>
             <div v-if="form.autoBlock.classEnabled" class="grid grid-cols-2 gap-3 pt-1">

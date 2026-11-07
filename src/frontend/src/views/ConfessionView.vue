@@ -132,7 +132,7 @@ onMounted(load);
         <article
           v-for="item in confessions"
           :key="item.id"
-          class="card-base cursor-pointer transition-opacity active:opacity-80"
+          class="card-base cursor-pointer pressable"
           role="button"
           tabindex="0"
           @click="openDetail(item)"
@@ -170,7 +170,7 @@ onMounted(load);
     <!-- 右下角发布按钮（FAB） -->
     <button
       type="button"
-      class="fixed right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-white shadow-lg transition-opacity active:opacity-80"
+      class="fixed right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-white shadow-lg pressable"
       style="bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px))"
       aria-label="发布表白"
       @click="openComposer"

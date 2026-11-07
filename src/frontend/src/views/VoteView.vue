@@ -232,7 +232,7 @@ onUnmounted(() => {
         <article
           v-for="item in votes"
           :key="item.id"
-          class="card-base cursor-pointer transition-opacity active:opacity-80"
+          class="card-base cursor-pointer pressable"
           role="button"
           tabindex="0"
           @click="openDetail(item)"

@@ -90,13 +90,27 @@ async function anonStatus(path, init = {}) {
   return res.status;
 }
 
-// 拿一条真实帖子，软墙要验它的详情接口
-const feed = (await adminGet("/api/recommend?limit=10")).json?.data;
-const post = feed?.items?.find((item) => item.type === "post")?.data;
+// 拿一条"游客真能看见"的帖子：软墙要验它的详情接口。
+// 注意不能随便取推荐流第一条 —— 测试会造私密帖/锁定板块帖，那些匿名看是 404，
+// 断言会变成"墙没拦但业务不给"，看起来像墙坏了。
+const feed = (await adminGet("/api/recommend?limit=20")).json?.data;
+const candidates = (feed?.items ?? []).filter((item) => item.type === "post").map((item) => item.data);
+let post = null;
+if (candidates.length > 0) {
+  // 先切到无墙，才能用匿名请求探"这条帖子本身是不是公开的"
+  await setMode("none");
+  for (const candidate of candidates) {
+    if ((await anonStatus(`/api/post?id=${candidate.id}`)) === 200) {
+      post = candidate;
+      break;
+    }
+  }
+}
 if (!post) {
-  console.error("  库里没有帖子，软墙那条没法验（先发一条）");
+  console.error("  找不到一条匿名人也能看的帖子（全是私密/锁定板块？）—— 先在站里发一条公开帖");
   process.exit(2);
 }
+console.log(`  选用帖子 ${post.id.slice(0, 8)}（匿名人也能看）`);
 const detailPaths = [
   `/api/post?id=${post.id}`,
   `/api/post/comments?parentId=${post.id}&limit=5`,

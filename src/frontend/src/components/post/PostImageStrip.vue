@@ -42,7 +42,7 @@ const boxHeight = computed(() => `${props.height}px`);
       v-for="(url, index) in images"
       :key="url"
       type="button"
-      class="relative shrink-0 overflow-hidden rounded-lg border border-line bg-page active:opacity-80"
+      class="relative shrink-0 overflow-hidden rounded-lg border border-line bg-page pressable"
       :style="{ height: boxHeight, minWidth: '90px', maxWidth: '240px' }"
       :aria-label="`查看第 ${index + 1} 张图片`"
       @click.stop="emit('open', url, index)"

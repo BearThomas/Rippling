@@ -80,6 +80,8 @@ node scripts/test-recommend.mjs http://127.0.0.1:8788
 > UI 的两条硬规矩（默认头像只有一份 / 卡片行要撑满，都有脚本验）：见 `docs/ui.md`。
 >
 > 登录墙（无墙 / 软墙 / 硬墙，改 site_config.loginWall）：见 `docs/login-wall.md`。
+>
+> 动效（一套 token + 三条红线，脚本会抓重属性动画）：见 `docs/motion.md`。
 
 ## 协议
 

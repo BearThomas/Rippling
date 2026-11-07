@@ -166,7 +166,7 @@ function openCommentDetail(): void {
 
     <!-- 内容（点击进入评论详情） -->
     <div
-      class="cursor-pointer rounded-md transition-opacity active:opacity-70"
+      class="cursor-pointer rounded-md pressable"
       @click="openCommentDetail"
     >
       <MarkdownRenderer :content="comment.content" />

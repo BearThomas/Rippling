@@ -626,7 +626,7 @@ async function handleTransfer(): Promise<void> {
           <button
             v-if="canDelete"
             type="button"
-            class="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-500 transition-opacity active:opacity-80 disabled:opacity-50"
+            class="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-500 pressable disabled:opacity-50"
             :disabled="actionBusy"
             @click="handleDelete"
           >

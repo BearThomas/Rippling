@@ -254,7 +254,7 @@ onMounted(() => {
       <RouterLink
         v-else-if="profile.questionBoxEnabled"
         :to="{ name: 'question-box', params: { userId: profile.userId } }"
-        class="card-base mt-3 flex items-center gap-3 py-3 transition-opacity active:opacity-80"
+        class="card-base mt-3 flex items-center gap-3 py-3 pressable"
       >
         <AppSvgIcon name="inbox" :size="18" class="text-ink-soft" />
         <span class="flex-1 text-sm">提问箱</span>
@@ -265,7 +265,7 @@ onMounted(() => {
       <div v-if="isSelf" data-tour="profile-menu" class="mt-3 space-y-3">
         <RouterLink
           to="/tickets"
-          class="card-base flex items-center gap-3 py-3 transition-opacity active:opacity-80"
+          class="card-base flex items-center gap-3 py-3 pressable"
         >
           <AppSvgIcon name="file" :size="18" class="text-ink-soft" />
           <span class="flex-1 text-sm">我的工单</span>
@@ -274,7 +274,7 @@ onMounted(() => {
         <!-- 申请认证入口（仅登录后可见，isSelf 已保证已登录） -->
         <button
           type="button"
-          class="card-base flex w-full items-center gap-3 py-3 text-left transition-opacity active:opacity-80"
+          class="card-base flex w-full items-center gap-3 py-3 text-left pressable"
           @click="handleVerificationClick"
         >
           <AppSvgIcon name="check" :size="18" class="text-ink-soft" />
@@ -284,7 +284,7 @@ onMounted(() => {
         <RouterLink
           v-if="canAdmin"
           to="/admin"
-          class="card-base flex items-center gap-3 py-3 transition-opacity active:opacity-80"
+          class="card-base flex items-center gap-3 py-3 pressable"
         >
           <AppSvgIcon name="shield" :size="18" class="text-ink-soft" />
           <span class="flex-1 text-sm">管理面板</span>
@@ -340,7 +340,7 @@ onMounted(() => {
           v-for="comment in comments"
           :key="comment.id"
           type="button"
-          class="card-base block w-full text-left transition-opacity active:opacity-80"
+          class="card-base block w-full text-left pressable"
           @click="openComment(comment.id)"
         >
           <p class="text-sm leading-relaxed">{{ truncateText(comment.content, 120) }}</p>

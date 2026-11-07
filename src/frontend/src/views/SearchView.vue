@@ -266,7 +266,7 @@ async function onFollow(user: SearchUserResult): Promise<void> {
             <article
               v-for="post in posts"
               :key="post.id"
-              class="card-base cursor-pointer transition-opacity active:opacity-80"
+              class="card-base cursor-pointer pressable"
               role="button"
               @click="openPost(post)"
             >
@@ -307,7 +307,7 @@ async function onFollow(user: SearchUserResult): Promise<void> {
               </div>
               <button
                 type="button"
-                class="shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-opacity active:opacity-70"
+                class="shrink-0 rounded-full px-3 py-1 text-xs font-medium pressable"
                 :class="followedIds.has(user.userId) ? 'bg-line text-ink-soft' : 'bg-primary text-white'"
                 :disabled="followedIds.has(user.userId)"
                 @click="onFollow(user)"
@@ -325,7 +325,7 @@ async function onFollow(user: SearchUserResult): Promise<void> {
             <article
               v-for="block in blocks"
               :key="block.id"
-              class="card-base cursor-pointer transition-opacity active:opacity-80"
+              class="card-base cursor-pointer pressable"
               role="button"
               @click="openBlock(block)"
             >
@@ -353,7 +353,7 @@ async function onFollow(user: SearchUserResult): Promise<void> {
             <article
               v-for="event in timeline"
               :key="event.id"
-              class="card-base cursor-pointer transition-opacity active:opacity-80"
+              class="card-base cursor-pointer pressable"
               role="button"
               @click="router.push({ name: 'timeline' })"
             >
@@ -374,7 +374,7 @@ async function onFollow(user: SearchUserResult): Promise<void> {
             <article
               v-for="confession in confessions"
               :key="confession.id"
-              class="card-base cursor-pointer transition-opacity active:opacity-80"
+              class="card-base cursor-pointer pressable"
               role="button"
               @click="router.push({ name: 'confession' })"
             >
@@ -395,7 +395,7 @@ async function onFollow(user: SearchUserResult): Promise<void> {
             <article
               v-for="comment in comments"
               :key="comment.id"
-              class="card-base cursor-pointer transition-opacity active:opacity-80"
+              class="card-base cursor-pointer pressable"
               role="button"
               @click="openComment(comment)"
             >

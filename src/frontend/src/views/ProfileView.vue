@@ -56,7 +56,7 @@ async function handleSignOut(): Promise<void> {
         v-for="menu in MENUS"
         :key="menu.label"
         :to="menu.to"
-        class="card-base flex items-center gap-3 py-3 transition-opacity active:opacity-80"
+        class="card-base flex items-center gap-3 py-3 pressable"
       >
         <AppSvgIcon :name="menu.icon" :size="18" class="text-ink-soft" />
         <span class="flex-1 text-sm">{{ menu.label }}</span>

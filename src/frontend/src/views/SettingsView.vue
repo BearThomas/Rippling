@@ -18,6 +18,7 @@ import { getAdminSiteConfig, updateAdminSiteConfig } from "../api/admin";
 import { getQuestionBox, updateQuestionBox } from "../api/question";
 import { useAuthStore } from "../stores/auth";
 import { useThemeStore } from "../stores/theme";
+import { useMotionStore } from "../stores/motion";
 import { clearPermissionCache, getMyPermissions } from "../utils/myPermissions";
 import { hasPermission, PERM_EDIT_DATABASE, PERM_SET_NAME_BADGE } from "../utils/permission";
 import { compressImage } from "../utils/compressImage";
@@ -32,6 +33,7 @@ import UserAvatar from "../components/user/UserAvatar.vue";
 const router = useRouter();
 const auth = useAuthStore();
 const theme = useThemeStore();
+const motion = useMotionStore();
 
 // ============================================================
 //  权限探测（超级管理员 = edit_database）
@@ -568,7 +570,7 @@ const currentAvatar = computed(() => myAvatarUrl.value ?? auth.session?.user?.im
           v-for="preset in PRESET_ORDER"
           :key="preset"
           type="button"
-          class="flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors active:opacity-80"
+          class="flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors pressable"
           :class="theme.hasLocalTheme && activeTheme.preset === preset
             ? 'border-primary'
             : 'border-line'"
@@ -613,6 +615,22 @@ const currentAvatar = computed(() => myAvatarUrl.value ?? auth.session?.user?.im
       <p class="mt-2 text-xs text-ink-soft">
         只存在这台设备上，别人看不到；管理员改全站主题时，你这套不会被改掉。
       </p>
+
+      <!-- 减少动画：跟系统设置一个效果，给"系统里没设、但就想安静点"的人 -->
+      <label class="mt-4 flex items-center justify-between border-t border-line pt-3 text-sm">
+        <span>
+          减少动画
+          <span class="mt-0.5 block text-xs text-ink-soft">
+            关掉过渡和呼吸效果（系统里开了"减少动态效果"时本来就会关）
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          class="h-5 w-5 shrink-0 accent-[var(--c-primary)]"
+          :checked="motion.reduced"
+          @change="motion.toggleReduced(($event.target as HTMLInputElement).checked)"
+        />
+      </label>
 
       <button
         v-if="theme.hasLocalTheme"
@@ -702,7 +720,7 @@ const currentAvatar = computed(() => myAvatarUrl.value ?? auth.session?.user?.im
         </a>
         <button
           type="button"
-          class="flex items-center gap-1 text-primary active:opacity-70"
+          class="flex items-center gap-1 text-primary pressable"
           @click="onRestartTour"
         >
           <AppSvgIcon name="sliders" :size="14" />

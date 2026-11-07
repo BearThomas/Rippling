@@ -2,6 +2,12 @@
  * 全局样式入口
  *
  * Tailwind 三段指令 + 移动端优先的基础样式。
+ *
+ * 动效规则（详见 docs/motion.md）：
+ *   1. 时长/曲线只有这几个 token，组件里不许写裸的 duration-300；
+ *   2. 只允许动 transform / opacity / 颜色 —— 动 width/height/box-shadow 的
+ *      一律不合格（弱 GPU 上直接掉帧，scripts/check-motion.mjs 会抓）；
+ *   3. 系统开了"减少动态效果"或用户自己关了 → 全站时长归零。
  */
 @import "./theme.css";
 
@@ -10,6 +16,16 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* 动效 token —— 全站唯一的时长/曲线来源 */
+    --dur-fast: 120ms;   /* 按压、hover 这类即时反馈 */
+    --dur-base: 180ms;   /* 展开收起、主题切换 */
+    --dur-slow: 240ms;   /* 需要"看清过程"的（sheet、骨架淡出） */
+    --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);      /* 进入：先快后缓 */
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --press-scale: 0.98; /* 按压反馈的缩放，1 就是关掉 */
+  }
+
   html,
   body,
   #app {
@@ -26,6 +42,10 @@
 
   body {
     @apply bg-page text-ink antialiased;
+    /* 切主题时底色/文字色渐变过去，而不是"啪"一下变白 */
+    transition:
+      background-color var(--dur-base) var(--ease-out),
+      color var(--dur-base) var(--ease-out);
     font-family:
       -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
       "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -50,15 +70,33 @@
   /* 通用按钮 */
   .btn-primary {
     @apply inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2.5
-      text-sm font-medium text-white transition-opacity active:opacity-80
+      text-sm font-medium text-white
       disabled:cursor-not-allowed disabled:opacity-50;
+    transition:
+      transform var(--dur-fast) var(--ease-out),
+      opacity var(--dur-fast) var(--ease-out),
+      background-color var(--dur-base) var(--ease-out);
+  }
+  .btn-primary:active:not(:disabled) {
+    transform: scale(var(--press-scale));
+    opacity: 0.92;
   }
 
   /* 通用次级按钮 */
   .btn-secondary {
     @apply inline-flex items-center justify-center rounded-lg border border-line
-      bg-surface px-4 py-2.5 text-sm font-medium text-ink transition-opacity
-      active:opacity-80 disabled:cursor-not-allowed disabled:opacity-50;
+      bg-surface px-4 py-2.5 text-sm font-medium text-ink
+      disabled:cursor-not-allowed disabled:opacity-50;
+    transition:
+      transform var(--dur-fast) var(--ease-out),
+      opacity var(--dur-fast) var(--ease-out),
+      background-color var(--dur-base) var(--ease-out),
+      border-color var(--dur-base) var(--ease-out),
+      color var(--dur-base) var(--ease-out);
+  }
+  .btn-secondary:active:not(:disabled) {
+    transform: scale(var(--press-scale));
+    opacity: 0.92;
   }
 
   /* 通用输入框：移动端 16px 防缩放，桌面端 sm:text-sm */
@@ -70,5 +108,104 @@
   /* 通用卡片 */
   .card-base {
     @apply rounded-xl border border-line bg-surface p-4;
+    /* 只给颜色加过渡：切主题、hover 都不会硬跳 */
+    transition:
+      background-color var(--dur-base) var(--ease-out),
+      border-color var(--dur-base) var(--ease-out),
+      color var(--dur-base) var(--ease-out);
   }
+
+  /**
+   * 可点区域的统一按压反馈
+   *
+   * 以前各处写 active:opacity-80（29 处），力度和时长都不统一，
+   * 而且只有"变淡"没有"按下去"的感觉。这里一次定义：
+   * 轻微缩小 + 略微变淡，120ms，松手立刻回来。
+   *
+   * 注意 transition 里把颜色也带上：很多可点区域同时有 hover 变色，
+   * 不写的话按下时颜色会瞬间跳。
+   */
+  .pressable {
+    transition:
+      transform var(--dur-fast) var(--ease-out),
+      opacity var(--dur-fast) var(--ease-out),
+      background-color var(--dur-base) var(--ease-out),
+      color var(--dur-base) var(--ease-out),
+      border-color var(--dur-base) var(--ease-out);
+  }
+  .pressable:active {
+    transform: scale(var(--press-scale));
+    opacity: 0.92;
+  }
+
+  /**
+   * 骨架屏（代替转圈）
+   *
+   * 只在 opacity 上呼吸：合成层的东西，不触发重排、不耗 GPU 填充率。
+   * 转圈的问题是"让你盯着它等"，骨架是"先把形状给你看"。
+   */
+  .skeleton {
+    @apply rounded-md bg-line;
+    animation: skeleton-breathe var(--dur-slow) var(--ease-in-out) infinite alternate;
+    animation-duration: 1.2s;
+  }
+
+  @keyframes skeleton-breathe {
+    from {
+      opacity: 0.55;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /**
+   * 展开 / 收起
+   *
+   * 用 grid-template-rows: 0fr → 1fr，不需要事先知道内容高度，
+   * 也不会像 max-height 那样"到点了还空着一段"。
+   * 老 Safari（iOS < 16.4）不支持对 grid-template-rows 做动画，那边就是瞬间展开
+   * —— 可接受的降级，不会坏。
+   */
+  .collapse {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows var(--dur-base) var(--ease-out);
+  }
+  .collapse.is-open {
+    grid-template-rows: 1fr;
+  }
+  .collapse > * {
+    overflow: hidden;
+    min-height: 0;
+  }
+}
+
+/* ============================================================
+   减少动态效果
+   ============================================================
+   两个入口都要认：
+     - 系统设置（prefers-reduced-motion）—— 用户可能在系统里关了；
+     - 站内开关（html[data-motion="reduced"]）—— 设置页里自己关。
+   显式选了 full 的人无视系统设置（他明确表示要看动画）。
+   这两条是**全站零时长的开关**，不是常驻动画 —— 审计脚本里单独放行。
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="full"]) *,
+  html:not([data-motion="full"]) *::before,
+  html:not([data-motion="full"]) *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] *::before,
+html[data-motion="reduced"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
 }

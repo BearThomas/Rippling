@@ -60,7 +60,7 @@ const APPS = [
       v-for="app in APPS"
       :key="app.name"
       :to="app.to ?? ''"
-      class="card-base flex items-start gap-3 transition-opacity active:opacity-80"
+      class="card-base flex items-start gap-3 pressable"
       :class="{ 'pointer-events-none opacity-60': !app.to }"
     >
       <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-primary"

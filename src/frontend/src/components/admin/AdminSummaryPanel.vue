@@ -83,7 +83,7 @@ onMounted(load);
             v-for="ticket in summary.recentTickets"
             :key="ticket.id"
             :to="{ name: 'ticket-detail', params: { id: ticket.id } }"
-            class="card-base block transition-opacity active:opacity-80"
+            class="card-base block pressable"
           >
             <div class="flex items-center gap-2">
               <span class="text-xs text-primary">{{ ticketTypeLabel(ticket.type) }}</span>

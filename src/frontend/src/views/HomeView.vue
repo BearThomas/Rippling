@@ -13,7 +13,8 @@ import { onMounted, onBeforeUnmount, ref } from "vue";
 import { useRouter } from "vue-router";
 import FeedItem from "../components/post/FeedItem.vue";
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
-import LoadingSpinner from "../components/common/LoadingSpinner.vue";
+import Collapse from "../components/common/Collapse.vue";
+import FeedSkeleton from "../components/common/FeedSkeleton.vue";
 import EmptyState from "../components/common/EmptyState.vue";
 import ErrorState from "../components/common/ErrorState.vue";
 import { getRecommendFeed } from "../api/recommend";
@@ -231,7 +232,8 @@ function goCreatePost(): void {
       </button>
     </div>
 
-    <LoadingSpinner v-if="loading" />
+    <!-- 首屏用骨架而不是转圈：形状先出来，内容到位时几乎不跳 -->
+    <FeedSkeleton v-if="loading" />
     <ErrorState v-else-if="error" @retry="loadFeed" />
 
     <template v-else>
@@ -250,11 +252,13 @@ function goCreatePost(): void {
             class="ml-auto"
           />
         </button>
-        <div v-if="!pinnedCollapsed" class="space-y-3" @click="onPinnedClick">
-          <div v-for="p in pinned" :key="p.id" :data-pinned-id="p.targetId">
-            <FeedItem v-if="toFeedItem(p)" :item="toFeedItem(p)!" />
+        <Collapse :open="!pinnedCollapsed">
+          <div class="space-y-3" @click="onPinnedClick">
+            <div v-for="p in pinned" :key="p.id" :data-pinned-id="p.targetId">
+              <FeedItem v-if="toFeedItem(p)" :item="toFeedItem(p)!" />
+            </div>
           </div>
-        </div>
+        </Collapse>
       </section>
 
       <!-- 推荐流 -->
@@ -286,7 +290,7 @@ function goCreatePost(): void {
     <button
       type="button"
       data-tour="home-fab"
-      class="fixed right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-white shadow-lg transition-transform active:scale-95"
+      class="fixed right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-white shadow-lg pressable"
       style="bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px))"
       aria-label="发帖"
       @click="goCreatePost"

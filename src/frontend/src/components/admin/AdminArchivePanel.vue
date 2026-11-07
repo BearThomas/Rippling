@@ -94,7 +94,7 @@ onMounted(load);
           v-for="file in files"
           :key="file.id"
           type="button"
-          class="block w-full px-4 py-2.5 text-left transition-opacity active:opacity-70"
+          class="block w-full px-4 py-2.5 text-left pressable"
           @click="openContent(file)"
         >
           <p class="truncate font-mono text-xs">{{ file.filePath }}</p>

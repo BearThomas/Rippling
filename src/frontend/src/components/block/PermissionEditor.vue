@@ -96,7 +96,7 @@ function handleSave(): void {
             :class="switches[item.bit] ? 'bg-primary' : 'bg-line'"
           >
             <span
-              class="absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all"
+              class="absolute top-0.5 h-4 w-4 rounded-full bg-white transition-[left] duration-[var(--dur-fast)]"
               :class="switches[item.bit] ? 'left-[18px]' : 'left-0.5'"
             />
           </span>

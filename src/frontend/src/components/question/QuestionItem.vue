@@ -50,7 +50,7 @@ const emit = defineEmits<{
       <div class="flex gap-3">
         <button
           type="button"
-          class="flex items-center gap-1 text-sm text-primary transition-opacity active:opacity-70"
+          class="flex items-center gap-1 text-sm text-primary pressable"
           @click="emit('answer')"
         >
           <AppSvgIcon name="edit" :size="14" />
@@ -58,7 +58,7 @@ const emit = defineEmits<{
         </button>
         <button
           type="button"
-          class="flex items-center gap-1 text-sm text-red-500 transition-opacity active:opacity-70"
+          class="flex items-center gap-1 text-sm text-red-500 pressable"
           @click="emit('delete')"
         >
           <AppSvgIcon name="trash" :size="14" />
