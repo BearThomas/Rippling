@@ -1,6 +1,6 @@
 # Rippling 产品实现原理
 
-Rippling 是一个面向校园场景的社区论坛系统。它的核心思路是：使用 Vue 负责交互界面，使用 Hono 提供统一 API，通过 Better Auth 管理登录会话，使用 Cloudflare D1 保存业务数据，再用 Cloudflare Pages/Workers 托管整个应用。
+Rippling 是一个面向校园场景的社区论坛系统。它的核心思路是：使用 Vue 负责交互界面，使用 Hono 提供统一 API，通过 Better Auth 管理登录会话，使用 Cloudflare D1 保存业务数据，再用 Cloudflare Worker + Static Assets 托管整个应用。
 
 ## 一、整体结构
 
@@ -12,7 +12,7 @@ Rippling 是一个面向校园场景的社区论坛系统。它的核心思路�
   └── /api/* 请求
           │
           ▼
-    Cloudflare Pages/Worker
+    Cloudflare Worker
           │
           ├── Hono API 路由
           ├── Better Auth 认证
@@ -20,6 +20,10 @@ Rippling 是一个面向校园场景的社区论坛系统。它的核心思路�
           ├── Cloudflare D1 数据库
           └── Backblaze B2 图片存储
 ```
+
+也可以直接查看下面的高清矢量结构图：
+
+![Rippling 总体架构图](./rippling-architecture.svg)
 
 前端和后端使用同一个站点域名，浏览器通过 `/api/` 调用接口，因此不需要额外配置跨域请求。
 
@@ -194,16 +198,14 @@ Rippling 使用 BigInt 权限位掩码。
 ```text
 GitHub push
     ↓
-Cloudflare Pages 构建
-    ↓
-复制后端入口并构建 Vue 前端
+本地构建 Vue 前端
     ↓
 绑定 Cloudflare D1
     ↓
-发布静态资源与 Pages Functions
+部署 Cloudflare Worker + Static Assets
 ```
 
-也可以使用 Worker 配置直接部署。无论采用哪种方式，D1 绑定名称都必须是 `DB`，数据库迁移也必须在部署后单独执行。
+部署配置位于 `wrangler.worker.jsonc`。D1 绑定名称必须是 `DB`，数据库迁移也必须在部署后单独执行。
 
 ## 十三、为什么适合学习
 

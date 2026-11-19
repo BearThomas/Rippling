@@ -1,6 +1,8 @@
 # Rippling 部署指南
 
 > 本文档面向**没有开发经验的用户**，带你从零把 Rippling 部署到 Cloudflare。
+
+> ⚠️ **当前主版本使用 Cloudflare Worker + Static Assets。请优先阅读 [零基础部署向导](./beginner-deployment.md)。本文前面的 Pages 流程属于旧版参考，线上 Worker 配置以 `wrangler.worker.jsonc` 为准。**
 > 全程在浏览器中操作为主，只需在少数步骤使用命令行。
 > 预计耗时：30 ~ 60 分钟（不含注册账号的审核等待时间）。
 

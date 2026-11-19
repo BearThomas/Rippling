@@ -12,7 +12,7 @@
 
 ## 简介
 
-Rippling 是一个面向校园的社区论坛系统，支持帖子、板块、表白墙、大事记、提问箱等功能。基于 Cloudflare Pages 部署，开箱即用。
+Rippling 是一个面向校园的社区论坛系统，支持帖子、板块、表白墙、大事记、提问箱等功能。当前主版本基于 Cloudflare Worker 部署，开箱即用。
 
 ## 技术栈
 
@@ -22,7 +22,7 @@ Rippling 是一个面向校园的社区论坛系统，支持帖子、板块、�
 | 后端 | Hono |
 | 认证 | Better Auth + better-auth-cloudflare |
 | 数据库 | Cloudflare D1 |
-| 部署 | Cloudflare Pages |
+| 部署 | Cloudflare Worker + Static Assets |
 
 ## 配置说明
 
@@ -70,9 +70,9 @@ cp .env.example .env
 
 ```bash
 npm install
-npm run dev        # 本地开发（wrangler pages dev public）
+npm run dev        # 本地开发（Worker + Static Assets）
 npm run typecheck  # 类型检查
-npm run deploy     # 部署到 Cloudflare Pages
+npm run deploy     # 构建并部署到 Cloudflare Worker
 
 # 搜索 / 推荐流的不变量检查（需要本地站点已初始化并正在运行）
 node scripts/test-search.mjs http://127.0.0.1:8788

@@ -2,7 +2,7 @@
 
 这份文档适合第一次部署网站的人。你不需要会写代码，只需要准备一个 GitHub 账号和一个 Cloudflare 账号，按顺序完成网页操作即可。
 
-推荐路线是：**GitHub 保存代码 → Cloudflare Pages 自动构建 → Cloudflare D1 保存数据**。图片上传和每日归档属于可选功能，可以先不配置。
+当前主版本的推荐路线是：**GitHub 保存代码 → 本地构建 → Cloudflare Worker + Static Assets → Cloudflare D1 保存数据**。图片上传和每日归档属于可选功能，可以先不配置。
 
 ## 0. 先运行本地向导
 
@@ -48,43 +48,48 @@ cd rippling
 
 检查点：你应该已经拥有一个数据库名称和一串 Database ID。Database ID 不是密码，但不要填错。
 
-## 4. 创建 Cloudflare Pages 项目
+## 4. 准备 Cloudflare Worker
 
-1. 打开 **Workers & Pages → Create application → Pages → Connect to Git**。
-2. 授权 Cloudflare 访问 GitHub。
-3. 选择你自己的 `rippling` 仓库。
-4. 构建配置填写：
+当前仓库的 Worker 配置位于 `wrangler.worker.jsonc`。第一次部署前，请打开这个文件并修改：
 
 | 项目 | 填写内容 |
 | --- | --- |
-| Project name | `rippling` 或你喜欢的名称 |
-| Production branch | `main` |
-| Framework preset | `None` |
-| Build command | `npm run build` |
-| Build output directory | `public` |
-| Root directory | 留空 |
+| Worker name | 你自己的 Worker 名称 |
+| `database_name` | 你的 D1 数据库名称 |
+| `database_id` | 第 3 步复制的 D1 Database ID |
+| `routes` | 你自己的域名；没有域名可以先删掉这一段并使用 `workers.dev` |
 
-先点击部署。第一次部署可能暂时打不开，这是正常的，因为数据库还没有绑定和初始化。
+然后在项目根目录执行：
 
-## 5. 绑定 D1 数据库
+```bash
+npm install
+npx wrangler login
+npm run deploy
+```
 
-进入 Pages 项目的 **Settings → Bindings**：
+`npm run deploy` 会先构建 Vue 前端，再使用 `wrangler.worker.jsonc` 部署 `src/worker.ts` 和 `public/` 静态资源。
 
-1. 点击 **Add**。
-2. 选择 **D1 database**。
-3. Variable name 必须填写 `DB`，注意是大写。
-4. 选择刚才创建的 `rippling` 数据库。
-5. 保存后进入 **Deployments**，对最新部署点击 **Retry deployment**。
+## 5. 检查 Worker 的 D1 绑定
+
+Worker 配置中的 D1 绑定必须是：
+
+```jsonc
+{
+  "binding": "DB",
+  "database_name": "你的数据库名称",
+  "database_id": "你的 Database ID"
+}
+```
 
 检查点：绑定名不是数据库名，代码只认 `DB`。填成 `DATABASE` 会导致网站无法读取数据库。
 
 ## 6. 配置环境变量
 
-进入 Pages 项目的 **Settings → Environment variables → Production**，逐项添加：
+进入 Cloudflare Worker 的 **Settings → Variables and Secrets**，逐项添加：
 
 | 变量 | 必需 | 填写说明 |
 | --- | --- | --- |
-| `TRUSTED_ORIGINS` | 是 | 部署后的网站完整地址，例如 `https://rippling.pages.dev` |
+| `TRUSTED_ORIGINS` | 是 | 部署后的网站完整地址，例如 `https://rippling.example.com` |
 | `DATABASE_ID` | 推荐 | 第 3 步复制的 Database ID |
 | `ENCRYPTION_KEY` | 推荐 | 终端执行 `openssl rand -hex 32` 生成 |
 | `B2_BUCKET_NAME` | 否 | B2 存储桶名称 |
@@ -101,7 +106,7 @@ cd rippling
 [{"question":"你的学校简称是什么？","answer":"某某"},{"question":"本校位于哪个城市？","answer":"某市"}]
 ```
 
-保存环境变量后再次 **Retry deployment**。
+保存变量后重新执行 `npm run deploy`。
 
 ## 7. 执行数据库迁移
 
@@ -151,7 +156,7 @@ npx wrangler d1 migrations apply rippling --remote
 - `CLOUDFLARE_ACCOUNT_ID`
 - `D1_DATABASE_ID`
 
-其中 `ENCRYPTION_KEY` 必须和 Cloudflare Pages 中的值完全一致。API Token 只授予所需 Cloudflare 账户的 D1 编辑权限，不要使用全权限 Token。
+其中 `ENCRYPTION_KEY` 必须和 Cloudflare Worker 中的值完全一致。API Token 只授予所需 Cloudflare 账户的 D1 编辑权限，不要使用全权限 Token。
 
 ## 10. 部署完成后的日常更新
 
@@ -163,7 +168,7 @@ git commit -m "更新网站"
 git push origin main
 ```
 
-Cloudflare Pages 会自动重新构建。若新增了数据库迁移，必须先执行：
+重新构建并部署 Worker。若新增了数据库迁移，必须先执行：
 
 ```bash
 npx wrangler d1 migrations apply rippling --remote
@@ -191,11 +196,11 @@ npx wrangler d1 migrations apply rippling --remote
 
 ### 想使用 Worker CLI 部署
 
-这是进阶路线，需要先修改 `wrangler.worker.jsonc` 中的 Worker 名称、D1 database ID 和域名，然后执行：
+当前 `main` 已经使用 Worker。部署时修改 `wrangler.worker.jsonc` 中的 Worker 名称、D1 Database ID 和域名，然后执行：
 
 ```bash
 npm run build
 npx wrangler deploy --config wrangler.worker.jsonc
 ```
 
-第一次部署建议先使用 Cloudflare Pages 路线，成功后再迁移到 Worker。
+如果只想本地调试，可以执行 `npm run dev`；它会启动 Worker 本地运行时和静态资源。

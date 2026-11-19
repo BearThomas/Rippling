@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
+  <title id="title">Rippling 校园社区论坛总体架构</title>
+  <desc id="desc">浏览器中的 Vue 前端通过 Cloudflare Worker 访问 Hono API，API 经过认证、登录墙、设备和权限中间件后访问 Cloudflare D1 与 Backblaze B2；GitHub Actions 负责定时归档。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fbff"/>
+      <stop offset="1" stop-color="#eef4ff"/>
+    </linearGradient>
+    <linearGradient id="cloud" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e8f1ff"/>
+      <stop offset="1" stop-color="#d9e8ff"/>
+    </linearGradient>
+    <linearGradient id="data" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e8fbf5"/>
+      <stop offset="1" stop-color="#d5f3e8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#16325c" flood-opacity=".12"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#50719d"/>
+    </marker>
+    <style>
+      .title { font: 700 34px Arial, "Noto Sans CJK SC", sans-serif; fill: #17345f; }
+      .subtitle { font: 400 17px Arial, "Noto Sans CJK SC", sans-serif; fill: #607898; }
+      .section { font: 700 20px Arial, "Noto Sans CJK SC", sans-serif; fill: #24466f; }
+      .label { font: 700 18px Arial, "Noto Sans CJK SC", sans-serif; fill: #18395f; }
+      .body { font: 400 15px Arial, "Noto Sans CJK SC", sans-serif; fill: #48627f; }
+      .small { font: 400 13px Arial, "Noto Sans CJK SC", sans-serif; fill: #617894; }
+      .box { stroke: #b7cbe5; stroke-width: 2; rx: 18; }
+      .node { fill: #ffffff; stroke: #b7cbe5; stroke-width: 2; rx: 14; }
+      .group { fill: url(#cloud); stroke: #9dbce3; stroke-width: 2; rx: 24; }
+      .data-node { fill: url(#data); stroke: #8dcdb3; stroke-width: 2; rx: 16; }
+      .line { fill: none; stroke: #50719d; stroke-width: 3; marker-end: url(#arrow); }
+      .dashed { fill: none; stroke: #7b96b8; stroke-width: 2.5; stroke-dasharray: 9 8; marker-end: url(#arrow); }
+      .pill { fill: #dceaff; stroke: #a9c6e8; stroke-width: 1.5; rx: 12; }
+      .pill-text { font: 700 13px Arial, "Noto Sans CJK SC", sans-serif; fill: #315b8a; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="980" fill="url(#bg)"/>
+  <text x="70" y="64" class="title">Rippling 校园社区论坛 · 总体架构</text>
+  <text x="70" y="96" class="subtitle">从浏览器请求到认证、业务 API、数据存储和自动归档的完整链路</text>
+
+  <rect x="60" y="135" width="330" height="260" class="box" fill="#ffffff" filter="url(#shadow)"/>
+  <text x="90" y="175" class="section">用户端</text>
+  <rect x="90" y="205" width="270" height="72" class="node"/>
+  <text x="115" y="238" class="label">浏览器 / 移动端</text>
+  <text x="115" y="263" class="body">访问站点、登录、发帖、互动</text>
+  <rect x="90" y="300" width="124" height="58" class="pill"/>
+  <text x="111" y="335" class="pill-text">HTTPS</text>
+  <rect x="235" y="300" width="125" height="58" class="pill"/>
+  <text x="250" y="335" class="pill-text">/api/*</text>
+
+  <rect x="450" y="135" width="430" height="260" class="box" fill="#ffffff" filter="url(#shadow)"/>
+  <text x="480" y="175" class="section">Vue 3 前端</text>
+  <rect x="480" y="205" width="170" height="72" class="node"/>
+  <text x="505" y="237" class="label">页面与组件</text>
+  <text x="505" y="263" class="body">views / components</text>
+  <rect x="680" y="205" width="170" height="72" class="node"/>
+  <text x="706" y="237" class="label">路由与状态</text>
+  <text x="706" y="263" class="body">Router / Pinia</text>
+  <rect x="480" y="300" width="370" height="58" class="node"/>
+  <text x="507" y="335" class="label">API 客户端 · 主题 · 本地缓存</text>
+
+  <rect x="940" y="135" width="600" height="260" class="group" filter="url(#shadow)"/>
+  <text x="970" y="175" class="section">Cloudflare Worker</text>
+  <rect x="970" y="205" width="220" height="72" class="node"/>
+  <text x="1000" y="237" class="label">Static Assets</text>
+  <text x="1000" y="263" class="body">Vite 构建后的前端</text>
+  <rect x="1230" y="205" width="270" height="72" class="node"/>
+  <text x="1260" y="237" class="label">Hono API</text>
+  <text x="1260" y="263" class="body">/api/* 业务接口</text>
+  <rect x="970" y="300" width="530" height="58" class="node"/>
+  <text x="1000" y="335" class="label">统一域名 · SPA 回退 · 边缘运行时</text>
+
+  <path d="M390 250 H450" class="line"/>
+  <path d="M880 250 H940" class="line"/>
+  <text x="398" y="233" class="small">页面访问</text>
+  <text x="888" y="233" class="small">静态资源 / API</text>
+
+  <rect x="60" y="465" width="1480" height="220" class="box" fill="#ffffff" filter="url(#shadow)"/>
+  <text x="90" y="505" class="section">Hono 中间件与业务路由</text>
+  <rect x="90" y="535" width="210" height="100" class="node"/>
+  <text x="117" y="570" class="label">日志与错误处理</text>
+  <text x="117" y="597" class="body">统一响应 / 异常捕获</text>
+  <text x="117" y="619" class="body">请求耗时记录</text>
+  <rect x="330" y="535" width="210" height="100" class="node"/>
+  <text x="370" y="570" class="label">认证与会话</text>
+  <text x="370" y="597" class="body">Better Auth</text>
+  <text x="370" y="619" class="body">学号登录 / Cookie</text>
+  <rect x="570" y="535" width="210" height="100" class="node"/>
+  <text x="606" y="570" class="label">访问控制</text>
+  <text x="606" y="597" class="body">登录墙 / 设备</text>
+  <text x="606" y="619" class="body">权限位校验</text>
+  <rect x="810" y="535" width="300" height="100" class="node"/>
+  <text x="851" y="570" class="label">社区业务路由</text>
+  <text x="851" y="597" class="body">帖子 · 评论 · 板块 · 投票</text>
+  <text x="851" y="619" class="body">表白墙 · 提问箱 · 工单</text>
+  <rect x="1140" y="535" width="360" height="100" class="node"/>
+  <text x="1181" y="570" class="label">公共能力</text>
+  <text x="1181" y="597" class="body">推荐 · 搜索 · 通知 · 管理面板</text>
+  <text x="1181" y="619" class="body">上传 · 图片代理 · 初始化向导</text>
+  <path d="M300 585 H330" class="line"/>
+  <path d="M540 585 H570" class="line"/>
+  <path d="M780 585 H810" class="line"/>
+  <path d="M1110 585 H1140" class="line"/>
+
+  <path d="M1365 395 V465" class="line"/>
+  <text x="1380" y="438" class="small">请求进入</text>
+
+  <rect x="60" y="755" width="720" height="165" class="data-node" filter="url(#shadow)"/>
+  <text x="90" y="795" class="section">Cloudflare D1</text>
+  <text x="90" y="828" class="body">用户 / 会话 / 权限 / 帖子 / 评论 / 板块</text>
+  <text x="90" y="852" class="body">投票 / 关注 / 提问箱 / 工单 / 通知 / 配置</text>
+  <rect x="90" y="868" width="210" height="30" class="pill"/>
+  <text x="109" y="889" class="pill-text">migrations/*.sql</text>
+  <path d="M930 685 C930 735 720 735 720 755" class="line"/>
+  <text x="720" y="726" class="small">查询 / 写入</text>
+
+  <rect x="820" y="755" width="360" height="165" class="data-node" filter="url(#shadow)"/>
+  <text x="850" y="795" class="section">Backblaze B2</text>
+  <text x="850" y="828" class="body">头像、帖子图片、站点图标</text>
+  <text x="850" y="852" class="body">后端上传 · 同域代理读取</text>
+  <rect x="850" y="868" width="180" height="30" class="pill"/>
+  <text x="871" y="889" class="pill-text">对象存储</text>
+  <path d="M1060 685 C1060 735 1000 735 1000 755" class="line"/>
+  <text x="1068" y="726" class="small">上传 / 读取</text>
+
+  <rect x="1220" y="755" width="320" height="165" class="data-node" filter="url(#shadow)"/>
+  <text x="1250" y="795" class="section">GitHub Actions</text>
+  <text x="1250" y="828" class="body">每日定时归档任务</text>
+  <text x="1250" y="852" class="body">加密归档 · 更新 D1 索引</text>
+  <rect x="1250" y="868" width="180" height="30" class="pill"/>
+  <text x="1271" y="889" class="pill-text">AES-256-GCM</text>
+  <path d="M1325 685 V755" class="dashed"/>
+  <text x="1340" y="726" class="small">定时任务</text>
+
+  <path d="M780 835 H820" class="dashed"/>
+  <text x="781" y="817" class="small">图片 key</text>
+
+  <text x="70" y="955" class="small">说明：前端路由只负责用户体验，认证、登录墙和权限校验均在后端再次执行。</text>
+</svg>
