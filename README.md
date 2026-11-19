@@ -4,6 +4,12 @@
 
 **当前状态：开发中**
 
+> **⚠️ 重要声明**
+>
+> **本项目仅供学习参考。如需真实投入使用，请先向学校说明并完成备案。**
+>
+> **对于使用本项目后可能出现的言论、内容及相关问题，作者概不负责。**
+
 ## 简介
 
 Rippling 是一个面向校园的社区论坛系统，支持帖子、板块、表白墙、大事记、提问箱等功能。基于 Cloudflare Pages 部署，开箱即用。
@@ -80,6 +86,8 @@ node scripts/test-recommend.mjs http://127.0.0.1:8788
 ```bash
 npm run setup:wizard
 ```
+
+想了解项目各个模块如何协作，可以阅读 [产品实现原理](./docs/product-implementation.md)。
 
 > 性能（跨境访问为什么慢、缓存怎么做的）：见 `docs/performance.md`。
 >
