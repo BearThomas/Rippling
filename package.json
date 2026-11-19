@@ -8,7 +8,8 @@
     "build": "node -e \"require('child_process').execSync('cp -r src/functions functions && cp -r src/auth src/config src/db src/middleware src/routes src/shared src/utils . && cd src/frontend && npm install && npm run build', { stdio: 'inherit' })\"",
     "dev": "wrangler pages dev public",
     "deploy": "wrangler pages deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "setup:wizard": "node scripts/setup-wizard.mjs"
   },
   "dependencies": {
     "better-auth": "^1.0.0",

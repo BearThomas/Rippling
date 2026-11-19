@@ -73,6 +73,14 @@ node scripts/test-search.mjs http://127.0.0.1:8788
 node scripts/test-recommend.mjs http://127.0.0.1:8788
 ```
 
+## 零基础部署
+
+第一次部署请先阅读 [零基础部署向导](./docs/beginner-deployment.md)。在项目目录运行下面的命令，可以检查本机环境并生成一份不含密钥的本地准备笔记：
+
+```bash
+npm run setup:wizard
+```
+
 > 性能（跨境访问为什么慢、缓存怎么做的）：见 `docs/performance.md`。
 >
 > 主题（每个人的自定义 vs 全站默认，谁压谁）：见 `docs/theme.md`。

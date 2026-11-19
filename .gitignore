@@ -13,6 +13,7 @@ dist/
 
 # Local files
 *.local
+.rippling/
 
 # OS files
 .DS_Store
