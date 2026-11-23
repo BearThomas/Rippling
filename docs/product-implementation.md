@@ -31,12 +31,13 @@ Rippling 是一个面向校园场景的社区论坛系统。它的核心思路�
 
 前端代码位于 `src/frontend/`，主要由以下部分组成：
 
-- `views/`：页面，例如首页、帖子详情、登录、管理面板和投票页面。
-- `components/`：可复用组件，例如帖子卡片、头像、布局、通知和评论组件。
+- `views/`：页面，例如首页、帖子详情、表白墙、提问箱、登录、设置、管理面板和投票页面。
+- `components/`：可复用组件，例如 Elk 信息流卡片、Memos 树洞卡片、头像、三栏布局、通知、评论，以及基于 `reka-ui` 的 `AppDialog` / `ConfirmDialog` / `AppDropdown` / `AppSelect` / `AppSwitch` / `AppTabs` 原语。
+- `composables/`：跨页面组合逻辑，例如全局确认弹窗（`useConfirm`）与桌面端右侧发现栏（`useDiscoveryRail`）。
 - `router/`：Vue Router 路由和页面访问控制。
-- `stores/`：Pinia 状态，例如当前登录用户、主题和通知状态。
+- `stores/`：Pinia 状态，例如当前登录用户、主题、动效偏好和通知状态。
 - `api/`：对后端接口的统一调用封装。
-- `styles/`：主题变量、颜色、布局和交互样式。
+- `styles/`：Design Tokens（`tokens.css`）、两层主题与双画布语义变量（`theme.css`）以及全局基础/交互样式（`main.css`）。
 
 用户打开网站后，前端会通过 `/api/bootstrap` 一次性取得站点配置、初始化状态、当前会话和权限信息，从而减少首屏请求次数。
 

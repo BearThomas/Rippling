@@ -18,7 +18,7 @@ Rippling 是一个面向校园的社区论坛系统，支持帖子、板块、�
 
 | 层级 | 技术 |
 |------|------|
-| 前端 | Vue 3（后续加入） |
+| 前端 | Vue 3 + Pinia + Vue Router 4 + Tailwind CSS + Reka UI |
 | 后端 | Hono |
 | 认证 | Better Auth + better-auth-cloudflare |
 | 数据库 | Cloudflare D1 |
@@ -93,7 +93,9 @@ npm run setup:wizard
 >
 > 主题（每个人的自定义 vs 全站默认，谁压谁）：见 `docs/theme.md`。
 >
-> UI 的两条硬规矩（默认头像只有一份 / 卡片行要撑满，都有脚本验）：见 `docs/ui.md`。
+> 设计规范（Elk 主框架 + Memos 树洞区、Design Tokens 与 Reka UI 原语）：见 `DESIGN.md`。
+>
+> UI 规范（默认头像唯一实现 / 卡片行撑满 / 浮层原语与 Portal 防遮挡）：见 `docs/ui.md`。
 >
 > 登录墙（无墙 / 软墙 / 硬墙，改 site_config.loginWall）：见 `docs/login-wall.md`。
 >
