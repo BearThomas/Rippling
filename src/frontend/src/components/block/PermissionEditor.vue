@@ -1,21 +1,15 @@
 <!--
   权限编辑弹窗（板块管理面板）
 
-  以开关列表展示 15 个板块权限位（BLOCK_PERMISSION_BITS），
-  保存时将开关状态还原为十进制权限掩码字符串。
-
-  props：
-    - visible：是否显示
-    - username：编辑对象的用户名（标题展示）
-    - permissions：当前权限掩码（十进制字符串）
-    - saving：保存进行中
-
-  emit：
-    - save(permissions: string)：点击保存
-    - close：关闭弹窗
+  已升级为 AppDialog（reka-ui Dialog）+ AppSwitch（reka-ui Switch）：
+    - 移动端底部 Sheet / 桌面端居中 Modal，具备焦点陷阱、ESC 关闭与滚动锁定
+    - 彻底消除旧版 transition-[left] 动效红线违例
+    - 保持对外 props（visible/username/permissions/saving）与 emits（save/close）不变
 -->
 <script setup lang="ts">
 import { reactive, watch } from "vue";
+import AppDialog from "../common/AppDialog.vue";
+import AppSwitch from "../common/AppSwitch.vue";
 import { BLOCK_PERMISSION_BITS, hasPermission } from "../../utils/permission";
 
 const props = defineProps<{
@@ -30,10 +24,9 @@ const emit = defineEmits<{
   close: [];
 }>();
 
-/** 各权限位开关状态（bit → boolean） */
+/** 各权限位开关状态（bit -> boolean） */
 const switches = reactive<Record<number, boolean>>({});
 
-/** 弹窗打开时，根据传入权限掩码初始化开关 */
 watch(
   () => props.visible,
   (v) => {
@@ -45,12 +38,10 @@ watch(
   { immediate: true }
 );
 
-/** 切换某个权限位 */
-function toggle(bit: number): void {
-  switches[bit] = !switches[bit];
+function setBit(bit: number, value: boolean): void {
+  switches[bit] = value;
 }
 
-/** 将开关状态还原为十进制掩码字符串并触发保存 */
 function handleSave(): void {
   let mask = 0n;
   for (const { bit } of BLOCK_PERMISSION_BITS) {
@@ -61,57 +52,55 @@ function handleSave(): void {
 </script>
 
 <template>
-  <!-- 遮罩层 -->
-  <div
-    v-if="visible"
-    class="fixed inset-0 z-50 flex items-end justify-center bg-black/40"
-    @click.self="emit('close')"
+  <AppDialog
+    :open="visible"
+    :title="`编辑权限 · ${username}`"
+    description="勾选授予该成员的板块内操作权限"
+    size="md"
+    :dismissible="!saving"
+    @close="emit('close')"
   >
-    <!-- 底部弹出面板（移动端友好） -->
-    <div class="w-full max-w-app rounded-t-2xl bg-surface p-4 pb-6">
-      <div class="mb-3 flex items-center justify-between">
-        <h3 class="text-base font-semibold">编辑权限 — {{ username }}</h3>
+    <div class="divide-y divide-subtle">
+      <div
+        v-for="item in BLOCK_PERMISSION_BITS"
+        :key="item.bit"
+        class="flex items-center justify-between gap-3 py-2.5"
+      >
+        <label
+          :for="`block-perm-${item.bit}`"
+          class="flex-1 cursor-pointer text-sm text-ink select-none"
+        >
+          {{ item.label }}
+        </label>
+        <AppSwitch
+          :id="`block-perm-${item.bit}`"
+          :model-value="Boolean(switches[item.bit])"
+          :disabled="saving"
+          :aria-label="item.label"
+          @update:model-value="setBit(item.bit, $event)"
+        />
+      </div>
+    </div>
+
+    <template #footer>
+      <div class="flex items-center justify-end gap-2.5">
         <button
           type="button"
-          class="rounded-full px-2 py-1 text-sm text-ink-soft active:bg-line"
+          class="btn-secondary flex-1 sm:flex-none"
+          :disabled="saving"
           @click="emit('close')"
         >
-          关闭
+          取消
         </button>
-      </div>
-
-      <!-- 权限开关列表 -->
-      <div class="max-h-[50vh] space-y-1 overflow-y-auto">
         <button
-          v-for="item in BLOCK_PERMISSION_BITS"
-          :key="item.bit"
           type="button"
-          class="flex w-full items-center justify-between rounded-lg px-2 py-2.5 transition-colors active:bg-line"
-          @click="toggle(item.bit)"
+          class="btn-primary flex-1 sm:flex-none"
+          :disabled="saving"
+          @click="handleSave"
         >
-          <span class="text-sm">{{ item.label }}</span>
-          <!-- 开关样式 -->
-          <span
-            class="relative inline-block h-5 w-9 shrink-0 rounded-full transition-colors"
-            :class="switches[item.bit] ? 'bg-primary' : 'bg-line'"
-          >
-            <span
-              class="absolute top-0.5 h-4 w-4 rounded-full bg-white transition-[left] duration-[var(--dur-fast)]"
-              :class="switches[item.bit] ? 'left-[18px]' : 'left-0.5'"
-            />
-          </span>
+          {{ saving ? "保存中…" : "保存权限" }}
         </button>
       </div>
-
-      <!-- 保存按钮 -->
-      <button
-        type="button"
-        class="btn-primary mt-4 w-full"
-        :disabled="saving"
-        @click="handleSave"
-      >
-        {{ saving ? "保存中…" : "保存" }}
-      </button>
-    </div>
-  </div>
+    </template>
+  </AppDialog>
 </template>

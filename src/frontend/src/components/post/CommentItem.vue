@@ -1,68 +1,55 @@
 <!--
-  评论项组件（递归）
+  评论项组件（Elk 扁平时间轴 / 最多 2 层视觉轻量缩进）
 
-  展示：作者头像占位、用户名 + 颜色、时间、内容（Markdown）、
-  点赞（可交互）、回复、删除（仅作者本人可见）。
-
-  树状规则：评论嵌套最多 3 层，超过 3 层的回复以同层深度平铺渲染。
-  子评论懒加载：点击「展开 N 条回复」时调用 GET /api/post/comments。
+  - 保持逻辑上最多 3 层嵌套与子回复懒加载不变
+  - 删除确认改用全局 ConfirmDialog（reka-ui AlertDialog），替代原生 window.confirm
 -->
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, shallowRef } from "vue";
 import { useRouter } from "vue-router";
 import AppSvgIcon from "../layout/AppSvgIcon.vue";
 import MarkdownRenderer from "../markdown/MarkdownRenderer.vue";
+import UserAvatar from "../user/UserAvatar.vue";
 import { formatRelativeTime, formatNumber } from "../../utils/format";
 import { getComments, deletePost } from "../../api/post";
 import { toggleLike } from "../../api/like";
 import { showToast } from "../../utils/toast";
+import { confirmAction } from "../../composables/useConfirm";
 import { useAuthStore } from "../../stores/auth";
 import type { PostInfo } from "../../types";
-import UserAvatar from "../user/UserAvatar.vue";
 
 const props = withDefaults(
   defineProps<{
     /** 评论数据（后端已附加 author / likeCount / liked） */
     comment: PostInfo;
-    /** 当前嵌套深度（1 起，3 为上限） */
+    /** 当前嵌套深度（1 起，逻辑 3 为上限；视觉缩进最多 2 层） */
     depth?: number;
   }>(),
   { depth: 1 }
 );
 
 const emit = defineEmits<{
-  /** 点击回复按钮 */
   reply: [comment: PostInfo];
-  /** 评论被删除 */
   deleted: [id: string];
 }>();
 
 const router = useRouter();
 const auth = useAuthStore();
 
-/** 点赞本地状态（初始值来自后端附加字段） */
-const liked = ref(props.comment.liked ?? false);
-const likeCount = ref(props.comment.likeCount ?? 0);
-const likeBusy = ref(false);
+const liked = shallowRef(props.comment.liked ?? false);
+const likeCount = shallowRef(props.comment.likeCount ?? 0);
+const likeBusy = shallowRef(false);
 
-/** 子回复懒加载状态 */
 const children = ref<PostInfo[] | null>(null);
-const childrenLoading = ref(false);
+const childrenLoading = shallowRef(false);
+const deleting = shallowRef(false);
 
-/** 删除中状态 */
-const deleting = ref(false);
+const canDelete = computed(
+  () => auth.userId != null && props.comment.authorId === auth.userId
+);
+const childDepth = computed(() => Math.min(props.depth + 1, 3));
+const authorName = computed(() => props.comment.author?.username ?? "匿名用户");
 
-/** 是否可删除：仅作者本人（管理员删除能力依赖权限接口，暂未提供） */
-const canDelete = auth.userId != null && props.comment.authorId === auth.userId;
-
-/** 子评论嵌套深度：超过 3 层后保持 3 层（平铺展示） */
-const childDepth = Math.min(props.depth + 1, 3);
-
-/** 作者显示名 */
-const authorName = props.comment.author?.username ?? "匿名用户";
-
-
-/** 作者主页路由（作者存在且有 id 时返回；匿名评论为 null → 不可点击） */
 const authorProfileLink = computed(() => {
   const author = props.comment.author;
   return author?.id
@@ -70,10 +57,9 @@ const authorProfileLink = computed(() => {
     : null;
 });
 
-/** 切换点赞 */
 async function onToggleLike(): Promise<void> {
   if (!auth.isLoggedIn) {
-    router.push({ path: "/login", query: { redirect: router.currentRoute.value.fullPath } });
+    void router.push({ path: "/login", query: { redirect: router.currentRoute.value.fullPath } });
     return;
   }
   if (likeBusy.value) return;
@@ -89,7 +75,6 @@ async function onToggleLike(): Promise<void> {
   }
 }
 
-/** 懒加载子回复 */
 async function loadChildren(): Promise<void> {
   if (children.value || childrenLoading.value) return;
   childrenLoading.value = true;
@@ -102,15 +87,20 @@ async function loadChildren(): Promise<void> {
   }
 }
 
-/** 收起子回复 */
 function collapseChildren(): void {
   children.value = null;
 }
 
-/** 删除评论（二次确认） */
 async function onDelete(): Promise<void> {
-  if (!window.confirm("确定删除这条评论吗？")) return;
   if (deleting.value) return;
+  const confirmed = await confirmAction({
+    title: "确定删除这条评论吗？",
+    description: "删除后将无法恢复。",
+    confirmText: "删除",
+    variant: "danger",
+  });
+  if (!confirmed) return;
+
   deleting.value = true;
   try {
     await deletePost(props.comment.id);
@@ -123,21 +113,27 @@ async function onDelete(): Promise<void> {
   }
 }
 
-/** 点击评论内容 → 评论详情页 */
 function openCommentDetail(): void {
-  router.push({ name: "comment-detail", params: { id: props.comment.id } });
+  void router.push({ name: "comment-detail", params: { id: props.comment.id } });
 }
 </script>
 
 <template>
-  <div class="py-2.5" :class="depth > 1 ? 'border-l-2 border-line pl-3' : ''">
-    <!-- 作者行 -->
-    <div class="mb-1 flex items-center gap-2">
-      <!-- 有作者 → 头像 + 用户名点击跳转用户主页 -->
+  <div
+    :class="
+      depth === 1
+        ? 'border-b border-subtle px-4 py-3.5 sm:px-6'
+        : depth === 2
+          ? 'mt-2.5 border-l-2 border-subtle pl-3.5 pt-1'
+          : 'mt-2.5 pt-1'
+    "
+  >
+    <!-- 作者与时间 -->
+    <div class="flex items-center gap-2">
       <RouterLink
         v-if="authorProfileLink"
         :to="authorProfileLink"
-        class="flex min-w-0 items-center gap-2"
+        class="flex min-w-0 items-center gap-2 hover:underline"
         @click.stop
       >
         <UserAvatar
@@ -147,54 +143,64 @@ function openCommentDetail(): void {
           size="xs"
         />
         <span
-          class="truncate text-sm font-medium"
+          class="truncate text-sm font-medium text-ink"
           :style="{ color: comment.author?.nameColor ?? undefined }"
         >
           {{ authorName }}
         </span>
       </RouterLink>
 
-      <!-- 匿名：头像 + 用户名不可点击 -->
       <template v-else>
         <UserAvatar :name="authorName" anonymous size="xs" />
-        <span class="truncate text-sm font-medium">{{ authorName }}</span>
+        <span class="truncate text-sm font-medium text-ink-secondary">{{ authorName }}</span>
       </template>
-      <span class="ml-auto shrink-0 text-[11px] text-ink-soft">
+
+      <time
+        class="ml-auto shrink-0 text-xs tabular-nums text-ink-muted"
+        :datetime="comment.createdAt"
+      >
         {{ formatRelativeTime(comment.createdAt) }}
-      </span>
+      </time>
     </div>
 
-    <!-- 内容（点击进入评论详情） -->
+    <!-- 正文（点击进入评论详情） -->
     <div
-      class="cursor-pointer rounded-md pressable"
+      class="mt-1.5 cursor-pointer rounded-lg py-0.5 text-ink-secondary transition-colors hover:text-ink"
+      :class="depth === 1 ? 'sm:pl-8' : ''"
       @click="openCommentDetail"
     >
-      <MarkdownRenderer :content="comment.content" />
+      <MarkdownRenderer :content="comment.content" size="compact" />
     </div>
 
-    <!-- 操作行 -->
-    <div class="mt-1.5 flex items-center gap-4 text-xs text-ink-soft">
+    <!-- 低对比度操作栏 -->
+    <div
+      class="mt-1.5 flex items-center gap-4 text-xs tabular-nums text-ink-muted"
+      :class="depth === 1 ? 'sm:pl-8' : ''"
+    >
       <button
         type="button"
-        class="flex items-center gap-1 transition-colors"
-        :class="liked ? 'text-primary' : ''"
+        class="inline-flex items-center gap-1 hover:text-primary pressable"
+        :class="liked ? 'font-medium text-primary' : ''"
+        :disabled="likeBusy"
         @click="onToggleLike"
       >
         <AppSvgIcon name="thumbUp" :size="13" />
         {{ formatNumber(likeCount) }}
       </button>
+
       <button
         type="button"
-        class="flex items-center gap-1 transition-colors active:text-primary"
+        class="inline-flex items-center gap-1 hover:text-ink pressable"
         @click="emit('reply', comment)"
       >
         <AppSvgIcon name="comment" :size="13" />
         回复
       </button>
+
       <button
         v-if="canDelete"
         type="button"
-        class="flex items-center gap-1 text-red-400 transition-opacity active:opacity-60"
+        class="ml-auto inline-flex items-center gap-1 text-ink-muted hover:text-danger pressable disabled:opacity-50"
         :disabled="deleting"
         @click="onDelete"
       >
@@ -204,11 +210,15 @@ function openCommentDetail(): void {
     </div>
 
     <!-- 子回复区 -->
-    <div v-if="(comment.commentCount ?? 0) > 0 || children" class="mt-1">
+    <div
+      v-if="(comment.commentCount ?? 0) > 0 || children"
+      class="mt-1.5"
+      :class="depth === 1 ? 'sm:pl-8' : ''"
+    >
       <button
         v-if="!children"
         type="button"
-        class="flex items-center gap-1 py-1 text-xs text-primary"
+        class="inline-flex items-center gap-1 py-1 text-xs font-medium text-primary hover:underline"
         :disabled="childrenLoading"
         @click="loadChildren"
       >
@@ -219,13 +229,13 @@ function openCommentDetail(): void {
       <template v-else>
         <button
           type="button"
-          class="flex items-center gap-1 py-1 text-xs text-ink-soft"
+          class="inline-flex items-center gap-1 py-1 text-xs text-ink-muted transition-colors hover:text-ink"
           @click="collapseChildren"
         >
           <AppSvgIcon name="chevronUp" :size="13" />
           收起回复
         </button>
-        <div v-if="children.length === 0" class="py-1 text-xs text-ink-soft">暂无回复</div>
+        <div v-if="children.length === 0" class="py-1 text-xs text-ink-muted">暂无回复</div>
         <CommentItem
           v-for="child in children"
           :key="child.id"

@@ -1,32 +1,31 @@
 <!--
-  管理面板 — 归档查看子面板（view_database 权限）
-
-  - 归档文件列表（分页，GET /archive/files）
-  - 点击文件查看解密内容（GET /archive/file；路径由客户端自动 URL 编码）
+  管理面板 — 归档查看子面板（Elk 紧凑分割行 + AppDialog 解密查看弹窗）
 -->
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import LoadingSpinner from "../common/LoadingSpinner.vue";
+import { onMounted, ref, shallowRef } from "vue";
+import FeedSkeleton from "../common/FeedSkeleton.vue";
 import EmptyState from "../common/EmptyState.vue";
 import ErrorState from "../common/ErrorState.vue";
+import AppDialog from "../common/AppDialog.vue";
+import AppSvgIcon from "../layout/AppSvgIcon.vue";
 import { listArchiveFiles, getArchiveFileContent } from "../../api/admin";
 import type { ArchiveFileInfo, ArchiveFileContent } from "../../api/admin";
 import { formatDateTime } from "../../utils/format";
 
-/** 每页条数 */
 const PAGE_SIZE = 20;
 
-const loading = ref(true);
-const loadingMore = ref(false);
-const error = ref(false);
+const loading = shallowRef(true);
+const loadingMore = shallowRef(false);
+const error = shallowRef(false);
 const files = ref<ArchiveFileInfo[]>([]);
-const hasMore = ref(true);
+const hasMore = shallowRef(true);
 
-/** 文件内容弹窗 */
+/** 文件内容弹窗（AppDialog） */
+const contentOpen = shallowRef(false);
 const contentFile = ref<ArchiveFileInfo | null>(null);
 const content = ref<ArchiveFileContent | null>(null);
-const contentLoading = ref(false);
-const contentError = ref(false);
+const contentLoading = shallowRef(false);
+const contentError = shallowRef(false);
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -49,15 +48,15 @@ async function loadMore(): Promise<void> {
     files.value.push(...page);
     hasMore.value = page.length === PAGE_SIZE;
   } catch {
-    // Toast 由 client 层统一处理
+    // client.ts 已自动 Toast
   } finally {
     loadingMore.value = false;
   }
 }
 
-/** 打开文件内容弹窗（解密读取） */
 async function openContent(file: ArchiveFileInfo): Promise<void> {
   contentFile.value = file;
+  contentOpen.value = true;
   content.value = null;
   contentLoading.value = true;
   contentError.value = false;
@@ -70,82 +69,102 @@ async function openContent(file: ArchiveFileInfo): Promise<void> {
   }
 }
 
-function closeContent(): void {
-  contentFile.value = null;
-  content.value = null;
-}
-
-/** JSON 美化输出 */
 function prettyJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
-onMounted(load);
+onMounted(() => {
+  void load();
+});
 </script>
 
 <template>
   <div>
-    <LoadingSpinner v-if="loading" />
-    <ErrorState v-else-if="error" @retry="load" />
+    <FeedSkeleton v-if="loading" variant="elk" :count="5" />
+    <div v-else-if="error" class="px-4 py-6">
+      <ErrorState @retry="load" />
+    </div>
 
     <template v-else-if="files.length > 0">
-      <div class="card-base !p-0 divide-y divide-line">
+      <ul role="list" class="divide-y divide-[var(--border-subtle)] border-b border-subtle">
+        <li v-for="file in files" :key="file.id">
+          <button
+            type="button"
+            class="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-hover pressable sm:px-5"
+            @click="openContent(file)"
+          >
+            <div class="min-w-0 flex-1">
+              <p class="truncate font-mono text-xs font-medium text-ink">
+                {{ file.filePath }}
+              </p>
+              <p class="mt-0.5 text-xs tabular-nums text-ink-muted">
+                {{ file.targetType ?? "—" }} · {{ formatDateTime(file.archivedAt) }}
+              </p>
+            </div>
+            <AppSvgIcon name="chevronRight" :size="15" class="shrink-0 text-ink-muted" />
+          </button>
+        </li>
+      </ul>
+
+      <div v-if="hasMore" class="px-4 py-4 text-center">
         <button
-          v-for="file in files"
-          :key="file.id"
           type="button"
-          class="block w-full px-4 py-2.5 text-left pressable"
-          @click="openContent(file)"
+          class="btn-secondary !py-1.5 text-xs"
+          :disabled="loadingMore"
+          @click="loadMore"
         >
-          <p class="truncate font-mono text-xs">{{ file.filePath }}</p>
-          <p class="mt-0.5 text-xs text-ink-soft">
-            {{ file.targetType ?? "—" }} · {{ formatDateTime(file.archivedAt) }}
-          </p>
+          {{ loadingMore ? "加载中…" : "加载更多" }}
         </button>
       </div>
-
-      <button
-        v-if="hasMore"
-        type="button"
-        class="btn-secondary mt-3 w-full"
-        :disabled="loadingMore"
-        @click="loadMore"
-      >
-        {{ loadingMore ? "加载中…" : "加载更多" }}
-      </button>
     </template>
 
-    <EmptyState v-else text="暂无归档文件" icon="file" />
-
-    <!-- 解密内容弹窗 -->
-    <div
-      v-if="contentFile"
-      class="fixed inset-0 z-50 flex items-end bg-black/40"
-      @click.self="closeContent"
-    >
-      <div class="max-h-[85vh] w-full overflow-y-auto rounded-t-2xl bg-surface p-4">
-        <div class="mb-2 flex items-center justify-between gap-2">
-          <h3 class="truncate font-mono text-sm">{{ contentFile.filePath }}</h3>
-          <button type="button" class="shrink-0 text-sm text-ink-soft" @click="closeContent">
-            关闭
-          </button>
-        </div>
-
-        <LoadingSpinner v-if="contentLoading" />
-        <ErrorState v-else-if="contentError" message="文件读取失败" @retry="openContent(contentFile)" />
-
-        <template v-else-if="content">
-          <p class="mb-2 text-xs text-ink-soft">
-            归档时间：{{ formatDateTime(content.archivedAt) }} · 格式版本 v{{ content.version }}
-          </p>
-
-          <h4 class="mb-1 text-xs font-semibold text-ink-soft">最终状态快照</h4>
-          <pre class="mb-3 overflow-x-auto rounded-lg bg-page p-3 font-mono text-xs leading-relaxed">{{ prettyJson(content.result) }}</pre>
-
-          <h4 class="mb-1 text-xs font-semibold text-ink-soft">操作链（{{ content.operations.length }} 条）</h4>
-          <pre class="overflow-x-auto rounded-lg bg-page p-3 font-mono text-xs leading-relaxed">{{ prettyJson(content.operations) }}</pre>
-        </template>
-      </div>
+    <div v-else class="px-4 py-6">
+      <EmptyState text="暂无归档文件" icon="file" />
     </div>
+
+    <!-- 解密内容弹窗（AppDialog） -->
+    <AppDialog
+      v-model:open="contentOpen"
+      :title="contentFile?.filePath ?? '归档内容'"
+      :description="
+        content
+          ? `归档时间：${formatDateTime(content.archivedAt)} · 格式版本 v${content.version}`
+          : 'AES-256-GCM 解密内容预览'
+      "
+      size="xl"
+    >
+      <div v-if="contentLoading" class="py-8 text-center text-xs text-ink-muted">
+        正在解密读取…
+      </div>
+      <ErrorState
+        v-else-if="contentError && contentFile"
+        message="归档文件读取失败"
+        @retry="openContent(contentFile)"
+      />
+
+      <div v-else-if="content" class="space-y-4">
+        <section>
+          <h3 class="mb-1.5 text-xs font-semibold text-ink-secondary">最终状态快照</h3>
+          <pre
+            class="overflow-x-auto rounded-xl bg-canvas-soft p-3.5 font-mono text-xs leading-relaxed text-ink"
+          >{{ prettyJson(content.result) }}</pre>
+        </section>
+
+        <section>
+          <h3 class="mb-1.5 text-xs font-semibold text-ink-secondary">
+            操作链（{{ content.operations.length }} 条）
+          </h3>
+          <pre
+            class="overflow-x-auto rounded-xl bg-canvas-soft p-3.5 font-mono text-xs leading-relaxed text-ink"
+          >{{ prettyJson(content.operations) }}</pre>
+        </section>
+      </div>
+
+      <template #footer>
+        <button type="button" class="btn-secondary w-full" @click="contentOpen = false">
+          关闭
+        </button>
+      </template>
+    </AppDialog>
   </div>
 </template>

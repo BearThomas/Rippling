@@ -1,13 +1,12 @@
 <!--
-  表白详情页（/confession/:id）
+  表白详情页（/confession/:id · Memos 轻白卡详情）
 
-  功能：
-    - 完整内容（永远匿名，不显示作者）
-    - 点赞 / 取消赞（/api/like targetType=confession）
-    - 举报：跳转 /ticket/create?type=report&targetType=confession&targetId=xxx
+  - 运行在 --bg-canvas-soft 画布上，纯白轻卡片呈现完整正文
+  - 匿名标识与时间克制置顶，心动按钮使用 --accent-warm 左下对齐
+  - 支持一键复制链接与举报跳转
 -->
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, ref, shallowRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import LoadingSpinner from "../components/common/LoadingSpinner.vue";
 import ErrorState from "../components/common/ErrorState.vue";
@@ -15,6 +14,7 @@ import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
 import { getConfessionDetail } from "../api/confession";
 import { toggleLike } from "../api/like";
 import { formatDateTime, formatNumber } from "../utils/format";
+import { showToast } from "../utils/toast";
 import { useAuthStore } from "../stores/auth";
 import type { ConfessionInfo } from "../types";
 
@@ -22,19 +22,16 @@ const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 
-/** 表白 ID */
 const confessionId = route.params.id as string;
 
-const loading = ref(true);
-const error = ref(false);
+const loading = shallowRef(true);
+const error = shallowRef(false);
 const confession = ref<ConfessionInfo | null>(null);
 
-/** 点赞本地状态（详情不返回是否已赞，默认未赞） */
-const liked = ref(false);
-const likeCount = ref(0);
-const likeBusy = ref(false);
+const liked = shallowRef(false);
+const likeCount = shallowRef(0);
+const likeBusy = shallowRef(false);
 
-/** 加载详情 */
 async function load(): Promise<void> {
   loading.value = true;
   error.value = false;
@@ -49,14 +46,12 @@ async function load(): Promise<void> {
   }
 }
 
-/** 未登录引导 */
 function requireLogin(): boolean {
   if (auth.isLoggedIn) return true;
-  router.push({ path: "/login", query: { redirect: route.fullPath } });
+  void router.push({ path: "/login", query: { redirect: route.fullPath } });
   return false;
 }
 
-/** 点赞 / 取消赞 */
 async function onToggleLike(): Promise<void> {
   if (!requireLogin() || likeBusy.value) return;
   likeBusy.value = true;
@@ -71,10 +66,19 @@ async function onToggleLike(): Promise<void> {
   }
 }
 
-/** 举报 → 工单创建页（report 类型，预填举报对象） */
+async function copyShareLink(): Promise<void> {
+  const url = `${window.location.origin}/confession/${confessionId}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast("链接已复制", "success");
+  } catch {
+    showToast("复制失败，请手动复制地址栏链接", "error");
+  }
+}
+
 function goReport(): void {
   if (!requireLogin()) return;
-  router.push({
+  void router.push({
     path: "/ticket/create",
     query: { type: "report", targetType: "confession", targetId: confessionId },
   });
@@ -84,43 +88,59 @@ onMounted(load);
 </script>
 
 <template>
-  <div class="px-3 pt-3">
+  <div class="px-3.5 py-4 sm:px-5 sm:py-5">
     <LoadingSpinner v-if="loading" />
     <ErrorState v-else-if="error" message="表白不存在或无权访问" @retry="load" />
 
-    <article v-else-if="confession" class="card-base">
-      <!-- 类型标签 + 发布时间 -->
-      <div class="mb-3 flex items-center gap-2 text-xs text-ink-soft">
-        <span class="flex items-center gap-1 font-medium text-accent">
-          <AppSvgIcon name="heart" :size="14" />
-          表白墙 · 匿名
+    <article v-else-if="confession" class="memo-card !p-5 sm:!p-6">
+      <!-- 顶部：克制的匿名标识 + 发布时间 -->
+      <div class="flex items-center gap-2 text-xs text-ink-muted">
+        <span class="tag-pill-warm">
+          <AppSvgIcon name="heart" :size="12" />
+          匿名表白
         </span>
-        <span class="ml-auto">{{ formatDateTime(confession.createdAt) }}</span>
+        <time class="ml-auto tabular-nums" :datetime="confession.createdAt">
+          {{ formatDateTime(confession.createdAt) }}
+        </time>
       </div>
 
-      <!-- 完整内容（匿名，不显示作者） -->
-      <p class="whitespace-pre-line break-all text-[15px] leading-relaxed">
+      <!-- 完整正文：柔和阅读节奏 -->
+      <p class="mt-4 whitespace-pre-line break-words text-[15px] leading-[1.8] text-ink sm:text-base">
         {{ confession.content }}
       </p>
 
-      <!-- 操作行：点赞 + 举报 -->
-      <div class="mt-4 flex items-center gap-4 border-t border-line pt-3 text-xs text-ink-soft">
+      <!-- 底部操作栏：心动按钮左下对齐 + 分享 + 举报 -->
+      <div class="mt-6 flex items-center gap-3 border-t border-subtle pt-3.5 text-xs tabular-nums text-ink-muted">
         <button
           type="button"
-          class="flex items-center gap-1 transition-colors"
-          :class="liked ? 'text-accent' : ''"
+          class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 pressable"
+          :class="
+            liked
+              ? 'bg-accent-warm-soft font-medium text-accent-warm'
+              : 'bg-canvas-soft text-ink-secondary hover:bg-accent-warm-soft hover:text-accent-warm'
+          "
           :disabled="likeBusy"
           @click="onToggleLike"
         >
-          <AppSvgIcon name="heart" :size="16" />
-          {{ formatNumber(likeCount) }}
+          <AppSvgIcon name="heart" :size="15" />
+          <span>{{ formatNumber(likeCount) }}</span>
         </button>
+
         <button
           type="button"
-          class="ml-auto flex items-center gap-1 text-ink-soft transition-colors active:text-primary"
+          class="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 hover:bg-hover hover:text-ink pressable"
+          @click="copyShareLink"
+        >
+          <AppSvgIcon name="share" :size="14" />
+          分享
+        </button>
+
+        <button
+          type="button"
+          class="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-ink-muted hover:bg-danger-soft hover:text-danger pressable"
           @click="goReport"
         >
-          <AppSvgIcon name="shield" :size="15" />
+          <AppSvgIcon name="shield" :size="14" />
           举报
         </button>
       </div>

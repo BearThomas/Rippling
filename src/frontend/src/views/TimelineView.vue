@@ -1,14 +1,11 @@
 <!--
-  大事记页 — 已审核大事记列表
-
-  - 数据源：GET /api/timeline/list（按 eventDate 倒序，后端已截断描述预览）
-  - 分页加载更多
-  - 提交大事记走工单：跳转 /ticket/create?type=timeline_submit
+  大事记页 — Elk 无边框时间流
 -->
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, ref, shallowRef } from "vue";
 import { useRouter } from "vue-router";
-import LoadingSpinner from "../components/common/LoadingSpinner.vue";
+import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
+import FeedSkeleton from "../components/common/FeedSkeleton.vue";
 import EmptyState from "../components/common/EmptyState.vue";
 import ErrorState from "../components/common/ErrorState.vue";
 import TimelineCard from "../components/post/TimelineCard.vue";
@@ -16,19 +13,15 @@ import { getTimelineList } from "../api/timeline";
 import type { TimelineEvent } from "../types";
 
 const router = useRouter();
-
-/** 每页条数（与后端 limit 上限一致） */
 const PAGE_SIZE = 20;
 
-const loading = ref(true);
-const error = ref(false);
+const loading = shallowRef(true);
+const error = shallowRef(false);
 const events = ref<TimelineEvent[]>([]);
 
-/** 分页状态 */
-const loadingMore = ref(false);
-const hasMore = ref(true);
+const loadingMore = shallowRef(false);
+const hasMore = shallowRef(true);
 
-/** 首次加载 */
 async function load(): Promise<void> {
   loading.value = true;
   error.value = false;
@@ -42,7 +35,6 @@ async function load(): Promise<void> {
   }
 }
 
-/** 加载更多 */
 async function loadMore(): Promise<void> {
   if (loadingMore.value || !hasMore.value) return;
   loadingMore.value = true;
@@ -57,30 +49,31 @@ async function loadMore(): Promise<void> {
   }
 }
 
-/** 提交大事记 → 工单创建页（timeline_submit 类型） */
 function goSubmit(): void {
-  router.push({ path: "/ticket/create", query: { type: "timeline_submit" } });
+  void router.push({ path: "/ticket/create", query: { type: "timeline_submit" } });
 }
 
 onMounted(load);
 </script>
 
 <template>
-  <div class="px-3 pt-3">
-    <!-- 顶部操作行：说明 + 提交入口 -->
-    <div class="mb-3 flex items-center justify-between gap-2">
-      <p class="text-xs text-ink-soft">记录校园重要时刻，提交后需管理员审核。</p>
-      <button type="button" class="btn-primary shrink-0 !py-1.5 text-sm" @click="goSubmit">
+  <div class="pb-6">
+    <!-- 顶部说明与提交入口 -->
+    <div class="flex items-center justify-between gap-3 border-b border-subtle px-4 py-3 sm:px-5">
+      <p class="text-xs leading-relaxed text-ink-muted">
+        记录校园重要时刻，提交后由管理员审核收录。
+      </p>
+      <button type="button" class="btn-primary shrink-0 !px-3.5 !py-1.5 text-xs" @click="goSubmit">
+        <AppSvgIcon name="plus" :size="14" />
         提交大事记
       </button>
     </div>
 
-    <LoadingSpinner v-if="loading" />
+    <FeedSkeleton v-if="loading" variant="elk" :count="4" />
     <ErrorState v-else-if="error" @retry="load" />
 
     <template v-else>
-      <div v-if="events.length > 0" class="space-y-3">
-        <!-- 复用推荐流大事记卡片（点击进详情，点赞可交互） -->
+      <div v-if="events.length > 0">
         <TimelineCard
           v-for="event in events"
           :key="event.id"
@@ -92,22 +85,26 @@ onMounted(load);
           :created-at="event.createdAt"
         />
 
-        <!-- 加载更多 -->
-        <div class="py-2 text-center">
+        <div class="py-5 text-center">
           <button
             v-if="hasMore"
             type="button"
-            class="btn-secondary !py-1.5 text-sm"
+            class="btn-secondary !py-1.5 text-xs"
             :disabled="loadingMore"
             @click="loadMore"
           >
             {{ loadingMore ? "加载中…" : "加载更多" }}
           </button>
-          <span v-else class="text-xs text-ink-soft">已经到底啦</span>
+          <span v-else class="text-xs text-ink-muted">已经到底啦</span>
         </div>
       </div>
 
-      <EmptyState v-else text="还没有大事记，来提交第一条" icon="calendar" />
+      <EmptyState
+        v-else
+        text="还没有大事记"
+        description="点击右上角按钮记录第一条校园重要事件。"
+        icon="calendar"
+      />
     </template>
   </div>
 </template>

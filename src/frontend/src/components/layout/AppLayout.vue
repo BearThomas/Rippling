@@ -1,31 +1,45 @@
 <!--
-  主布局：AppSidebar + AppHeader + 内容区 + AppTabbar
+  主布局骨架（DESIGN.md 第 5 节：Elk 响应式三栏 + Memos 副模式画布切换）
 
-  移动端优先：内容区限宽 480px 居中，底部导航固定。
-  meta.showTabbar === false 的页面（详情页等）隐藏底部导航。
-  桌面端（>=1024px）：隐藏底部导航，显示左侧图标栏（悬停展开），
-  主内容区最大宽度 960px 居中（固定侧边栏占位由 lg:pl-16 让出）。
+  断点策略：
+    - 宽屏桌面（>=1280px）：max-w-[1200px] 居中三栏（左 232px + 中 660px 两侧 1px 细边 + 右 272px）
+    - 常规桌面（1024px–1279px）：隐藏右栏，左 232px + 中 660px（两侧 1px 细边）
+    - 平板端（768px–1023px）：左栏折叠为 68px 纯图标栏，中栏自适应填满
+    - 移动端（<768px）：隐藏左右栏，顶栏 52px + 满宽内容区 + 底部 5 Tab 栏
+
+  视觉双模式：
+    - 表白墙与提问箱路由自动挂 data-surface="memos"（柔和暖灰画布 --bg-canvas-soft）
+    - 其余路由挂 data-surface="elk"（通透主画布 --bg-canvas）
 -->
 <script setup lang="ts">
 import { computed, watch } from "vue";
 import { useRoute } from "vue-router";
-import AppSidebar from "./AppSidebar.vue";
 import AppHeader from "./AppHeader.vue";
+import AppRightRail from "./AppRightRail.vue";
+import AppSidebar from "./AppSidebar.vue";
 import AppTabbar from "./AppTabbar.vue";
 import OnboardingTour from "../onboarding/OnboardingTour.vue";
 import { useAuthStore } from "../../stores/auth";
 import { buildTourSteps, readTourStatus, startTour } from "../../utils/onboarding";
 
+const MEMOS_ROUTE_NAMES = new Set([
+  "confession",
+  "confession-detail",
+  "question-box",
+]);
+
 const route = useRoute();
 const auth = useAuthStore();
 
-/** 是否显示底部导航（默认显示） */
+/** 是否显示移动端底部导航（默认显示；详情/编辑页为 false） */
 const showTabbar = computed(() => route.meta.showTabbar !== false);
 
-/**
- * 首次使用引导：只对已登录用户、且还从没看过的人自动弹一次。
- * 跳过或走完都会记进 localStorage，不再打扰（设置页可以重看）。
- */
+/** 按当前路由自动识别 Elk / Memos 画布模式（零侵入路由定义） */
+const surfaceMode = computed<"elk" | "memos">(() =>
+  MEMOS_ROUTE_NAMES.has(String(route.name ?? "")) ? "memos" : "elk"
+);
+
+/** 首次使用引导：仅对已登录且未看过的用户自动触发一次 */
 async function maybeAutoStart(): Promise<void> {
   if (readTourStatus() !== "unseen") return;
   try {
@@ -33,7 +47,7 @@ async function maybeAutoStart(): Promise<void> {
     if (!steps.length) return;
     startTour(steps);
   } catch {
-    // 引导拼装失败就当没这回事，不影响正常使用
+    // 引导拼装失败时静默忽略，不影响正常使用
   }
 }
 
@@ -41,7 +55,6 @@ watch(
   () => auth.loaded,
   (loaded) => {
     if (!loaded || !auth.isLoggedIn) return;
-    // 稍等一下，让首页内容先出来，第一步落在首页上更自然
     setTimeout(() => void maybeAutoStart(), 700);
   },
   { immediate: true }
@@ -50,24 +63,47 @@ watch(
 
 <template>
   <div
-    class="mx-auto flex min-h-screen min-h-dvh w-full max-w-app flex-col bg-page lg:max-w-none lg:pl-16"
+    :data-surface="surfaceMode"
+    class="min-h-screen min-h-dvh w-full transition-colors"
   >
-    <!-- 桌面端左侧导航（fixed，移动端不渲染） -->
-    <AppSidebar />
+    <a
+      href="#main-content"
+      class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[110] focus:rounded-lg focus:bg-primary focus:px-3.5 focus:py-2 focus:text-xs focus:font-medium focus:text-white"
+    >
+      跳到主内容
+    </a>
+    <div class="mx-auto flex min-h-screen min-h-dvh w-full max-w-layout justify-center">
+      <!-- 左侧导航（平板 68px 图标栏 / 桌面 232px 完整导航） -->
+      <AppSidebar />
 
-    <AppHeader />
+      <!-- 中间主栏：桌面锁定最佳阅读宽度 660px，左右极细 1px 边框 -->
+      <div
+        :data-surface="surfaceMode"
+        class="flex min-w-0 flex-1 flex-col transition-colors md:border-l md:border-subtle lg:max-w-feed lg:border-r"
+      >
+        <AppHeader :surface="surfaceMode" />
 
-    <!-- 内容区：移动端为固定底栏预留高度，桌面端留 24px -->
-    <main class="flex-1" :class="showTabbar ? 'pb-16 lg:pb-6' : 'pb-4'">
-      <!-- 桌面端内容容器：960px 居中 + 左右 24px 留白 -->
-      <div class="mx-auto w-full lg:max-w-[960px] lg:px-6">
-        <RouterView />
+        <main
+          id="main-content"
+          class="flex-1"
+          :class="
+            showTabbar
+              ? 'pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-8'
+              : 'pb-6'
+          "
+        >
+          <RouterView />
+        </main>
       </div>
-    </main>
 
+      <!-- 右侧辅助发现区（仅 >=1280px 显示） -->
+      <AppRightRail />
+    </div>
+
+    <!-- 移动端底部导航（仅 <768px 显示） -->
     <AppTabbar v-if="showTabbar" />
 
-    <!-- 首次使用引导（浮层，不影响布局） -->
+    <!-- 首次使用引导浮层 -->
     <OnboardingTour />
   </div>
 </template>

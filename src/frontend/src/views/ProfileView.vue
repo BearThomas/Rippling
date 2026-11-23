@@ -68,7 +68,7 @@ async function handleSignOut(): Promise<void> {
     <button
       v-if="auth.isLoggedIn"
       type="button"
-      class="btn-secondary mt-3 w-full text-red-500"
+      class="btn-secondary mt-3 w-full text-danger"
       @click="handleSignOut"
     >
       退出登录

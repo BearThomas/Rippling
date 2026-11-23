@@ -1,60 +1,181 @@
 /**
- * 主题系统 — CSS 变量定义
+ * 主题系统 — 语义 CSS 变量定义（DESIGN.md 13 语义 Token + 旧版 --c-* 桥接）
  *
- * 四套预设主题（light / dark / campus / warm），
- * theme store 会在运行时根据 /api/config 返回的主题配置
- * 覆写 :root 上的变量，管理面板自定义 CSS 也由 theme store 注入。
- *
- * 变量说明：
- *   --c-primary    主题色（按钮、链接、高亮）
- *   --c-accent     强调色（徽标、活跃状态辅助色）
- *   --c-bg         页面背景色
- *   --c-surface    卡片 / 面板背景色
- *   --c-text       主文字色
- *   --c-text-soft  次级文字色
- *   --c-border     边框 / 分割线色
+ * 兼容架构说明：
+ *   stores/theme.ts 与 index.html 免闪烁脚本在运行时覆写根元素的四条变量：
+ *     --c-primary / --c-bg / --c-text / --c-accent
+ *   这里保留这四条变量作为运行时动态覆写底座，并将 DESIGN.md 规范中的语义色
+ *   通过变量派生与其联动，同时提供四套预设（light / dark / campus / warm）的完整色阶：
+ *     --bg-canvas / --bg-canvas-soft / --bg-surface / --bg-hover
+ *     --border-subtle / --border-strong
+ *     --text-primary / --text-secondary / --text-muted
+ *     --accent / --accent-soft / --accent-warm / --danger
  */
 
-/* 默认 = light 预设 */
+/* 默认 = light 预设（Elk 纯白主画布 + Memos 暖灰副画布） */
 :root {
-  --c-primary: #3b82f6;
-  --c-accent: #10b981;
-  --c-bg: #f9fafb;
+  color-scheme: light;
+
+  /* 运行时覆写底座（与 utils/themePresets.ts light 一致） */
+  --c-primary: #2563eb;
+  --c-accent: #e11d48;
+  --c-bg: #ffffff;
   --c-surface: #ffffff;
-  --c-text: #1f2937;
-  --c-text-soft: #6b7280;
-  --c-border: #e5e7eb;
+  --c-text: #18181b;
+  --c-text-soft: #52525b;
+  --c-border: #e8e8ec;
+
+  /* DESIGN.md 核心 13 语义 Token */
+  --bg-canvas: var(--c-bg);
+  --bg-canvas-soft: #f7f7f5;
+  --bg-surface: var(--c-surface);
+  --bg-hover: #f4f4f5;
+  --border-subtle: var(--c-border);
+  --border-strong: #d4d4dc;
+  --text-primary: var(--c-text);
+  --text-secondary: var(--c-text-soft);
+  --text-muted: #8b8b96;
+  --accent: var(--c-primary);
+  --accent-soft: color-mix(in srgb, var(--c-primary) 9%, transparent);
+  --accent-warm: #e11d48;
+  --accent-warm-soft: rgba(225, 29, 72, 0.1);
+  --danger: #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.1);
+
+  /* 辅助语义色与浮层阴影（仅用于弹窗/下拉菜单/FAB，严禁用于主信息流） */
+  --warning: #d97706;
+  --warning-soft: rgba(217, 119, 6, 0.12);
+  --success: #059669;
+  --success-soft: rgba(5, 150, 105, 0.1);
+  --overlay-scrim: rgba(17, 18, 20, 0.45);
+  --shadow-popover:
+    0 6px 20px -4px rgba(24, 24, 27, 0.09),
+    0 2px 6px -2px rgba(24, 24, 27, 0.05);
+  --shadow-fab: 0 4px 14px -2px rgba(24, 24, 27, 0.18);
 }
 
-/* 深色预设 */
+/* 深色预设（DESIGN.md 中性炭灰系） */
 :root[data-theme="dark"] {
+  color-scheme: dark;
+
   --c-primary: #60a5fa;
-  --c-accent: #34d399;
-  --c-bg: #111827;
-  --c-surface: #1f2937;
-  --c-text: #f9fafb;
-  --c-text-soft: #9ca3af;
-  --c-border: #374151;
+  --c-accent: #fb7185;
+  --c-bg: #111214;
+  --c-surface: #1b1d21;
+  --c-text: #f4f4f5;
+  --c-text-soft: #a1a1aa;
+  --c-border: #272a30;
+
+  --bg-canvas: var(--c-bg);
+  --bg-canvas-soft: #16171a;
+  --bg-surface: var(--c-surface);
+  --bg-hover: #23262b;
+  --border-subtle: var(--c-border);
+  --border-strong: #383c45;
+  --text-primary: var(--c-text);
+  --text-secondary: var(--c-text-soft);
+  --text-muted: #71717a;
+  --accent: var(--c-primary);
+  --accent-soft: color-mix(in srgb, var(--c-primary) 14%, transparent);
+  --accent-warm: #fb7185;
+  --accent-warm-soft: rgba(251, 113, 133, 0.14);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.14);
+
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.14);
+  --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.14);
+  --overlay-scrim: rgba(0, 0, 0, 0.65);
+  --shadow-popover:
+    0 10px 28px -4px rgba(0, 0, 0, 0.5),
+    0 4px 10px -2px rgba(0, 0, 0, 0.35);
+  --shadow-fab: 0 4px 16px -2px rgba(0, 0, 0, 0.55);
 }
 
-/* 校园预设（青绿色调） */
+/* 校园预设（青绿色调，保持高对比中性底） */
 :root[data-theme="campus"] {
+  color-scheme: light;
+
   --c-primary: #0d9488;
   --c-accent: #f59e0b;
   --c-bg: #f0fdfa;
   --c-surface: #ffffff;
   --c-text: #134e4a;
-  --c-text-soft: #5f7d7a;
-  --c-border: #ccfbf1;
+  --c-text-soft: #426865;
+  --c-border: #cdeae5;
+
+  --bg-canvas: var(--c-bg);
+  --bg-canvas-soft: #e6f7f4;
+  --bg-surface: var(--c-surface);
+  --bg-hover: #e1f4f0;
+  --border-subtle: var(--c-border);
+  --border-strong: #9fd8cf;
+  --text-primary: var(--c-text);
+  --text-secondary: var(--c-text-soft);
+  --text-muted: #5d827f;
+  --accent: var(--c-primary);
+  --accent-soft: color-mix(in srgb, var(--c-primary) 10%, transparent);
+  --accent-warm: #e11d48;
+  --accent-warm-soft: rgba(225, 29, 72, 0.1);
+  --danger: #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.1);
+
+  --warning: #d97706;
+  --warning-soft: rgba(217, 119, 6, 0.12);
+  --success: #059669;
+  --success-soft: rgba(5, 150, 105, 0.1);
+  --overlay-scrim: rgba(19, 78, 74, 0.4);
+  --shadow-popover:
+    0 6px 20px -4px rgba(19, 78, 74, 0.1),
+    0 2px 6px -2px rgba(19, 78, 74, 0.05);
+  --shadow-fab: 0 4px 14px -2px rgba(19, 78, 74, 0.2);
 }
 
-/* 暖色预设 */
+/* 暖色预设（米暖色调，提高次级文字可读对比度） */
 :root[data-theme="warm"] {
+  color-scheme: light;
+
   --c-primary: #f97316;
   --c-accent: #ef4444;
   --c-bg: #fffbeb;
   --c-surface: #ffffff;
   --c-text: #431407;
-  --c-text-soft: #a8a29e;
-  --c-border: #fed7aa;
+  --c-text-soft: #78523d;
+  --c-border: #f3d7b4;
+
+  --bg-canvas: var(--c-bg);
+  --bg-canvas-soft: #fbf4df;
+  --bg-surface: var(--c-surface);
+  --bg-hover: #fef1d8;
+  --border-subtle: var(--c-border);
+  --border-strong: #e8ba84;
+  --text-primary: var(--c-text);
+  --text-secondary: var(--c-text-soft);
+  --text-muted: #8c6d5a;
+  --accent: var(--c-primary);
+  --accent-soft: color-mix(in srgb, var(--c-primary) 11%, transparent);
+  --accent-warm: #e11d48;
+  --accent-warm-soft: rgba(225, 29, 72, 0.1);
+  --danger: #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.1);
+
+  --warning: #d97706;
+  --warning-soft: rgba(217, 119, 6, 0.12);
+  --success: #059669;
+  --success-soft: rgba(5, 150, 105, 0.1);
+  --overlay-scrim: rgba(67, 20, 7, 0.4);
+  --shadow-popover:
+    0 6px 20px -4px rgba(67, 20, 7, 0.1),
+    0 2px 6px -2px rgba(67, 20, 7, 0.05);
+  --shadow-fab: 0 4px 14px -2px rgba(67, 20, 7, 0.2);
+}
+
+/* 双模式画布切换：Elk 主信息流 vs Memos 树洞区（表白墙 / 提问箱） */
+[data-surface="elk"] {
+  background-color: var(--bg-canvas);
+}
+
+[data-surface="memos"] {
+  background-color: var(--bg-canvas-soft);
 }

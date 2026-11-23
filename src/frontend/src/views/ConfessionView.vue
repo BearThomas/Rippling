@@ -1,20 +1,23 @@
 <!--
-  表白墙页 — 匿名表白列表
+  表白墙页 — Memos 轻白卡树洞流
 
-  - 数据源：GET /api/confession/list（preview 为 100 字截断预览）
-  - 每条显示内容预览 / 点赞数 / 时间，点击进详情
-  - 右下角「发布表白」→ 页面内底部弹出层（永远匿名）
-  - 分页加载更多
+  设计要点（DESIGN.md 第 1、6 节）：
+    - 画布由 AppLayout 自动切至 --bg-canvas-soft（柔和暖灰 / 柔炭黑）
+    - 顶部置入 Memos 风格内联发布框：默认单行轻输入态，点击平滑展开多行输入与提交按钮
+    - 卡片流采用 .memo-card（rounded-xl + 1px --border-subtle + p-4 + gap-3），禁止厚重阴影
+    - 移动端滚远后仍可通过右下角快捷按钮唤起 AppDialog 发布表白
 -->
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { nextTick, onMounted, ref, shallowRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
-import LoadingSpinner from "../components/common/LoadingSpinner.vue";
+import AppDialog from "../components/common/AppDialog.vue";
+import Collapse from "../components/common/Collapse.vue";
+import FeedSkeleton from "../components/common/FeedSkeleton.vue";
 import EmptyState from "../components/common/EmptyState.vue";
 import ErrorState from "../components/common/ErrorState.vue";
+import ConfessionCard from "../components/post/ConfessionCard.vue";
 import { getConfessionList, createConfession } from "../api/confession";
-import { formatRelativeTime, formatNumber } from "../utils/format";
 import { showToast } from "../utils/toast";
 import { useAuthStore } from "../stores/auth";
 import type { ConfessionListItem } from "../types";
@@ -23,23 +26,25 @@ const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 
-/** 每页条数 */
 const PAGE_SIZE = 20;
 
-const loading = ref(true);
-const error = ref(false);
+const loading = shallowRef(true);
+const error = shallowRef(false);
 const confessions = ref<ConfessionListItem[]>([]);
 
-/** 分页状态 */
-const loadingMore = ref(false);
-const hasMore = ref(true);
+const loadingMore = shallowRef(false);
+const hasMore = shallowRef(true);
 
-/** 发布弹层状态 */
-const showComposer = ref(false);
-const draft = ref("");
-const submitting = ref(false);
+/** 顶部 Memos 内联发布框状态 */
+const inlineExpanded = shallowRef(false);
+const inlineTextarea = ref<HTMLTextAreaElement | null>(null);
 
-/** 首次加载 */
+/** 移动端快捷发布弹窗（复用 AppDialog） */
+const mobileDialogOpen = shallowRef(false);
+
+const draft = shallowRef("");
+const submitting = shallowRef(false);
+
 async function load(): Promise<void> {
   loading.value = true;
   error.value = false;
@@ -53,7 +58,6 @@ async function load(): Promise<void> {
   }
 }
 
-/** 加载更多 */
 async function loadMore(): Promise<void> {
   if (loadingMore.value || !hasMore.value) return;
   loadingMore.value = true;
@@ -68,29 +72,36 @@ async function loadMore(): Promise<void> {
   }
 }
 
-/** 进详情 */
-function openDetail(item: ConfessionListItem): void {
-  router.push({ name: "confession-detail", params: { id: item.id } });
+function ensureLogin(): boolean {
+  if (auth.isLoggedIn) return true;
+  void router.push({ path: "/login", query: { redirect: route.fullPath } });
+  return false;
 }
 
-/** 打开发布弹层（未登录先引导登录） */
-function openComposer(): void {
-  if (!auth.isLoggedIn) {
-    router.push({ path: "/login", query: { redirect: route.fullPath } });
-    return;
-  }
-  showComposer.value = true;
+async function expandInline(): Promise<void> {
+  if (!ensureLogin()) return;
+  inlineExpanded.value = true;
+  await nextTick();
+  inlineTextarea.value?.focus();
 }
 
-/** 关闭弹层 */
-function closeComposer(): void {
+function collapseInline(): void {
   if (submitting.value) return;
-  showComposer.value = false;
+  inlineExpanded.value = false;
 }
 
-/** 发布表白（永远匿名，后端不记录展示作者） */
+function openMobileDialog(): void {
+  if (!ensureLogin()) return;
+  mobileDialogOpen.value = true;
+}
+
+function closeMobileDialog(): void {
+  if (submitting.value) return;
+  mobileDialogOpen.value = false;
+}
+
 async function handleSubmit(): Promise<void> {
-  if (submitting.value) return;
+  if (submitting.value || !ensureLogin()) return;
   const content = draft.value.trim();
   if (!content) {
     showToast("内容不能为空", "error");
@@ -99,7 +110,6 @@ async function handleSubmit(): Promise<void> {
   submitting.value = true;
   try {
     const { id } = await createConfession(content);
-    // 本地构造列表项插入顶部（与后端列表结构一致）
     confessions.value = [
       {
         id,
@@ -110,7 +120,8 @@ async function handleSubmit(): Promise<void> {
       ...confessions.value,
     ];
     draft.value = "";
-    showComposer.value = false;
+    inlineExpanded.value = false;
+    mobileDialogOpen.value = false;
     showToast("发布成功", "success");
   } catch {
     // client.ts 已自动 Toast
@@ -123,93 +134,162 @@ onMounted(load);
 </script>
 
 <template>
-  <div class="px-3 pb-20 pt-3">
-    <LoadingSpinner v-if="loading" />
+  <div class="px-3.5 pb-20 pt-4 sm:px-5 sm:pb-8 sm:pt-5">
+    <!-- 顶部 Memos 风格内联匿名发布框 -->
+    <section
+      class="memo-card mb-4 transition-colors focus-within:border-primary"
+      :class="inlineExpanded ? 'border-strong' : 'hover:border-strong'"
+    >
+      <!-- 默认单行轻输入态 -->
+      <button
+        v-if="!inlineExpanded"
+        type="button"
+        class="flex w-full items-center gap-3 text-left pressable"
+        @click="expandInline"
+      >
+        <span
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-warm-soft text-accent-warm"
+        >
+          <AppSvgIcon name="heart" :size="16" />
+        </span>
+        <span class="min-w-0 flex-1 truncate text-sm text-ink-muted">
+          {{ auth.isLoggedIn ? "匿名写下一句想说的话…" : "登录后匿名写下一句想说的话…" }}
+        </span>
+        <span class="tag-pill shrink-0">写表白</span>
+      </button>
+
+      <!-- 展开多行发布态（使用 Collapse .disclosure 平滑过渡） -->
+      <Collapse :open="inlineExpanded">
+        <div>
+          <textarea
+            ref="inlineTextarea"
+            v-model="draft"
+            rows="4"
+            aria-label="匿名表白内容"
+            class="w-full resize-none bg-transparent text-[15px] leading-[1.7] text-ink outline-none placeholder:text-ink-muted"
+            placeholder="匿名说出你想说的话…不会公开你的任何身份信息"
+            maxlength="1000"
+          />
+
+          <div class="mt-2.5 flex items-center gap-2 border-t border-subtle pt-2.5">
+            <span class="inline-flex items-center gap-1 text-xs text-ink-muted">
+              <AppSvgIcon name="lock" :size="12" />
+              完全匿名
+            </span>
+            <span class="ml-auto text-xs tabular-nums text-ink-muted">
+              {{ draft.length }}/1000
+            </span>
+            <button
+              type="button"
+              class="btn-ghost !px-2.5 !py-1.5 text-xs"
+              :disabled="submitting"
+              @click="collapseInline"
+            >
+              收起
+            </button>
+            <button
+              type="button"
+              class="btn-primary !rounded-full !px-4 !py-1.5 text-xs"
+              :disabled="!draft.trim() || submitting"
+              @click="handleSubmit"
+            >
+              {{ submitting ? "发布中…" : "匿名发布" }}
+            </button>
+          </div>
+        </div>
+      </Collapse>
+    </section>
+
+    <!-- 加载 / 错误 / 轻白卡流 -->
+    <FeedSkeleton v-if="loading" variant="memos" :count="4" />
     <ErrorState v-else-if="error" @retry="load" />
 
     <template v-else>
       <div v-if="confessions.length > 0" class="space-y-3">
-        <article
+        <ConfessionCard
           v-for="item in confessions"
           :key="item.id"
-          class="card-base cursor-pointer pressable"
-          role="button"
-          tabindex="0"
-          @click="openDetail(item)"
-          @keydown.enter="openDetail(item)"
-        >
-          <!-- 内容预览（匿名，不显示作者） -->
-          <p class="whitespace-pre-line break-all text-sm leading-relaxed">{{ item.preview }}</p>
-          <div class="mt-3 flex items-center gap-4 text-xs text-ink-soft">
-            <span class="flex items-center gap-1 text-accent">
-              <AppSvgIcon name="heart" :size="14" />
-              {{ formatNumber(item.likeCount) }}
-            </span>
-            <span class="ml-auto">{{ formatRelativeTime(item.createdAt) }}</span>
-          </div>
-        </article>
+          variant="memos"
+          :id="item.id"
+          :content="item.preview"
+          :like-count="item.likeCount"
+          :created-at="item.createdAt"
+        />
 
         <!-- 加载更多 -->
-        <div class="py-2 text-center">
+        <div class="py-3 text-center">
           <button
             v-if="hasMore"
             type="button"
-            class="btn-secondary !py-1.5 text-sm"
+            class="btn-secondary !py-1.5 text-xs"
             :disabled="loadingMore"
             @click="loadMore"
           >
             {{ loadingMore ? "加载中…" : "加载更多" }}
           </button>
-          <span v-else class="text-xs text-ink-soft">已经到底啦</span>
+          <span v-else class="text-xs text-ink-muted">已经到底啦</span>
         </div>
       </div>
 
-      <EmptyState v-else text="还没有表白，来抢沙发" icon="heart" />
+      <EmptyState
+        v-else
+        text="还没有表白"
+        description="在上方匿名写下第一句温柔的话吧。"
+        icon="heart"
+      />
     </template>
 
-    <!-- 右下角发布按钮（FAB） -->
+    <!-- 移动端快捷悬浮按钮（仅 <768px 显示，复用 AppDialog） -->
     <button
       type="button"
-      class="fixed right-4 z-50 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-white shadow-lg pressable"
-      style="bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px))"
+      class="fixed right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-accent-warm text-white shadow-fab pressable md:hidden"
+      style="bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px))"
       aria-label="发布表白"
-      @click="openComposer"
+      @click="openMobileDialog"
     >
-      <AppSvgIcon name="edit" :size="20" />
+      <AppSvgIcon name="penLine" :size="20" />
     </button>
 
-    <!-- 发布弹层（底部弹出） -->
-    <div
-      v-if="showComposer"
-      class="fixed inset-0 z-50 flex items-end bg-black/40"
-      @click.self="closeComposer"
+    <!-- 移动端快捷发布弹层（reka-ui AppDialog） -->
+    <AppDialog
+      :open="mobileDialogOpen"
+      title="匿名发布表白"
+      description="完全匿名发布，不会显示你的身份信息。"
+      size="md"
+      :dismissible="!submitting"
+      @close="closeMobileDialog"
     >
-      <div class="w-full rounded-t-2xl bg-surface px-4 pb-6 pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <h3 class="text-base font-semibold">发布表白</h3>
-          <button type="button" aria-label="关闭" @click="closeComposer">
-            <AppSvgIcon name="close" :size="18" class="text-ink-soft" />
-          </button>
-        </div>
-        <p class="mb-2 text-xs text-ink-soft">完全匿名发布，不会显示你的身份。</p>
-        <textarea
-          v-model="draft"
-          class="input-base min-h-28 resize-y"
-          placeholder="匿名说出你想说的话…"
-          maxlength="1000"
-        />
-        <div class="mt-2 flex items-center justify-between">
-          <span class="text-[10px] text-ink-soft">{{ draft.length }}/1000</span>
+      <textarea
+        v-model="draft"
+        rows="5"
+        class="input-base resize-y leading-relaxed"
+        placeholder="匿名说出你想说的话…"
+        maxlength="1000"
+      />
+      <p class="mt-1.5 text-right text-xs tabular-nums text-ink-muted">
+        {{ draft.length }}/1000
+      </p>
+
+      <template #footer>
+        <div class="flex items-center justify-end gap-2.5">
           <button
             type="button"
-            class="btn-primary !py-1.5 text-sm disabled:opacity-50"
+            class="btn-secondary flex-1 sm:flex-none"
+            :disabled="submitting"
+            @click="closeMobileDialog"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="btn-primary flex-1 sm:flex-none"
             :disabled="!draft.trim() || submitting"
             @click="handleSubmit"
           >
             {{ submitting ? "发布中…" : "发布" }}
           </button>
         </div>
-      </div>
-    </div>
+      </template>
+    </AppDialog>
   </div>
 </template>

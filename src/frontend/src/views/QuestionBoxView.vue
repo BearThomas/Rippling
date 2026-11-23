@@ -1,19 +1,21 @@
 <!--
-  提问箱页
+  提问箱页 — Memos 问答轻白卡流
 
-  按路由参数 :userId 查看对应用户的提问箱：
-  - 未启用显示「提问箱未开启」；
-  - 登录的非本人用户可匿名提问（仅粉丝可提问时未关注则禁用）；
-  - 已回答的问题公开展示，未回答的仅箱主可见（后端过滤）；
-  - 箱主可内联回答 / 修改回答、删除问题（软删除）。
+  设计要点（DESIGN.md 第 1、6 节）：
+    - 画布由 AppLayout 自动切至 --bg-canvas-soft
+    - 顶部简洁箱主头卡（带 UserAvatar 与状态胶囊）+ 内联匿名提问卡
+    - 问答列表使用 QuestionItem 轻白卡（提问浅底、回答纯白主文），箱主内联回答无缝融入卡片
+    - 删除二次确认替换为全局 ConfirmDialog
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import LoadingSpinner from "../components/common/LoadingSpinner.vue";
+import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
+import FeedSkeleton from "../components/common/FeedSkeleton.vue";
 import EmptyState from "../components/common/EmptyState.vue";
 import ErrorState from "../components/common/ErrorState.vue";
 import QuestionItem from "../components/question/QuestionItem.vue";
+import UserAvatar from "../components/user/UserAvatar.vue";
 import {
   getQuestionBox,
   listQuestions,
@@ -24,41 +26,31 @@ import {
 import { getUserProfile } from "../api/user";
 import { useAuthStore } from "../stores/auth";
 import { showToast } from "../utils/toast";
+import { confirmAction } from "../composables/useConfirm";
 import type { QuestionBoxInfo, QuestionInfo, UserPublicProfile } from "../types";
 
-/** 分页大小 */
 const PAGE_SIZE = 20;
-/** 提问 / 回答字数上限（与后端一致） */
 const CONTENT_MAX = 500;
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 
-/** 箱主 ID（路由参数） */
 const ownerId = computed(() => route.params.userId as string);
+const isOwner = computed(() => Boolean(auth.userId) && auth.userId === ownerId.value);
 
-/** 当前用户是否为箱主 */
-const isOwner = computed(() => !!auth.userId && auth.userId === ownerId.value);
-
-// ------------------------------------------------------------
-//  数据加载
-// ------------------------------------------------------------
-
-const loading = ref(true);
-const error = ref(false);
+const loading = shallowRef(true);
+const error = shallowRef(false);
 const box = ref<QuestionBoxInfo | null>(null);
 const owner = ref<UserPublicProfile | null>(null);
 const questions = ref<QuestionInfo[]>([]);
-const hasMore = ref(false);
-const listLoading = ref(false);
+const hasMore = shallowRef(false);
+const listLoading = shallowRef(false);
 
-/** 拉取提问箱设置 + 箱主资料 + 问题列表 */
 async function load(): Promise<void> {
   loading.value = true;
   error.value = false;
   try {
-    // 三个请求互不依赖，并行发出
     const [boxData, ownerData] = await Promise.all([
       getQuestionBox(ownerId.value),
       getUserProfile(ownerId.value),
@@ -66,16 +58,14 @@ async function load(): Promise<void> {
     box.value = boxData;
     owner.value = ownerData;
     questions.value = [];
-    // 未启用时也拉一次列表（箱主可能想看历史问题）
     await loadQuestions(true);
   } catch {
-    error.value = true; // client.ts 已自动 Toast
+    error.value = true;
   } finally {
     loading.value = false;
   }
 }
 
-/** 加载问题列表（reset 时从第一页开始） */
 async function loadQuestions(reset: boolean): Promise<void> {
   if (listLoading.value) return;
   listLoading.value = true;
@@ -91,28 +81,21 @@ async function loadQuestions(reset: boolean): Promise<void> {
   }
 }
 
-// ------------------------------------------------------------
-//  提问
-// ------------------------------------------------------------
+const questionDraft = shallowRef("");
+const asking = shallowRef(false);
 
-const questionDraft = ref("");
-const asking = ref(false);
-
-/** 仅粉丝可提问且未关注 → 禁用提问 */
 const needFollowToAsk = computed(
   () =>
-    !!box.value?.enabled &&
-    !!box.value?.onlyFollowers &&
+    Boolean(box.value?.enabled) &&
+    Boolean(box.value?.onlyFollowers) &&
     !isOwner.value &&
     !owner.value?.isFollowedByMe
 );
 
-/** 是否可展示提问输入框（登录 + 非本人 + 已启用） */
 const canAsk = computed(
-  () => !!auth.isLoggedIn && !isOwner.value && !!box.value?.enabled
+  () => Boolean(auth.isLoggedIn) && !isOwner.value && Boolean(box.value?.enabled)
 );
 
-/** 提交提问（匿名，askerId 由后端保证不返回） */
 async function submitQuestion(): Promise<void> {
   const content = questionDraft.value.trim();
   if (!content) {
@@ -130,29 +113,23 @@ async function submitQuestion(): Promise<void> {
     showToast("提问成功，回答后公开展示", "success");
     questionDraft.value = "";
   } catch {
-    // client.ts 已自动 Toast（未启用 / 仅粉丝等）
+    // client.ts 已自动 Toast
   } finally {
     asking.value = false;
   }
 }
 
-/** 未关注时点击提问 → 引导关注 */
 function onAskBlocked(): void {
   if (!auth.isLoggedIn) {
-    router.push({ path: "/login", query: { redirect: route.fullPath } });
+    void router.push({ path: "/login", query: { redirect: route.fullPath } });
     return;
   }
   showToast("需要关注 TA 后才能提问", "error");
 }
 
-// ------------------------------------------------------------
-//  箱主：回答 / 删除
-// ------------------------------------------------------------
-
-/** 正在回答的问题 ID（内联输入框展开标记） */
-const activeAnswerId = ref<string | null>(null);
-const answerDraft = ref("");
-const answering = ref(false);
+const activeAnswerId = shallowRef<string | null>(null);
+const answerDraft = shallowRef("");
+const answering = shallowRef(false);
 
 function openAnswer(question: QuestionInfo): void {
   activeAnswerId.value = question.id;
@@ -164,7 +141,6 @@ function closeAnswer(): void {
   answerDraft.value = "";
 }
 
-/** 提交回答（≤500 字） */
 async function submitAnswer(questionId: string): Promise<void> {
   const answer = answerDraft.value.trim();
   if (!answer) {
@@ -189,9 +165,15 @@ async function submitAnswer(questionId: string): Promise<void> {
   }
 }
 
-/** 删除问题（软删除，二次确认） */
 async function handleDelete(question: QuestionInfo): Promise<void> {
-  if (!window.confirm("确定删除这条提问吗？删除后不可恢复展示。")) return;
+  const confirmed = await confirmAction({
+    title: "确定删除这条提问吗？",
+    description: "删除后将无法恢复展示。",
+    confirmText: "删除",
+    variant: "danger",
+  });
+  if (!confirmed) return;
+
   try {
     await deleteQuestion(question.id);
     showToast("已删除", "success");
@@ -201,68 +183,106 @@ async function handleDelete(question: QuestionInfo): Promise<void> {
   }
 }
 
-// 切换箱主（同路由参数变化）时重新加载
 watch(ownerId, (next, prev) => {
-  if (next && next !== prev) load();
+  if (next && next !== prev) void load();
 });
 
 onMounted(load);
 </script>
 
 <template>
-  <div class="px-3 pt-3 pb-8">
-    <LoadingSpinner v-if="loading" />
+  <div class="px-3.5 pb-10 pt-4 sm:px-5 sm:pt-5">
+    <FeedSkeleton v-if="loading" variant="memos" :count="3" />
     <ErrorState v-else-if="error" message="提问箱加载失败" @retry="load" />
 
     <template v-else-if="box && owner">
-      <!-- 顶部：所有者用户名 + 状态 -->
-      <div class="card-base flex items-center justify-between">
-        <div class="min-w-0">
+      <!-- 顶部箱主信息轻白卡 -->
+      <header class="memo-card flex items-center gap-3">
+        <RouterLink
+          :to="{ name: 'user-profile', params: { id: ownerId } }"
+          class="shrink-0"
+        >
+          <UserAvatar
+            :src="owner.avatar"
+            :name="owner.username"
+            :name-color="owner.nameColor"
+            size="lg"
+          />
+        </RouterLink>
+
+        <div class="min-w-0 flex-1">
           <p
-            class="truncate font-semibold"
-            :style="owner.nameColor ? `color: ${owner.nameColor}` : ''"
+            class="truncate text-[15px] font-semibold leading-5 text-ink"
+            :style="owner.nameColor ? { color: owner.nameColor } : undefined"
           >
             {{ owner.username }} 的提问箱
           </p>
-          <p class="mt-1 text-xs text-ink-soft">
-            {{ box.enabled
-              ? (box.onlyFollowers ? "已开启 · 仅粉丝可提问" : "已开启")
-              : "未开启" }}
-          </p>
+          <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <span :class="box.enabled ? 'tag-pill-accent' : 'tag-pill'">
+              {{ box.enabled ? "已开启" : "未开启" }}
+            </span>
+            <span v-if="box.enabled && box.onlyFollowers" class="tag-pill">
+              仅粉丝可提问
+            </span>
+          </div>
         </div>
-        <RouterLink
-          :to="{ name: 'user-profile', params: { id: ownerId } }"
-          class="shrink-0 text-sm text-primary"
-        >
-          主页
-        </RouterLink>
-      </div>
 
-      <!-- 未启用 -->
-      <EmptyState v-if="!box.enabled" text="提问箱未开启" icon="inbox" />
+        <RouterLink
+          v-if="isOwner"
+          to="/settings"
+          class="btn-secondary shrink-0 !px-3 !py-1.5 text-xs"
+        >
+          设置
+        </RouterLink>
+        <RouterLink
+          v-else
+          :to="{ name: 'user-profile', params: { id: ownerId } }"
+          class="inline-flex shrink-0 items-center gap-0.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-accent-soft pressable"
+        >
+          TA 的主页
+          <AppSvgIcon name="chevronRight" :size="14" />
+        </RouterLink>
+      </header>
+
+      <!-- 未启用提示 -->
+      <EmptyState
+        v-if="!box.enabled"
+        text="提问箱未开启"
+        :description="isOwner ? '前往「设置 → 提问箱设置」即可开启接收匿名提问。' : '对方暂未开放匿名提问。'"
+        icon="helpCircle"
+      >
+        <RouterLink v-if="isOwner" to="/settings" class="btn-primary !py-2 text-xs">
+          前往设置开启
+        </RouterLink>
+      </EmptyState>
 
       <template v-else>
-        <!-- 提问输入框（登录用户，非本人） -->
-        <div v-if="canAsk || needFollowToAsk" class="card-base mt-3">
-          <p class="mb-2 text-xs text-ink-soft">
-            提问完全匿名，回答后问题与回答将公开展示。
-          </p>
+        <!-- Memos 内联匿名提问卡（登录且非本人） -->
+        <section
+          v-if="canAsk || needFollowToAsk"
+          class="memo-card mt-3 transition-colors focus-within:border-primary"
+        >
           <textarea
             v-model="questionDraft"
             rows="3"
-            class="input-base"
+            aria-label="匿名提问内容"
+            class="w-full resize-none bg-transparent text-[15px] leading-[1.7] text-ink outline-none placeholder:text-ink-muted disabled:opacity-50"
             :maxlength="CONTENT_MAX"
             :disabled="needFollowToAsk || asking"
-            placeholder="想问点什么？"
-          ></textarea>
-          <div class="mt-2 flex items-center justify-between">
-            <span class="text-xs text-ink-soft">
+            placeholder="想问 TA 点什么？提问完全匿名，箱主回答后将公开展示…"
+          />
+          <div class="mt-2.5 flex items-center gap-2 border-t border-subtle pt-2.5">
+            <span class="inline-flex items-center gap-1 text-xs text-ink-muted">
+              <AppSvgIcon name="lock" :size="12" />
+              完全匿名
+            </span>
+            <span class="ml-auto text-xs tabular-nums text-ink-muted">
               {{ questionDraft.length }}/{{ CONTENT_MAX }}
             </span>
             <button
               v-if="needFollowToAsk"
               type="button"
-              class="btn-secondary opacity-60"
+              class="btn-secondary !rounded-full !px-3.5 !py-1.5 text-xs"
               @click="onAskBlocked"
             >
               需关注后提问
@@ -270,84 +290,92 @@ onMounted(load);
             <button
               v-else
               type="button"
-              class="btn-primary"
-              :disabled="asking"
+              class="btn-primary !rounded-full !px-4 !py-1.5 text-xs"
+              :disabled="!questionDraft.trim() || asking"
               @click="submitQuestion"
             >
               {{ asking ? "提交中…" : "匿名提问" }}
             </button>
           </div>
-        </div>
-        <!-- 未登录引导 -->
+        </section>
+
+        <!-- 游客登录引导 -->
         <div
           v-else-if="!isOwner && !auth.isLoggedIn"
-          class="card-base mt-3 text-center text-sm text-ink-soft"
+          class="memo-card mt-3 flex items-center justify-between gap-3 text-sm text-ink-secondary"
         >
-          <RouterLink :to="{ path: '/login', query: { redirect: route.fullPath } }" class="text-primary">
-            登录
+          <span>登录后即可向 TA 发起匿名提问</span>
+          <RouterLink
+            :to="{ path: '/login', query: { redirect: route.fullPath } }"
+            class="btn-primary shrink-0 !rounded-full !px-4 !py-1.5 text-xs"
+          >
+            去登录
           </RouterLink>
-          后即可向 TA 提问
         </div>
 
-        <!-- 问题列表 -->
-        <div class="mt-3 space-y-3">
-          <template v-for="question in questions" :key="question.id">
-            <!-- 正在回答的问题：展开内联输入 -->
-            <div v-if="isOwner && activeAnswerId === question.id" class="card-base">
-              <p class="text-sm font-medium leading-relaxed">{{ question.content }}</p>
+        <!-- 问答轻白卡流 -->
+        <section class="mt-4 space-y-3">
+          <QuestionItem
+            v-for="question in questions"
+            :key="question.id"
+            :question="question"
+            :is-owner="isOwner"
+            :editing="isOwner && activeAnswerId === question.id"
+            @answer="openAnswer(question)"
+            @delete="handleDelete(question)"
+          >
+            <template #editor>
               <textarea
                 v-model="answerDraft"
                 rows="3"
-                class="input-base mt-3"
+                class="input-base resize-y leading-relaxed"
                 :maxlength="CONTENT_MAX"
-                placeholder="写下你的回答…"
-              ></textarea>
-              <div class="mt-2 flex items-center justify-between">
-                <span class="text-xs text-ink-soft">
+                placeholder="写下你的回答…提交后将与问题一起公开展示"
+              />
+              <div class="mt-2.5 flex items-center justify-between gap-2">
+                <span class="text-xs tabular-nums text-ink-muted">
                   {{ answerDraft.length }}/{{ CONTENT_MAX }}
                 </span>
-                <div class="flex gap-2">
-                  <button type="button" class="btn-secondary" @click="closeAnswer">
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="btn-secondary !px-3.5 !py-1.5 text-xs"
+                    :disabled="answering"
+                    @click="closeAnswer"
+                  >
                     取消
                   </button>
                   <button
                     type="button"
-                    class="btn-primary"
-                    :disabled="answering"
+                    class="btn-primary !px-3.5 !py-1.5 text-xs"
+                    :disabled="!answerDraft.trim() || answering"
                     @click="submitAnswer(question.id)"
                   >
-                    {{ answering ? "提交中…" : "提交回答" }}
+                    {{ answering ? "提交中…" : "公开回答" }}
                   </button>
                 </div>
               </div>
-            </div>
-
-            <!-- 常规展示 -->
-            <QuestionItem
-              v-else
-              :question="question"
-              :is-owner="isOwner"
-              @answer="openAnswer(question)"
-              @delete="handleDelete(question)"
-            />
-          </template>
+            </template>
+          </QuestionItem>
 
           <EmptyState
             v-if="questions.length === 0 && !listLoading"
             :text="isOwner ? '还没有收到提问' : '还没有已回答的问题'"
-            icon="inbox"
+            :description="isOwner ? '把你的主页分享给同学，就能收到大家的匿名提问啦。' : '成为第一个向 TA 提问的人吧。'"
+            icon="helpCircle"
           />
 
-          <button
-            v-if="hasMore"
-            type="button"
-            class="btn-secondary w-full"
-            :disabled="listLoading"
-            @click="loadQuestions(false)"
-          >
-            {{ listLoading ? "加载中…" : "加载更多" }}
-          </button>
-        </div>
+          <div v-if="hasMore" class="pt-2 text-center">
+            <button
+              type="button"
+              class="btn-secondary !py-1.5 text-xs"
+              :disabled="listLoading"
+              @click="loadQuestions(false)"
+            >
+              {{ listLoading ? "加载中…" : "加载更多" }}
+            </button>
+          </div>
+        </section>
       </template>
     </template>
   </div>

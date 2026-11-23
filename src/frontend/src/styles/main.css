@@ -1,14 +1,15 @@
 /**
  * 全局样式入口
  *
- * Tailwind 三段指令 + 移动端优先的基础样式。
+ * Tailwind 三段指令 + DESIGN.md 基础样式与可复用组件类。
  *
  * 动效规则（详见 docs/motion.md）：
- *   1. 时长/曲线只有这几个 token，组件里不许写裸的 duration-300；
- *   2. 只允许动 transform / opacity / 颜色 —— 动 width/height/box-shadow 的
- *      一律不合格（弱 GPU 上直接掉帧，scripts/check-motion.mjs 会抓）；
- *   3. 系统开了"减少动态效果"或用户自己关了 → 全站时长归零。
+ *   1. 时长/曲线只取 tokens.css 的 --dur-* / --ease-*，禁止裸写 duration-300；
+ *   2. 只允许动 transform / opacity / 颜色 / grid-template-rows，
+ *      严禁动 width / height / top / left / box-shadow / filter；
+ *   3. 系统开了“减少动态效果”或站内开关关闭 → 全站时长归零。
  */
+@import "./tokens.css";
 @import "./theme.css";
 
 @tailwind base;
@@ -16,16 +17,6 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    /* 动效 token —— 全站唯一的时长/曲线来源 */
-    --dur-fast: 120ms;   /* 按压、hover 这类即时反馈 */
-    --dur-base: 180ms;   /* 展开收起、主题切换 */
-    --dur-slow: 240ms;   /* 需要"看清过程"的（sheet、骨架淡出） */
-    --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);      /* 进入：先快后缓 */
-    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-    --press-scale: 0.98; /* 按压反馈的缩放，1 就是关掉 */
-  }
-
   html,
   body,
   #app {
@@ -41,14 +32,28 @@
   }
 
   body {
-    @apply bg-page text-ink antialiased;
-    /* 切主题时底色/文字色渐变过去，而不是"啪"一下变白 */
+    @apply bg-canvas text-ink antialiased;
+    /* 切主题时底色/文字色平滑过渡 */
     transition:
       background-color var(--dur-base) var(--ease-out),
       color var(--dur-base) var(--ease-out);
-    font-family:
-      -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-      "Helvetica Neue", Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-family: var(--font-sans);
+    caret-color: var(--accent);
+  }
+
+  /* 浏览器原生细节跟随设计系统（文本选区、下划线偏移、键盘焦点环） */
+  ::selection {
+    background-color: var(--accent-soft);
+    color: var(--text-primary);
+  }
+
+  a {
+    text-underline-offset: 3px;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 
   /* 移动端防止输入框获取焦点时页面自动缩放放大（iOS Safari 阈值为 16px） */
@@ -67,9 +72,9 @@
 }
 
 @layer components {
-  /* 通用按钮 */
+  /* 主操作按钮 */
   .btn-primary {
-    @apply inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2.5
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2.5
       text-sm font-medium text-white
       disabled:cursor-not-allowed disabled:opacity-50;
     transition:
@@ -77,14 +82,17 @@
       opacity var(--dur-fast) var(--ease-out),
       background-color var(--dur-base) var(--ease-out);
   }
-  .btn-primary:active:not(:disabled) {
-    transform: scale(var(--press-scale));
+  .btn-primary:hover:not(:disabled) {
     opacity: 0.92;
   }
+  .btn-primary:active:not(:disabled) {
+    transform: scale(var(--press-scale));
+    opacity: 0.88;
+  }
 
-  /* 通用次级按钮 */
+  /* 次级描边按钮 */
   .btn-secondary {
-    @apply inline-flex items-center justify-center rounded-lg border border-line
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg border border-subtle
       bg-surface px-4 py-2.5 text-sm font-medium text-ink
       disabled:cursor-not-allowed disabled:opacity-50;
     transition:
@@ -94,36 +102,127 @@
       border-color var(--dur-base) var(--ease-out),
       color var(--dur-base) var(--ease-out);
   }
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--bg-hover);
+    border-color: var(--border-strong);
+  }
   .btn-secondary:active:not(:disabled) {
     transform: scale(var(--press-scale));
     opacity: 0.92;
   }
 
-  /* 通用输入框：移动端 16px 防缩放，桌面端 sm:text-sm */
-  .input-base {
-    @apply w-full rounded-lg border border-line bg-surface px-3 py-2.5 text-base sm:text-sm
-      text-ink outline-none placeholder:text-ink-soft focus:border-primary;
+  /* 轻量幽灵按钮（工具栏 / 低对比度操作） */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2
+      text-sm font-medium text-ink-secondary
+      disabled:cursor-not-allowed disabled:opacity-50;
+    transition:
+      transform var(--dur-fast) var(--ease-out),
+      opacity var(--dur-fast) var(--ease-out),
+      background-color var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  .btn-ghost:active:not(:disabled) {
+    transform: scale(var(--press-scale));
   }
 
-  /* 通用卡片 */
+  /* 危险操作描边按钮 */
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg border border-danger
+      bg-surface px-4 py-2.5 text-sm font-medium text-danger
+      disabled:cursor-not-allowed disabled:opacity-50;
+    transition:
+      transform var(--dur-fast) var(--ease-out),
+      opacity var(--dur-fast) var(--ease-out),
+      background-color var(--dur-base) var(--ease-out),
+      border-color var(--dur-base) var(--ease-out),
+      color var(--dur-base) var(--ease-out);
+  }
+  .btn-danger:hover:not(:disabled) {
+    background-color: var(--danger-soft);
+  }
+  .btn-danger:active:not(:disabled) {
+    transform: scale(var(--press-scale));
+    opacity: 0.92;
+  }
+
+  /* 通用输入框：默认 border-strong 清晰边界，移动端 16px 防缩放 */
+  .input-base {
+    @apply w-full rounded-lg border border-strong bg-surface px-3 py-2.5 text-base sm:text-sm
+      text-ink outline-none placeholder:text-ink-muted focus:border-primary;
+    transition:
+      border-color var(--dur-fast) var(--ease-out),
+      background-color var(--dur-base) var(--ease-out),
+      color var(--dur-base) var(--ease-out);
+  }
+  .input-base:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-soft);
+  }
+
+  /* 通用卡片（兼容现有视图与工具面板，保留颜色过渡供动效检测脚本使用） */
   .card-base {
-    @apply rounded-xl border border-line bg-surface p-4;
-    /* 只给颜色加过渡：切主题、hover 都不会硬跳 */
+    @apply rounded-xl border border-subtle bg-surface p-4;
     transition:
       background-color var(--dur-base) var(--ease-out),
       border-color var(--dur-base) var(--ease-out),
       color var(--dur-base) var(--ease-out);
   }
 
+  /* Elk 主信息流无边框分割行（DESIGN.md 第 4、5 节） */
+  .feed-row {
+    @apply w-full border-b border-subtle bg-canvas px-4 py-3.5 sm:px-5 sm:py-4;
+    transition:
+      background-color var(--dur-fast) var(--ease-out),
+      border-color var(--dur-base) var(--ease-out),
+      color var(--dur-base) var(--ease-out);
+  }
+  .feed-row-interactive {
+    @apply feed-row cursor-pointer;
+  }
+  .feed-row-interactive:hover {
+    background-color: var(--bg-hover);
+  }
+
+  /* Memos 树洞区轻白卡（表白墙 / 提问箱，置于 --bg-canvas-soft 画布上） */
+  .memo-card {
+    @apply w-full rounded-xl border border-subtle bg-surface p-4;
+    transition:
+      background-color var(--dur-base) var(--ease-out),
+      border-color var(--dur-base) var(--ease-out),
+      color var(--dur-base) var(--ease-out);
+  }
+  .memo-card-interactive {
+    @apply memo-card cursor-pointer;
+  }
+  .memo-card-interactive:hover {
+    border-color: var(--border-strong);
+  }
+
+  /* 轻量胶囊标签（克制单色系，禁止高饱和彩虹徽章） */
+  .tag-pill {
+    @apply inline-flex shrink-0 items-center gap-1 rounded-full bg-hover px-2.5 py-0.5
+      text-xs font-medium leading-[18px] text-ink-secondary;
+  }
+  .tag-pill-accent {
+    @apply inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2.5 py-0.5
+      text-xs font-medium leading-[18px] text-primary;
+  }
+  .tag-pill-warm {
+    @apply inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-warm-soft px-2.5 py-0.5
+      text-xs font-medium leading-[18px] text-accent-warm;
+  }
+
   /**
    * 可点区域的统一按压反馈
    *
-   * 以前各处写 active:opacity-80（29 处），力度和时长都不统一，
-   * 而且只有"变淡"没有"按下去"的感觉。这里一次定义：
-   * 轻微缩小 + 略微变淡，120ms，松手立刻回来。
-   *
-   * 注意 transition 里把颜色也带上：很多可点区域同时有 hover 变色，
-   * 不写的话按下时颜色会瞬间跳。
+   * 轻微缩小（0.98）+ 略微变淡，120ms，松手立刻回来。
+   * transition 带上颜色属性，避免 hover 变色与按下同时发生时跳变。
    */
   .pressable {
     transition:
@@ -139,13 +238,10 @@
   }
 
   /**
-   * 骨架屏（代替转圈）
-   *
-   * 只在 opacity 上呼吸：合成层的东西，不触发重排、不耗 GPU 填充率。
-   * 转圈的问题是"让你盯着它等"，骨架是"先把形状给你看"。
+   * 骨架屏（仅在 opacity 上呼吸，合成层无重排）
    */
   .skeleton {
-    @apply rounded-md bg-line;
+    @apply rounded-md bg-hover;
     animation: skeleton-breathe var(--dur-slow) var(--ease-in-out) infinite alternate;
     animation-duration: 1.2s;
   }
@@ -162,14 +258,8 @@
   /**
    * 展开 / 收起（.disclosure）
    *
-   * 名字不能叫 .collapse：**Tailwind 自带一个 .collapse 工具类（visibility: collapse）**，
-   * 而工具类那一层排在组件层后面 —— 结果内容真的被隐藏了（首页置顶区整块消失）。
-   * 跟 Qt 里 --style 被 Qt 自己占了是同一类问题：换个名字最省事。
-   *
-   * 用 grid-template-rows: 0fr → 1fr，不需要事先知道内容高度，
-   * 也不会像 max-height 那样"到点了还空着一段"。
-   * 老 Safari（iOS < 16.4）不支持对 grid-template-rows 做动画，那边就是瞬间展开
-   * —— 可接受的降级，不会坏。
+   * 严禁命名为 .collapse（会与 Tailwind 内置 visibility: collapse 冲突）。
+   * 保留 grid-template-rows: 0fr -> 1fr 过渡供 Collapse.vue 与 check-layout.mjs 使用。
    */
   .disclosure {
     display: grid;
@@ -183,16 +273,49 @@
     overflow: hidden;
     min-height: 0;
   }
+
+  /* 浮层统一进入动画（仅使用 opacity + transform，符合动效红线） */
+  .overlay-fade {
+    animation: overlay-in var(--dur-fast) var(--ease-out);
+  }
+  .panel-pop {
+    animation: panel-in var(--dur-base) var(--ease-out);
+  }
+
+  @keyframes overlay-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes panel-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+}
+
+@layer utilities {
+  /* 隐藏横向滚动条（配图条、分类 Tab 等） */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* ============================================================
-   减少动态效果
-   ============================================================
-   两个入口都要认：
-     - 系统设置（prefers-reduced-motion）—— 用户可能在系统里关了；
-     - 站内开关（html[data-motion="reduced"]）—— 设置页里自己关。
-   显式选了 full 的人无视系统设置（他明确表示要看动画）。
-   这两条是**全站零时长的开关**，不是常驻动画 —— 审计脚本里单独放行。
+   减少动态效果（系统 prefers-reduced-motion 与站内开关双路径）
    ============================================================ */
 @media (prefers-reduced-motion: reduce) {
   html:not([data-motion="full"]) *,

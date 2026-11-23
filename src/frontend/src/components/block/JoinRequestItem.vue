@@ -1,10 +1,5 @@
 <!--
-  加入申请列表项（板块管理面板）
-
-  展示：申请用户名、申请时间。
-  操作：批准 / 拒绝（后端不支持拒绝原因）。
-
-  emit：approve / reject
+  加入申请列表项（板块管理面板 · Elk 紧凑分割行）
 -->
 <script setup lang="ts">
 import type { BlockJoinRequestInfo } from "../../api/block";
@@ -13,7 +8,6 @@ import UserAvatar from "../user/UserAvatar.vue";
 
 defineProps<{
   request: BlockJoinRequestInfo;
-  /** 操作进行中（禁用按钮防重复点击） */
   busy?: boolean;
 }>();
 
@@ -21,34 +15,35 @@ const emit = defineEmits<{ approve: []; reject: [] }>();
 </script>
 
 <template>
-  <div class="card-base !py-3">
-    <div class="flex items-center gap-2">
-      <!-- 头像占位（首字圆形） -->
-      <UserAvatar :name="request.username || '?'" size="md" />
+  <div class="flex items-center gap-3 border-b border-subtle px-4 py-3 sm:px-5">
+    <UserAvatar :name="request.username || '?'" size="md" />
 
-      <div class="min-w-0 flex-1">
-        <p class="truncate text-sm font-medium">{{ request.username || "未知用户" }}</p>
-        <p class="mt-0.5 text-xs text-ink-soft">申请于 {{ formatDateTime(request.createdAt) }}</p>
-      </div>
+    <div class="min-w-0 flex-1">
+      <p class="truncate text-sm font-medium text-ink">
+        {{ request.username || "未知用户" }}
+      </p>
+      <p class="mt-0.5 text-xs tabular-nums text-ink-muted">
+        申请于 {{ formatDateTime(request.createdAt) }}
+      </p>
+    </div>
 
-      <div class="flex shrink-0 gap-2">
-        <button
-          type="button"
-          class="btn-primary !px-3 !py-1.5 text-xs"
-          :disabled="busy"
-          @click="emit('approve')"
-        >
-          批准
-        </button>
-        <button
-          type="button"
-          class="btn-secondary !px-3 !py-1.5 text-xs"
-          :disabled="busy"
-          @click="emit('reject')"
-        >
-          拒绝
-        </button>
-      </div>
+    <div class="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        class="btn-primary !px-3 !py-1.5 text-xs"
+        :disabled="busy"
+        @click="emit('approve')"
+      >
+        批准
+      </button>
+      <button
+        type="button"
+        class="btn-secondary !px-3 !py-1.5 text-xs"
+        :disabled="busy"
+        @click="emit('reject')"
+      >
+        拒绝
+      </button>
     </div>
   </div>
 </template>

@@ -1,11 +1,10 @@
 <!--
-  大事记卡片
+  大事记信息流行（Elk 无边框 1px 分割线风格）
 
-  展示校园大事记：事件日期、标题、描述、点赞数（可交互）。
-  点击整卡跳转大事记页面。
+  展示事件日期、标题、摘要与点赞交互；点击整行进详情页。
 -->
 <script setup lang="ts">
-import { ref } from "vue";
+import { shallowRef } from "vue";
 import { useRouter } from "vue-router";
 import AppSvgIcon from "../layout/AppSvgIcon.vue";
 import { formatDate, formatNumber } from "../../utils/format";
@@ -25,16 +24,14 @@ const props = defineProps<{
 const router = useRouter();
 const auth = useAuthStore();
 
-/** 本地点赞状态（推荐流不返回是否已赞，默认未赞） */
-const liked = ref(false);
-const likeCount = ref(props.likeCount);
-const likeBusy = ref(false);
+const liked = shallowRef(false);
+const likeCount = shallowRef(props.likeCount);
+const likeBusy = shallowRef(false);
 
-/** 切换点赞（阻止冒泡，避免触发整卡跳转） */
 async function onToggleLike(event: Event): Promise<void> {
   event.stopPropagation();
   if (!auth.isLoggedIn) {
-    router.push({ path: "/login", query: { redirect: router.currentRoute.value.fullPath } });
+    void router.push({ path: "/login", query: { redirect: router.currentRoute.value.fullPath } });
     return;
   }
   if (likeBusy.value) return;
@@ -50,44 +47,51 @@ async function onToggleLike(event: Event): Promise<void> {
   }
 }
 
-/** 跳转大事记详情页 */
 function openTimeline(): void {
-  router.push({ name: "timeline-detail", params: { id: props.id } });
+  void router.push({ name: "timeline-detail", params: { id: props.id } });
 }
 </script>
 
 <template>
   <article
-    class="card-base cursor-pointer pressable"
+    class="feed-row-interactive"
     role="button"
     tabindex="0"
     @click="openTimeline"
     @keydown.enter="openTimeline"
   >
-    <!-- 头部：类型标签 + 事件日期 -->
-    <div class="mb-2 flex items-center gap-2">
-      <span class="flex items-center gap-1 text-xs font-medium text-primary">
-        <AppSvgIcon name="calendar" :size="14" />
+    <!-- 头部：轻量分类胶囊 + 事件日期 -->
+    <div class="flex items-center gap-2">
+      <span class="tag-pill-accent">
+        <AppSvgIcon name="calendar" :size="12" />
         大事记
       </span>
-      <span class="ml-auto text-xs text-ink-soft">{{ formatDate(eventDate) }}</span>
+      <time
+        class="ml-auto shrink-0 text-xs font-medium tabular-nums text-ink-muted"
+        :datetime="eventDate"
+      >
+        {{ formatDate(eventDate) }}
+      </time>
     </div>
 
     <!-- 标题与描述 -->
-    <h3 class="mb-1 text-base font-semibold">{{ title }}</h3>
-    <p class="whitespace-pre-line break-all text-sm leading-relaxed text-ink">
+    <h3 class="mt-2 line-clamp-2 text-[15px] font-semibold leading-[22px] text-ink sm:text-base">
+      {{ title }}
+    </h3>
+    <p class="mt-1 line-clamp-3 break-words text-sm leading-6 text-ink-secondary">
       {{ description }}
     </p>
 
-    <!-- 点赞 -->
-    <div class="mt-3 flex items-center gap-4 text-xs text-ink-soft">
+    <!-- 底部操作栏 -->
+    <div class="mt-2.5 flex items-center gap-5 text-xs tabular-nums text-ink-muted">
       <button
         type="button"
-        class="flex items-center gap-1 transition-colors"
-        :class="liked ? 'text-primary' : ''"
+        class="inline-flex items-center gap-1.5 rounded-md py-0.5 hover:text-primary pressable"
+        :class="liked ? 'font-medium text-primary' : ''"
+        :disabled="likeBusy"
         @click="onToggleLike"
       >
-        <AppSvgIcon name="thumbUp" :size="14" />
+        <AppSvgIcon name="thumbUp" :size="15" />
         {{ formatNumber(likeCount) }}
       </button>
     </div>

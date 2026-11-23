@@ -1,14 +1,22 @@
 <!--
-  图片放大查看（仅帖子详情页用，帖子流里不启用）
+  图片放大查看灯箱（基于 reka-ui Dialog）
 
-  行为：
-    - 全屏黑色遮罩，图片 object-contain 居中
+  行为（保持对外 props / emits 完全兼容）：
+    - 由 reka-ui Dialog 托管 Portal、焦点陷阱、ESC 关闭与滚动锁定
     - 点图片在「适应屏幕 ↔ 原始尺寸」之间切换（原始尺寸时容器可拖动/滚动）
-    - 多图：左右箭头 + 计数；键盘 ← → 切换，Esc 关闭
-    - 点遮罩、点关闭按钮、按 Esc 都关闭；打开时锁住页面滚动
+    - 多图支持左右箭头按钮 + 键盘 ← → 切换 + 页码计数
 -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, shallowRef, watch } from "vue";
+import {
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogOverlay,
+  DialogPortal,
+  DialogRoot,
+  DialogTitle,
+} from "reka-ui";
 import AppSvgIcon from "../layout/AppSvgIcon.vue";
 
 const props = withDefaults(
@@ -29,14 +37,20 @@ const emit = defineEmits<{
 }>();
 
 /** 是否放大到原始尺寸 */
-const zoomed = ref(false);
+const zoomed = shallowRef(false);
 
 const current = computed(() => props.urls[props.index] ?? null);
+const isVisible = computed(() => props.open && Boolean(current.value));
 const hasPrev = computed(() => props.index > 0);
 const hasNext = computed(() => props.index < props.urls.length - 1);
 
 function close(): void {
+  zoomed.value = false;
   emit("close");
+}
+
+function onOpenChange(next: boolean): void {
+  if (!next) close();
 }
 
 function go(delta: number): void {
@@ -51,11 +65,8 @@ function toggleZoom(): void {
 }
 
 function onKeydown(event: KeyboardEvent): void {
-  if (!props.open) return;
-  if (event.key === "Escape") {
-    event.preventDefault();
-    close();
-  } else if (event.key === "ArrowRight") {
+  if (!isVisible.value) return;
+  if (event.key === "ArrowRight") {
     event.preventDefault();
     go(1);
   } else if (event.key === "ArrowLeft") {
@@ -64,81 +75,96 @@ function onKeydown(event: KeyboardEvent): void {
   }
 }
 
-/** 打开时锁滚动 + 挂键盘；关闭时还原 */
-function bind(open: boolean): void {
-  if (open) {
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKeydown);
-  } else {
-    document.body.style.overflow = "";
-    window.removeEventListener("keydown", onKeydown);
-    zoomed.value = false;
-  }
-}
+watch(
+  isVisible,
+  (visible) => {
+    if (visible) {
+      window.addEventListener("keydown", onKeydown);
+    } else {
+      window.removeEventListener("keydown", onKeydown);
+      zoomed.value = false;
+    }
+  },
+  { immediate: true }
+);
 
-watch(() => props.open, bind, { immediate: true });
-onBeforeUnmount(() => bind(false));
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onKeydown);
+});
 </script>
 
 <template>
-  <div
-    v-if="open && current"
-    class="fixed inset-0 z-[120] flex flex-col bg-black/95"
-    role="dialog"
-    aria-modal="true"
-    aria-label="查看大图"
-    @click.self="close"
-  >
-    <!-- 顶部：计数 + 关闭 -->
-    <div class="flex shrink-0 items-center gap-2 px-4 py-3 text-white/80">
-      <span class="text-xs">{{ index + 1 }} / {{ urls.length }}</span>
-      <span class="text-[11px] text-white/40">点图切换缩放</span>
-      <button
-        type="button"
-        class="ml-auto flex h-9 w-9 items-center justify-center rounded-full bg-white/10 active:bg-white/20"
-        aria-label="关闭"
-        @click="close"
+  <DialogRoot :open="isVisible" @update:open="onOpenChange">
+    <DialogPortal>
+      <DialogOverlay class="overlay-fade fixed inset-0 z-[120] bg-black/95" />
+      <DialogContent
+        class="fixed inset-0 z-[125] flex flex-col outline-none"
+        @click.self="close"
       >
-        <AppSvgIcon name="close" :size="18" />
-      </button>
-    </div>
+        <DialogTitle class="sr-only">查看大图</DialogTitle>
+        <DialogDescription class="sr-only">
+          第 {{ index + 1 }} 张，共 {{ urls.length }} 张，点击图片可切换缩放
+        </DialogDescription>
 
-    <!-- 图片区：未放大时居中显示；放大后可滚动查看原始尺寸 -->
-    <div
-      class="relative flex-1 overflow-auto"
-      :class="zoomed ? 'cursor-grab' : 'cursor-zoom-in'"
-      @click.self="close"
-    >
-      <div class="flex min-h-full min-w-full items-center justify-center p-2">
-        <img
-          :src="current"
-          alt=""
-          class="select-none"
-          :class="zoomed ? 'max-w-none' : 'max-h-[calc(100dvh-8rem)] max-w-full object-contain'"
-          draggable="false"
-          @click.stop="toggleZoom"
-        />
-      </div>
-    </div>
+        <!-- 顶部：计数 + 关闭 -->
+        <div
+          class="flex shrink-0 items-center gap-2.5 px-4 py-3 text-white/85"
+          style="padding-top: max(0.75rem, env(safe-area-inset-top))"
+        >
+          <span class="text-xs font-medium tabular-nums">
+            {{ index + 1 }} / {{ urls.length }}
+          </span>
+          <span class="text-xs text-white/45">点击图片切换缩放</span>
+          <DialogClose as-child>
+            <button
+              type="button"
+              class="ml-auto flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 pressable"
+              aria-label="关闭"
+            >
+              <AppSvgIcon name="close" :size="18" />
+            </button>
+          </DialogClose>
+        </div>
 
-    <!-- 左右切换 -->
-    <button
-      v-if="hasPrev"
-      type="button"
-      class="absolute left-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white active:bg-white/20"
-      aria-label="上一张"
-      @click.stop="go(-1)"
-    >
-      <AppSvgIcon name="back" :size="18" />
-    </button>
-    <button
-      v-if="hasNext"
-      type="button"
-      class="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white active:bg-white/20"
-      aria-label="下一张"
-      @click.stop="go(1)"
-    >
-      <AppSvgIcon name="back" :size="18" class="rotate-180" />
-    </button>
-  </div>
+        <!-- 图片区：未放大时居中适应屏幕；放大后可自由滚动 -->
+        <div
+          class="relative flex-1 overflow-auto overscroll-contain"
+          :class="zoomed ? 'cursor-grab' : 'cursor-zoom-in'"
+          @click.self="close"
+        >
+          <div class="flex min-h-full min-w-full items-center justify-center p-3">
+            <img
+              v-if="current"
+              :src="current"
+              alt=""
+              class="select-none rounded-lg"
+              :class="zoomed ? 'max-w-none' : 'max-h-[calc(100dvh-7.5rem)] max-w-full object-contain'"
+              draggable="false"
+              @click.stop="toggleZoom"
+            />
+          </div>
+        </div>
+
+        <!-- 左右切换 -->
+        <button
+          v-if="hasPrev"
+          type="button"
+          class="absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 pressable"
+          aria-label="上一张"
+          @click.stop="go(-1)"
+        >
+          <AppSvgIcon name="back" :size="18" />
+        </button>
+        <button
+          v-if="hasNext"
+          type="button"
+          class="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 pressable"
+          aria-label="下一张"
+          @click.stop="go(1)"
+        >
+          <AppSvgIcon name="chevronRight" :size="18" />
+        </button>
+      </DialogContent>
+    </DialogPortal>
+  </DialogRoot>
 </template>

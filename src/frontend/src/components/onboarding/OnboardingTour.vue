@@ -6,13 +6,9 @@
     - 每一步：可选先导航到某个路由，再把目标元素挖个洞高亮，卡片贴在旁边
     - 目标元素找不到 → 自动跳过这一条（页面结构变了也不至于卡住）
     - Esc 退出；← → 上一步/下一步；设置页可以重看
-
-  实现：
-    - 高亮不用截图、不复制 DOM，只是给目标矩形套一个大阴影当遮罩（1 个元素，开销极低）
-    - 位置全部用 getBoundingClientRect 现算，滚动/缩放时重算
 -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppSvgIcon from "../layout/AppSvgIcon.vue";
 import {
@@ -26,12 +22,9 @@ import {
 const router = useRouter();
 const route = useRoute();
 
-/** 高亮矩形（视口坐标） */
 const hole = ref<{ top: number; left: number; width: number; height: number } | null>(null);
-/** 当前高亮的元素（滚动后重新量它） */
 const targetEl = ref<HTMLElement | null>(null);
-/** 正在为某一步做准备（导航 / 等元素出现） */
-const locating = ref(false);
+const locating = shallowRef(false);
 
 const step = computed<TourStep | null>(() => tourSteps.value[tourIndex.value] ?? null);
 const total = computed(() => tourSteps.value.length);
@@ -39,12 +32,10 @@ const isFirst = computed(() => tourIndex.value <= 0);
 const isLast = computed(() => tourIndex.value >= total.value - 1);
 const isWelcome = computed(() => step.value?.id === "welcome");
 const isFinish = computed(() => step.value?.id === "finish");
-/** 没有高亮目标（或目标已滚动出视口）→ 用居中卡片 */
 const centered = computed(() => !step.value?.target || !hole.value);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** 等元素出现（SPA 路由切换后 DOM 是异步渲染的） */
 async function waitForTarget(selector: string): Promise<HTMLElement | null> {
   for (let i = 0; i < 60; i++) {
     const el = document.querySelector<HTMLElement>(selector);
@@ -54,7 +45,6 @@ async function waitForTarget(selector: string): Promise<HTMLElement | null> {
   return null;
 }
 
-/** 量一次高亮矩形 */
 function measure(): void {
   const el = targetEl.value;
   if (!el) {
@@ -62,7 +52,6 @@ function measure(): void {
     return;
   }
   const rect = el.getBoundingClientRect();
-  // 目标已经滚出视口 → 不给高亮，退化成正中文案，免得不认识的东西在屏幕外
   if (rect.bottom < 0 || rect.top > window.innerHeight || rect.width === 0) {
     hole.value = null;
     return;
@@ -76,7 +65,6 @@ function measure(): void {
   };
 }
 
-/** 跳到第 i 步：必要时导航 → 等高亮目标 → 高亮 */
 async function goTo(i: number): Promise<void> {
   if (i < 0 || i >= total.value) return;
   tourIndex.value = i;
@@ -96,7 +84,6 @@ async function goTo(i: number): Promise<void> {
 
     const el = await waitForTarget(current.target);
     if (!el) {
-      // 目标不存在：跳过这一条（最后一条就结束）
       if (i < total.value - 1) {
         await goTo(i + 1);
       } else {
@@ -106,10 +93,8 @@ async function goTo(i: number): Promise<void> {
     }
 
     targetEl.value = el;
-    // 瞬时滚动：平滑滚动会让矩形在动画中途被量到，高亮框会跳
     el.scrollIntoView({ block: "center", behavior: "auto" });
-    // 有些页面滚完还会因为图片/内容撑开而挪位置，所以多重试几次
-    for (let i = 0; i < 12; i++) {
+    for (let k = 0; k < 12; k++) {
       await sleep(50);
       measure();
       if (hole.value) break;
@@ -118,10 +103,6 @@ async function goTo(i: number): Promise<void> {
     locating.value = false;
   }
 }
-
-// ------------------------------------------------------------
-//  操作
-// ------------------------------------------------------------
 
 function nextOrFinish(): void {
   if (isLast.value) {
@@ -141,13 +122,8 @@ function skip(): void {
 
 async function finish(): Promise<void> {
   endTour("done");
-  // 引导最后一步可能在管理面板上，收尾回首页，别把人扔在后台
   if (route.path !== "/") await router.push("/");
 }
-
-// ------------------------------------------------------------
-//  打开时从第一步开始；关闭时清理
-// ------------------------------------------------------------
 
 watch(tourOpen, (open) => {
   if (open) {
@@ -157,10 +133,6 @@ watch(tourOpen, (open) => {
     targetEl.value = null;
   }
 });
-
-// ------------------------------------------------------------
-//  滚动 / 缩放 / 键盘
-// ------------------------------------------------------------
 
 let rafId = 0;
 function onViewportChange(): void {
@@ -196,10 +168,6 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(rafId);
 });
 
-// ------------------------------------------------------------
-//  卡片定位
-// ------------------------------------------------------------
-
 const tooltipStyle = computed(() => {
   const h = hole.value;
   if (!h) return {};
@@ -219,27 +187,33 @@ const tooltipStyle = computed(() => {
 </script>
 
 <template>
-  <div v-if="tourOpen && step" class="fixed inset-0 z-[100]" role="dialog" aria-modal="true">
+  <div
+    v-if="tourOpen && step"
+    class="fixed inset-0 z-[100]"
+    role="dialog"
+    aria-modal="true"
+    :aria-label="step.title"
+  >
     <!-- 拦截误触：引导期间不让点到底下的页面 -->
     <div class="absolute inset-0" @click.stop />
 
-    <!-- 高亮洞（大阴影把四周压暗，不额外铺一层遮罩） -->
+    <!-- 高亮洞（大阴影压暗四周；仅对聚光灯几何定位做受控过渡，尊重减少动画 token） -->
     <div
       v-if="hole"
-      class="pointer-events-none absolute z-[101] rounded-xl ring-2 ring-white/70 transition-all duration-200"
+      class="pointer-events-none absolute z-[101] rounded-xl ring-2 ring-white/70 transition-[top,left,width,height] duration-[var(--dur-base)]"
       :style="{
         top: `${hole.top}px`,
         left: `${hole.left}px`,
         width: `${hole.width}px`,
         height: `${hole.height}px`,
-        boxShadow: '0 0 0 9999px rgba(0,0,0,0.55)',
+        boxShadow: '0 0 0 9999px var(--overlay-scrim)',
       }"
     />
-    <div v-else class="absolute inset-0 bg-black/55" />
+    <div v-else class="absolute inset-0" style="background-color: var(--overlay-scrim)" />
 
-    <!-- 卡片 -->
+    <!-- 引导卡片（收敛圆角 rounded-xl + shadow-popover） -->
     <div
-      class="absolute z-[102] rounded-2xl border border-line bg-surface p-4 shadow-2xl"
+      class="panel-pop absolute z-[102] rounded-xl border border-subtle bg-surface p-4 shadow-popover"
       :class="
         centered
           ? 'left-1/2 top-1/2 w-[min(360px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2'
@@ -247,32 +221,30 @@ const tooltipStyle = computed(() => {
       "
       :style="centered ? {} : tooltipStyle"
     >
-      <!-- 头部：进度 + 跳过 -->
       <div class="flex items-center gap-2">
-        <span class="text-[11px] font-medium tracking-wide text-primary">
+        <span class="text-[11px] font-medium tabular-nums tracking-wide text-primary">
           {{ tourIndex + 1 }} / {{ total }}
         </span>
-        <span class="text-xs font-semibold">{{ step.title }}</span>
+        <span class="min-w-0 truncate text-xs font-semibold text-ink">{{ step.title }}</span>
         <button
           type="button"
-          class="ml-auto flex items-center gap-0.5 text-[11px] text-ink-soft pressable"
+          class="ml-auto inline-flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] text-ink-muted hover:bg-hover hover:text-ink pressable"
           @click="skip"
         >
-          跳过
+          <span>跳过</span>
           <AppSvgIcon name="close" :size="12" />
         </button>
       </div>
 
-      <p class="mt-2 text-sm leading-relaxed text-ink-soft">{{ step.body }}</p>
+      <p class="mt-2 text-sm leading-relaxed text-ink-secondary">{{ step.body }}</p>
 
-      <!-- 底部：圆点 + 按钮 -->
       <div class="mt-4 flex items-center gap-2">
-        <div class="flex flex-1 items-center gap-1">
+        <div class="flex flex-1 items-center gap-1" aria-hidden="true">
           <span
             v-for="(s, i) in tourSteps"
             :key="s.id"
             class="h-1.5 rounded-full transition-colors"
-            :class="i === tourIndex ? 'w-4 bg-primary' : 'w-1.5 bg-line'"
+            :class="i === tourIndex ? 'w-4 bg-primary' : 'w-1.5 bg-strong'"
           />
         </div>
 

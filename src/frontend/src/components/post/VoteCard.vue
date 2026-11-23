@@ -1,11 +1,10 @@
 <!--
-  投票卡片
+  投票信息流行（Elk 无边框 1px 分割线风格）
 
-  展示投票标题 / 描述 / 状态；点开后拉取选项（GET /api/vote），
-  支持直接投票（POST /api/vote/cast）。点击标题区跳转投票页。
+  支持展开选项直接投票与实时查看进度条；点击标题进投票详情页。
 -->
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, shallowRef } from "vue";
 import { useRouter } from "vue-router";
 import AppSvgIcon from "../layout/AppSvgIcon.vue";
 import { formatRelativeTime, formatNumber } from "../../utils/format";
@@ -28,35 +27,27 @@ const props = defineProps<{
 const router = useRouter();
 const auth = useAuthStore();
 
-/** 详情（含选项）拉取状态 */
 const options = ref<VoteOption[] | null>(null);
-const optionsLoading = ref(false);
-const optionsError = ref(false);
+const optionsLoading = shallowRef(false);
+const optionsError = shallowRef(false);
 
-/** 投票状态 */
 const selectedIds = ref<Set<string>>(new Set());
-const casting = ref(false);
-/** 是否多选投票（来自详情接口） */
-const isMultiple = ref(false);
-/** 是否已展示投票结果（投过票 / 投票已关闭 / 实时可见） */
-const showResult = ref(false);
+const casting = shallowRef(false);
+const isMultiple = shallowRef(false);
+const showResult = shallowRef(false);
 
-/** 点赞本地状态 */
-const liked = ref(false);
-const likeCount = ref(props.likeCount);
-const likeBusy = ref(false);
+const liked = shallowRef(false);
+const likeCount = shallowRef(props.likeCount);
+const likeBusy = shallowRef(false);
 
-/** 是否已结束（关闭或超时） */
 const ended = computed(
   () => props.isClosed || (props.endAt && new Date(props.endAt).getTime() < Date.now())
 );
 
-/** 总票数（结果不可见时 voteCount 为 null，按 0 计） */
 const totalVotes = computed(() =>
   (options.value ?? []).reduce((sum, option) => sum + (option.voteCount ?? 0), 0)
 );
 
-/** 拉取投票选项 */
 async function loadOptions(): Promise<void> {
   if (options.value || optionsLoading.value) return;
   optionsLoading.value = true;
@@ -65,7 +56,6 @@ async function loadOptions(): Promise<void> {
     const detail: VoteInfo = await getVoteDetail(props.id);
     options.value = detail.options;
     isMultiple.value = detail.isMultiple;
-    // 结果可见（实时可见 / 已结束）或已投过票 → 直接展示结果
     showResult.value = detail.resultsVisible || (detail.myVote?.length ?? 0) > 0;
   } catch {
     optionsError.value = true;
@@ -74,9 +64,8 @@ async function loadOptions(): Promise<void> {
   }
 }
 
-/** 切换选项选中（多选投票时支持多选） */
 function toggleOption(option: VoteOption, multiple: boolean): void {
-  if (showResult.value || casting.value) return;
+  if (showResult.value || ended.value || casting.value) return;
   const next = new Set(selectedIds.value);
   if (next.has(option.id)) {
     next.delete(option.id);
@@ -87,33 +76,30 @@ function toggleOption(option: VoteOption, multiple: boolean): void {
   selectedIds.value = next;
 }
 
-/** 提交投票 */
 async function submitVote(): Promise<void> {
   if (!auth.isLoggedIn) {
-    router.push({ path: "/login", query: { redirect: router.currentRoute.value.fullPath } });
+    void router.push({ path: "/login", query: { redirect: router.currentRoute.value.fullPath } });
     return;
   }
   if (selectedIds.value.size === 0 || casting.value) return;
   casting.value = true;
   try {
     await castVote(props.id, [...selectedIds.value]);
-    // cast 接口无返回，重新拉详情获取票数与我的投票
     const fresh = await getVoteDetail(props.id);
     options.value = fresh.options;
     showResult.value = true;
     showToast("投票成功", "success");
   } catch {
-    // client.ts 已自动 Toast 后端错误信息
+    // client.ts 已自动 Toast
   } finally {
     casting.value = false;
   }
 }
 
-/** 切换点赞 */
 async function onToggleLike(event: Event): Promise<void> {
   event.stopPropagation();
   if (!auth.isLoggedIn) {
-    router.push({ path: "/login", query: { redirect: router.currentRoute.value.fullPath } });
+    void router.push({ path: "/login", query: { redirect: router.currentRoute.value.fullPath } });
     return;
   }
   if (likeBusy.value) return;
@@ -129,108 +115,128 @@ async function onToggleLike(event: Event): Promise<void> {
   }
 }
 
-/** 跳转投票详情页 */
 function openVotePage(): void {
-  router.push({ name: "vote-detail", params: { id: props.id } });
+  void router.push({ name: "vote-detail", params: { id: props.id } });
 }
 </script>
 
 <template>
-  <article class="card-base">
-    <!-- 头部：类型标签 + 状态 + 时间 -->
-    <div class="mb-2 flex items-center gap-2">
-      <span class="flex items-center gap-1 text-xs font-medium text-primary">
-        <AppSvgIcon name="chart" :size="14" />
+  <article class="feed-row">
+    <!-- 头部：轻量标签 + 状态 + 时间 -->
+    <div class="flex items-center gap-2">
+      <span class="tag-pill-accent">
+        <AppSvgIcon name="chart" :size="12" />
         投票
       </span>
-      <span
-        v-if="ended"
-        class="rounded bg-line px-1 text-[10px] text-ink-soft"
+      <span v-if="ended" class="tag-pill">已结束</span>
+      <time
+        class="ml-auto shrink-0 text-xs tabular-nums text-ink-muted"
+        :datetime="createdAt"
       >
-        已结束
-      </span>
-      <span class="ml-auto text-xs text-ink-soft">{{ formatRelativeTime(createdAt) }}</span>
+        {{ formatRelativeTime(createdAt) }}
+      </time>
     </div>
 
-    <!-- 标题（点击跳转投票页） -->
+    <!-- 标题（点击进投票详情） -->
     <h3
-      class="mb-1 cursor-pointer text-base font-semibold pressable"
+      class="mt-2 cursor-pointer text-[15px] font-semibold leading-[22px] text-ink transition-colors hover:text-primary sm:text-base"
       @click="openVotePage"
     >
       {{ title }}
     </h3>
-    <p v-if="description" class="mb-2 text-sm text-ink-soft">{{ description }}</p>
+    <p v-if="description" class="mt-1 text-sm leading-6 text-ink-secondary">
+      {{ description }}
+    </p>
 
-    <!-- 选项区（展开后显示） -->
-    <div v-if="!options && !optionsError" class="mt-2">
-      <button type="button" class="btn-secondary !py-1.5 text-sm" @click="loadOptions">
-        {{ ended ? "查看结果" : "参与投票" }}
+    <!-- 选项区 -->
+    <div v-if="!options && !optionsError" class="mt-3">
+      <button
+        type="button"
+        class="btn-secondary !px-3.5 !py-1.5 text-xs"
+        :disabled="optionsLoading"
+        @click="loadOptions"
+      >
+        {{ optionsLoading ? "加载选项…" : ended ? "查看结果" : "展开投票" }}
       </button>
     </div>
 
-    <div v-if="optionsLoading" class="mt-2 text-center text-xs text-ink-soft">加载中…</div>
-    <div v-else-if="optionsError" class="mt-2">
-      <button type="button" class="text-xs text-primary underline" @click="loadOptions">
+    <div v-else-if="optionsError" class="mt-2.5">
+      <button type="button" class="text-xs text-primary hover:underline" @click="loadOptions">
         加载失败，点击重试
       </button>
     </div>
 
-    <div v-else-if="options" class="mt-2 space-y-2">
-      <div
+    <div v-else-if="options" class="mt-3 space-y-2">
+      <button
         v-for="option in options"
         :key="option.id"
-        class="relative overflow-hidden rounded-lg border px-3 py-2 text-sm transition-colors"
+        type="button"
+        class="relative flex w-full items-center justify-between gap-2 overflow-hidden rounded-lg border px-3 py-2 text-left text-sm transition-colors"
         :class="[
           selectedIds.has(option.id)
-            ? 'border-primary text-primary'
-            : 'border-line text-ink',
-          showResult || ended ? 'cursor-default' : 'cursor-pointer pressable',
+            ? 'border-primary bg-accent-soft text-primary'
+            : 'border-subtle bg-canvas-soft text-ink hover:border-strong',
+          showResult || ended ? 'cursor-default' : 'cursor-pointer',
         ]"
         @click="toggleOption(option, isMultiple)"
       >
-        <!-- 结果进度条背景 -->
         <span
           v-if="showResult || ended"
-          class="absolute inset-y-0 left-0 bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)]"
+          class="pointer-events-none absolute inset-y-0 left-0 bg-accent-soft"
           :style="{
             width: totalVotes > 0 ? ((option.voteCount ?? 0) / totalVotes) * 100 + '%' : '0%',
           }"
         />
-        <span class="relative flex items-center justify-between gap-2">
-          <span>{{ option.content }}</span>
-          <span v-if="showResult || ended" class="shrink-0 text-xs text-ink-soft">
-            {{ option.voteCount ?? 0 }} 票
-          </span>
-          <AppSvgIcon v-else-if="selectedIds.has(option.id)" name="check" :size="16" class="shrink-0 text-primary" />
+        <span class="relative min-w-0 flex-1 truncate font-medium">{{ option.content }}</span>
+        <span
+          v-if="showResult || ended"
+          class="relative shrink-0 text-xs tabular-nums text-ink-secondary"
+        >
+          {{ option.voteCount ?? 0 }} 票
         </span>
-      </div>
+        <AppSvgIcon
+          v-else-if="selectedIds.has(option.id)"
+          name="check"
+          :size="15"
+          class="relative shrink-0 text-primary"
+        />
+      </button>
 
-      <!-- 投票按钮（未展示结果且未结束时） -->
       <div v-if="!showResult && !ended" class="flex items-center justify-between pt-1">
-        <span class="text-xs text-ink-soft">已选 {{ selectedIds.size }} 项</span>
+        <span class="text-xs text-ink-muted">
+          已选 {{ selectedIds.size }} 项{{ isMultiple ? "（可多选）" : "" }}
+        </span>
         <button
           type="button"
-          class="btn-primary !py-1.5 text-sm disabled:opacity-50"
+          class="btn-primary !px-3.5 !py-1.5 text-xs"
           :disabled="selectedIds.size === 0 || casting"
           @click="submitVote"
         >
-          {{ casting ? "提交中…" : "投票" }}
+          {{ casting ? "提交中…" : "确认投票" }}
         </button>
       </div>
     </div>
 
-    <!-- 底部：点赞 + 总票数 -->
-    <div class="mt-3 flex items-center gap-4 text-xs text-ink-soft">
+    <!-- 底部操作栏 -->
+    <div class="mt-3 flex items-center gap-5 text-xs tabular-nums text-ink-muted">
       <button
         type="button"
-        class="flex items-center gap-1 transition-colors"
-        :class="liked ? 'text-primary' : ''"
+        class="inline-flex items-center gap-1.5 rounded-md py-0.5 hover:text-primary pressable"
+        :class="liked ? 'font-medium text-primary' : ''"
+        :disabled="likeBusy"
         @click="onToggleLike"
       >
-        <AppSvgIcon name="thumbUp" :size="14" />
+        <AppSvgIcon name="thumbUp" :size="15" />
         {{ formatNumber(likeCount) }}
       </button>
       <span v-if="showResult || ended">共 {{ formatNumber(totalVotes) }} 票</span>
+      <button
+        type="button"
+        class="ml-auto text-xs text-ink-muted transition-colors hover:text-primary"
+        @click="openVotePage"
+      >
+        查看详情
+      </button>
     </div>
   </article>
 </template>

@@ -3,6 +3,9 @@
  *
  * 纯 DOM 实现（不依赖组件实例），任何地方可直接调用：
  *   showToast("保存成功", "success");
+ *
+ * 视觉样式直接复用 Design Tokens（--bg-surface / --border-subtle / --text-primary /
+ * --c-success / --c-danger / --shadow-popover / --dur-base），浅/深色自动适配并尊重减少动画。
  */
 
 import type { ToastType } from "../types";
@@ -17,9 +20,10 @@ function ensureContainer(): HTMLDivElement {
   container = document.createElement("div");
   container.setAttribute("role", "status");
   container.setAttribute("aria-live", "polite");
+  container.setAttribute("aria-atomic", "true");
   Object.assign(container.style, {
     position: "fixed",
-    top: "16px",
+    top: "calc(16px + env(safe-area-inset-top, 0px))",
     left: "50%",
     transform: "translateX(-50%)",
     zIndex: "9999",
@@ -29,7 +33,7 @@ function ensureContainer(): HTMLDivElement {
     gap: "8px",
     pointerEvents: "none",
     width: "100%",
-    maxWidth: "480px",
+    maxWidth: "460px",
     padding: "0 16px",
     boxSizing: "border-box",
   } satisfies Partial<CSSStyleDeclaration>);
@@ -37,11 +41,28 @@ function ensureContainer(): HTMLDivElement {
   return container;
 }
 
-/** 各类型对应的背景色 */
-const TOAST_COLORS: Record<ToastType, string> = {
-  success: "rgba(16, 185, 129, 0.95)",
-  error: "rgba(239, 68, 68, 0.95)",
-  info: "rgba(17, 24, 39, 0.85)",
+/** 是否处于减少动态效果状态 */
+function isReducedMotion(): boolean {
+  const attr = document.documentElement.getAttribute("data-motion");
+  if (attr === "reduced") return true;
+  if (attr === "full") return false;
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+
+/** 各类型对应的点色与边框/文字 token */
+const TOAST_STYLES: Record<ToastType, { dot: string; border: string }> = {
+  success: {
+    dot: "var(--c-success)",
+    border: "color-mix(in srgb, var(--c-success) 32%, var(--border-subtle))",
+  },
+  error: {
+    dot: "var(--c-danger)",
+    border: "color-mix(in srgb, var(--c-danger) 35%, var(--border-subtle))",
+  },
+  info: {
+    dot: "var(--c-primary)",
+    border: "var(--border-subtle)",
+  },
 };
 
 /**
@@ -57,35 +78,62 @@ export function showToast(
   duration = 2500
 ): void {
   const parent = ensureContainer();
+  const reduced = isReducedMotion();
+  const palette = TOAST_STYLES[type];
 
   const el = document.createElement("div");
-  el.textContent = message;
   Object.assign(el.style, {
-    background: TOAST_COLORS[type],
-    color: "#fff",
-    fontSize: "14px",
-    lineHeight: "1.4",
-    padding: "10px 16px",
-    borderRadius: "9999px",
-    boxShadow: "0 4px 12px rgba(0, 0, 0, 0.15)",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
+    backgroundColor: "var(--bg-surface)",
+    color: "var(--text-primary)",
+    border: `1px solid ${palette.border}`,
+    fontSize: "13.5px",
+    fontWeight: "500",
+    lineHeight: "1.45",
+    padding: "9px 14px",
+    borderRadius: "12px",
+    boxShadow: "var(--shadow-popover)",
     maxWidth: "100%",
     overflowWrap: "anywhere",
-    opacity: "0",
-    transition: "opacity 0.2s ease, transform 0.2s ease",
-    transform: "translateY(-8px)",
+    opacity: reduced ? "1" : "0",
+    transition: reduced
+      ? "none"
+      : "opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out)",
+    transform: reduced ? "none" : "translateY(-6px)",
   } satisfies Partial<CSSStyleDeclaration>);
+
+  const dot = document.createElement("span");
+  dot.setAttribute("aria-hidden", "true");
+  Object.assign(dot.style, {
+    width: "7px",
+    height: "7px",
+    borderRadius: "9999px",
+    backgroundColor: palette.dot,
+    flexShrink: "0",
+  } satisfies Partial<CSSStyleDeclaration>);
+
+  const text = document.createElement("span");
+  text.textContent = message;
+
+  el.append(dot, text);
   parent.appendChild(el);
 
-  // 入场动画
-  requestAnimationFrame(() => {
-    el.style.opacity = "1";
-    el.style.transform = "translateY(0)";
-  });
+  if (!reduced) {
+    requestAnimationFrame(() => {
+      el.style.opacity = "1";
+      el.style.transform = "translateY(0)";
+    });
+  }
 
-  // 到期淡出并移除
   window.setTimeout(() => {
+    if (reduced) {
+      el.remove();
+      return;
+    }
     el.style.opacity = "0";
-    el.style.transform = "translateY(-8px)";
+    el.style.transform = "translateY(-6px)";
     window.setTimeout(() => el.remove(), 220);
   }, duration);
 }
