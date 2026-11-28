@@ -1,32 +1,27 @@
 <!--
-  管理面板 — 站点配置子面板
-
-  - GET /api/admin/config 拉取当前配置（无 D1 配置时后端回退静态文件）
-  - 可编辑：站点名称、学号格式正则 / 提示、归档天数、推荐流权重、主题预设与颜色变量、用户等级颜色
-  - 保存（edit_database 权限）：PUT /api/admin/config 提交完整结构
+  管理面板 — 站点配置子面板（克制工具页：无二级边框套娃、AppSwitch 开关、无裸 emoji）
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import LoadingSpinner from "../common/LoadingSpinner.vue";
+import { computed, onMounted, ref, shallowRef } from "vue";
+import FeedSkeleton from "../common/FeedSkeleton.vue";
 import ErrorState from "../common/ErrorState.vue";
+import AppSwitch from "../common/AppSwitch.vue";
+import AppSvgIcon from "../layout/AppSvgIcon.vue";
 import { getAdminSiteConfig, updateAdminSiteConfig } from "../../api/admin";
 import { uploadImage, MAX_IMAGE_SIZE } from "../../api/upload";
+import { PRESET_LABELS, PRESET_ORDER } from "../../utils/themePresets";
 import { showToast } from "../../utils/toast";
 import type { SiteConfig } from "../../types";
 
-/** 是否具备 edit_database（决定能否保存） */
 const props = defineProps<{ canEdit: boolean }>();
 
-const loading = ref(true);
-const error = ref(false);
-const saving = ref(false);
-/** 图标上传状态 */
-const iconUploading = ref(false);
+const loading = shallowRef(true);
+const error = shallowRef(false);
+const saving = shallowRef(false);
+const iconUploading = shallowRef(false);
 const iconInput = ref<HTMLInputElement | null>(null);
-/** 表单状态（加载后深拷贝，避免直接引用响应数据） */
 const form = ref<SiteConfig | null>(null);
 
-/** 自动分板块默认配置 */
 const DEFAULT_AUTO_BLOCK = {
   gradeEnabled: true,
   gradeStart: 1,
@@ -38,8 +33,7 @@ const DEFAULT_AUTO_BLOCK = {
   classNameFormat: "{grade}年级{class}班板块",
 };
 
-/** 规则测试学号 */
-const previewStudentId = ref("20240101");
+const previewStudentId = shallowRef("20240101");
 
 const previewGradeBlock = computed(() => {
   if (!form.value?.autoBlock?.gradeEnabled) return "（已关闭）";
@@ -66,29 +60,24 @@ const previewClassBlock = computed(() => {
   return fmt.replace(/\{grade\}/g, grade).replace(/\{class\}/g, cls);
 });
 
-/** 登录墙档位选项（存 site_config.loginWall） */
 const LOGIN_WALL_OPTIONS = [
   {
     value: "none" as const,
     label: "无墙",
-    desc: "不登录也能刷推荐流、搜索、板块（想让人先看看再注册）",
+    desc: "不登录也可浏览推荐流、搜索与公开板块",
   },
   {
     value: "soft" as const,
     label: "软墙",
-    desc: "内容要登录，但单条帖子详情公开 —— 群里转发链接点开能看",
+    desc: "列表需登录，单条帖子详情对外公开（便于群内转发链接）",
   },
   {
     value: "hard" as const,
     label: "硬墙",
-    desc: "除登录/注册/初始化外全部要登录（只给本校的人用）",
+    desc: "除登录 / 注册 / 初始化外全部需登录访问",
   },
 ];
 
-/** 主题预设选项 */
-const PRESETS = ["light", "dark", "campus", "warm"] as const;
-
-/** 推荐权重字段（与后端 SiteConfigRecommendWeights 一致） */
 const WEIGHT_FIELDS = [
   { key: "like", label: "点赞权重" },
   { key: "comment", label: "评论权重" },
@@ -98,7 +87,6 @@ const WEIGHT_FIELDS = [
   { key: "random", label: "随机权重" },
 ] as const;
 
-/** 各类型基础分字段（越大越容易被推荐上来） */
 const TYPE_BONUS_FIELDS = [
   { key: "post", label: "帖子基础分" },
   { key: "confession", label: "表白墙基础分" },
@@ -106,7 +94,6 @@ const TYPE_BONUS_FIELDS = [
   { key: "vote", label: "投票基础分" },
 ] as const;
 
-/** 各类型基础分默认值（与后端 DEFAULT_TYPE_BONUS 一致） */
 const DEFAULT_TYPE_BONUS = {
   post: 0,
   confession: 5,
@@ -114,7 +101,6 @@ const DEFAULT_TYPE_BONUS = {
   vote: 6,
 };
 
-/** 主题颜色字段 */
 const THEME_FIELDS = [
   { key: "primaryColor", label: "主色" },
   { key: "backgroundColor", label: "背景色" },
@@ -122,17 +108,15 @@ const THEME_FIELDS = [
   { key: "accentColor", label: "强调色" },
 ] as const;
 
-/** 用户等级颜色字段（与后端 SiteConfigNameColors 一致） */
 const LEVEL_FIELDS = [
   { key: "normal", label: "普通用户" },
   { key: "active", label: "活跃用户" },
   { key: "verified", label: "认证用户" },
   { key: "admin", label: "管理员" },
   { key: "owner", label: "板块长" },
-  { key: "superadmin", label: "站长/超级管理员" },
+  { key: "superadmin", label: "站长 / 超管" },
 ] as const;
 
-/** 等级颜色内置默认值（旧配置缺 nameColors 时初始化用，与后端 DEFAULT_NAME_COLORS 一致） */
 const DEFAULT_NAME_COLORS = {
   normal: "#64748B",
   active: "#10B981",
@@ -142,15 +126,12 @@ const DEFAULT_NAME_COLORS = {
   superadmin: "#EF4444",
 } as const;
 
-/** 图标 MIME 白名单（与后端一致） */
 const ICON_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
-/** 选择图标 → 前端校验 → 上传（/api/upload/image）→ 预览 */
 async function onIconChange(event: Event): Promise<void> {
   if (!form.value) return;
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
-  // 清空 input 以便重复选择同一文件
   input.value = "";
   if (!file) return;
 
@@ -169,13 +150,12 @@ async function onIconChange(event: Event): Promise<void> {
     form.value.siteIcon = url;
     showToast("图标上传成功，保存后生效", "success");
   } catch {
-    // uploadTo 已自动 Toast（含“图床未配置，暂无法上传图片”）
+    // uploadImage 已 Toast
   } finally {
     iconUploading.value = false;
   }
 }
 
-/** 移除图标（保存后生效） */
 function removeIcon(): void {
   if (!form.value) return;
   form.value.siteIcon = "";
@@ -187,21 +167,16 @@ async function load(): Promise<void> {
   error.value = false;
   try {
     const config = await getAdminSiteConfig();
-    // JSON 深拷贝隔离表单与响应数据
     form.value = JSON.parse(JSON.stringify(config)) as SiteConfig;
-    // 兼容旧配置：缺 nameColors 时用默认色初始化，保证编辑区可渲染
     if (!form.value.nameColors) {
       form.value.nameColors = { ...DEFAULT_NAME_COLORS };
     }
-    // 兼容旧配置：缺 autoBlock 时初始化
     if (!form.value.autoBlock) {
       form.value.autoBlock = { ...DEFAULT_AUTO_BLOCK };
     }
-    // 兼容旧配置：缺类型基础分时用默认值（以前这些值是写死在后端的）
     if (!form.value.recommendTypeBonus) {
       form.value.recommendTypeBonus = { ...DEFAULT_TYPE_BONUS };
     }
-    // 兼容旧配置：没有登录墙字段时按硬墙显示（跟后端缺省一致）
     if (!form.value.loginWall) {
       form.value.loginWall = "hard";
     }
@@ -212,11 +187,8 @@ async function load(): Promise<void> {
   }
 }
 
-/** 保存配置（提交完整结构，DAL 层做结构校验） */
 async function save(): Promise<void> {
   if (!form.value || saving.value) return;
-
-  // 基础前端校验：数值字段非负
   if (form.value.archiveDays < 0) {
     showToast("归档天数不能为负数", "error");
     return;
@@ -227,52 +199,63 @@ async function save(): Promise<void> {
     await updateAdminSiteConfig(form.value);
     showToast("配置已保存", "success");
   } catch {
-    // Toast 由 client 层统一处理
+    // client.ts 已自动 Toast
   } finally {
     saving.value = false;
   }
 }
 
-onMounted(load);
+onMounted(() => {
+  void load();
+});
 </script>
 
 <template>
   <div>
-    <LoadingSpinner v-if="loading" />
-    <ErrorState v-else-if="error" @retry="load" />
+    <FeedSkeleton v-if="loading" variant="elk" :count="5" />
+    <div v-else-if="error" class="px-4 py-6">
+      <ErrorState @retry="load" />
+    </div>
 
     <template v-else-if="form">
-      <p v-if="!props.canEdit" class="mb-3 rounded-lg bg-page px-3 py-2 text-xs text-ink-soft">
-        当前账号无 edit_database 权限，仅可查看配置
+      <p
+        v-if="!props.canEdit"
+        class="border-b border-subtle bg-canvas-soft px-4 py-2.5 text-xs text-ink-muted sm:px-5"
+      >
+        当前账号无 edit_database 权限，仅可只读查看配置。
       </p>
 
-      <fieldset :disabled="!props.canEdit" class="space-y-4">
+      <fieldset :disabled="!props.canEdit" class="divide-y divide-[var(--border-subtle)]">
         <!-- 基础配置 -->
-        <div class="card-base space-y-3">
-          <h3 class="text-sm font-semibold text-ink-soft">基础配置</h3>
-          <label class="block">
-            <span class="mb-1 block text-xs text-ink-soft">站点名称</span>
-            <input v-model="form.siteName" type="text" class="input-base w-full" />
-          </label>
+        <section class="space-y-4 px-4 py-5 sm:px-5">
+          <h2 class="text-sm font-semibold text-ink">基础配置</h2>
 
-          <!-- 站点图标 -->
           <div>
-            <span class="mb-1 block text-xs text-ink-soft">站点图标</span>
-            <div class="flex items-center gap-4">
-              <!-- 当前图标预览 -->
+            <label for="cfg-site-name" class="mb-1.5 block text-xs font-medium text-ink-secondary">
+              站点名称
+            </label>
+            <input id="cfg-site-name" v-model="form.siteName" type="text" class="input-base" />
+          </div>
+
+          <!-- 站点图标（无裸 emoji） -->
+          <div>
+            <span class="mb-1.5 block text-xs font-medium text-ink-secondary">站点图标</span>
+            <div class="flex items-start gap-4">
               <div
-                class="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-page"
+                class="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-subtle bg-canvas-soft text-ink-muted"
               >
                 <img
                   v-if="form.siteIcon"
                   :src="form.siteIcon"
                   alt="站点图标"
+                  width="56"
+                  height="56"
                   class="h-full w-full object-cover"
                 />
-                <span v-else class="text-xl text-ink-soft">🏫</span>
+                <AppSvgIcon v-else name="building" :size="24" />
               </div>
 
-              <div class="flex-1 space-y-1.5">
+              <div class="min-w-0 flex-1 space-y-2">
                 <input
                   ref="iconInput"
                   type="file"
@@ -280,274 +263,329 @@ onMounted(load);
                   class="hidden"
                   @change="onIconChange"
                 />
-                <button
-                  type="button"
-                  class="btn-secondary w-full text-sm"
-                  :disabled="iconUploading"
-                  @click="iconInput?.click()"
-                >
-                  {{ iconUploading ? "上传中…" : form.siteIcon ? "更换图标" : "上传图标" }}
-                </button>
-                <button
-                  v-if="form.siteIcon"
-                  type="button"
-                  class="w-full text-left text-xs text-red-500 hover:underline"
-                  @click="removeIcon"
-                >
-                  移除图标
-                </button>
-                <p class="text-xs text-ink-soft">
-                  支持 JPEG / PNG / WebP / GIF，≤2MB；保存后作为标签页 favicon 与站内 Logo
+                <div class="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    class="btn-secondary !py-1.5 text-xs"
+                    :disabled="iconUploading"
+                    @click="iconInput?.click()"
+                  >
+                    {{ iconUploading ? "上传中…" : form.siteIcon ? "更换图标" : "上传图标" }}
+                  </button>
+                  <button
+                    v-if="form.siteIcon"
+                    type="button"
+                    class="rounded-lg px-2.5 py-1.5 text-xs font-medium text-danger hover:bg-danger-soft pressable"
+                    @click="removeIcon"
+                  >
+                    移除图标
+                  </button>
+                </div>
+                <p class="text-xs leading-relaxed text-ink-muted">
+                  支持 JPEG / PNG / WebP / GIF（≤ 2&nbsp;MB），保存后用于标签页图标与站内 Logo。
                 </p>
               </div>
             </div>
           </div>
 
-          <label class="block">
-            <span class="mb-1 block text-xs text-ink-soft">学号格式正则</span>
-            <input v-model="form.studentIdPattern" type="text" class="input-base w-full font-mono text-xs" />
-          </label>
-          <label class="block">
-            <span class="mb-1 block text-xs text-ink-soft">学号格式提示</span>
-            <input v-model="form.studentIdHint" type="text" class="input-base w-full" />
-          </label>
-          <label class="block">
-            <span class="mb-1 block text-xs text-ink-soft">归档天数</span>
-            <input v-model.number="form.archiveDays" type="number" min="0" class="input-base w-full" />
-          </label>
-        </div>
+          <div>
+            <label for="cfg-sid-pattern" class="mb-1.5 block text-xs font-medium text-ink-secondary">
+              学号格式正则
+            </label>
+            <input
+              id="cfg-sid-pattern"
+              v-model="form.studentIdPattern"
+              type="text"
+              spellcheck="false"
+              class="input-base font-mono text-xs"
+            />
+          </div>
 
-        <!-- 学号自动分板块与年级解析 -->
-        <div v-if="form.autoBlock" class="card-base space-y-3">
-          <h3 class="text-sm font-semibold text-ink-soft">学号自动分板块与年级解析</h3>
-          <p class="text-xs text-ink-soft">
-            注册成功后，系统可根据学号规则自动创建并加入对应的年级板块与班级板块，并在个人主页展示年级标识。
-          </p>
+          <div>
+            <label for="cfg-sid-hint" class="mb-1.5 block text-xs font-medium text-ink-secondary">
+              学号格式提示
+            </label>
+            <input id="cfg-sid-hint" v-model="form.studentIdHint" type="text" class="input-base" />
+          </div>
 
-          <!-- 年级板块设置 -->
-          <div class="rounded-lg border border-line p-3 space-y-3 bg-page/50">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-semibold">年级板块与主页标识</span>
-              <label class="relative inline-flex cursor-pointer items-center">
-                <input
-                  v-model="form.autoBlock.gradeEnabled"
-                  type="checkbox"
-                  class="peer sr-only"
-                />
-                <div class="peer h-5 w-9 rounded-full bg-line transition-colors peer-checked:bg-primary after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform after:content-[''] peer-checked:after:translate-x-full"></div>
+          <div>
+            <label for="cfg-archive-days" class="mb-1.5 block text-xs font-medium text-ink-secondary">
+              自动归档天数
+            </label>
+            <input
+              id="cfg-archive-days"
+              v-model.number="form.archiveDays"
+              type="number"
+              min="0"
+              class="input-base tabular-nums"
+            />
+          </div>
+        </section>
+
+        <!-- 学号自动分板块与年级解析（去二级边框套娃，使用 bg-canvas-soft 浅底分组） -->
+        <section v-if="form.autoBlock" class="space-y-4 px-4 py-5 sm:px-5">
+          <div>
+            <h2 class="text-sm font-semibold text-ink">学号自动分板块与年级解析</h2>
+            <p class="mt-1 text-xs leading-relaxed text-ink-muted">
+              注册成功后可按学号切片自动创建并加入年级 / 班级板块，并在主页展示年级标识。
+            </p>
+          </div>
+
+          <!-- 年级板块 -->
+          <div class="space-y-3 rounded-xl bg-canvas-soft p-3.5">
+            <div class="flex items-center justify-between gap-3">
+              <label for="cfg-grade-enabled" class="cursor-pointer text-xs font-semibold text-ink">
+                年级板块与主页标识
               </label>
+              <AppSwitch
+                id="cfg-grade-enabled"
+                v-model="form.autoBlock.gradeEnabled"
+                :disabled="!props.canEdit"
+                aria-label="启用年级板块与主页标识"
+              />
             </div>
             <div v-if="form.autoBlock.gradeEnabled" class="grid grid-cols-2 gap-3 pt-1">
               <label class="block">
-                <span class="mb-1 block text-xs text-ink-soft">年级起始位 (第N位开始)</span>
+                <span class="mb-1 block text-xs text-ink-muted">起始位（从第 N 位起）</span>
                 <input
                   v-model.number="form.autoBlock.gradeStart"
                   type="number"
                   min="1"
-                  class="input-base w-full text-xs"
+                  class="input-base text-xs tabular-nums"
                 />
               </label>
               <label class="block">
-                <span class="mb-1 block text-xs text-ink-soft">年级长度 (占N位)</span>
+                <span class="mb-1 block text-xs text-ink-muted">长度（占 N 位）</span>
                 <input
                   v-model.number="form.autoBlock.gradeLength"
                   type="number"
                   min="1"
-                  class="input-base w-full text-xs"
+                  class="input-base text-xs tabular-nums"
                 />
               </label>
               <label class="col-span-2 block">
-                <span class="mb-1 block text-xs text-ink-soft">年级板块名称模板 ({grade} 为占位符)</span>
+                <span class="mb-1 block text-xs text-ink-muted">名称模板（{grade} 为占位符）</span>
                 <input
                   v-model="form.autoBlock.gradeNameFormat"
                   type="text"
                   placeholder="{grade}级年级板"
-                  class="input-base w-full font-mono text-xs"
+                  class="input-base font-mono text-xs"
                 />
               </label>
             </div>
           </div>
 
-          <!-- 班级板块设置 -->
-          <div class="rounded-lg border border-line p-3 space-y-3 bg-page/50">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-semibold">班级板块设置</span>
-              <label class="relative inline-flex cursor-pointer items-center">
-                <input
-                  v-model="form.autoBlock.classEnabled"
-                  type="checkbox"
-                  class="peer sr-only"
-                />
-                <div class="peer h-5 w-9 rounded-full bg-line transition-colors peer-checked:bg-primary after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform after:content-[''] peer-checked:after:translate-x-full"></div>
+          <!-- 班级板块 -->
+          <div class="space-y-3 rounded-xl bg-canvas-soft p-3.5">
+            <div class="flex items-center justify-between gap-3">
+              <label for="cfg-class-enabled" class="cursor-pointer text-xs font-semibold text-ink">
+                班级板块设置
               </label>
+              <AppSwitch
+                id="cfg-class-enabled"
+                v-model="form.autoBlock.classEnabled"
+                :disabled="!props.canEdit"
+                aria-label="启用班级板块"
+              />
             </div>
             <div v-if="form.autoBlock.classEnabled" class="grid grid-cols-2 gap-3 pt-1">
               <label class="block">
-                <span class="mb-1 block text-xs text-ink-soft">班级起始位 (第N位开始)</span>
+                <span class="mb-1 block text-xs text-ink-muted">起始位（从第 N 位起）</span>
                 <input
                   v-model.number="form.autoBlock.classStart"
                   type="number"
                   min="1"
-                  class="input-base w-full text-xs"
+                  class="input-base text-xs tabular-nums"
                 />
               </label>
               <label class="block">
-                <span class="mb-1 block text-xs text-ink-soft">班级长度 (占N位)</span>
+                <span class="mb-1 block text-xs text-ink-muted">长度（占 N 位）</span>
                 <input
                   v-model.number="form.autoBlock.classLength"
                   type="number"
                   min="1"
-                  class="input-base w-full text-xs"
+                  class="input-base text-xs tabular-nums"
                 />
               </label>
               <label class="col-span-2 block">
-                <span class="mb-1 block text-xs text-ink-soft">班级板块名称模板 ({grade} 与 {class} 为占位符)</span>
+                <span class="mb-1 block text-xs text-ink-muted">名称模板（{grade} 与 {class} 为占位符）</span>
                 <input
                   v-model="form.autoBlock.classNameFormat"
                   type="text"
                   placeholder="{grade}年级{class}班板块"
-                  class="input-base w-full font-mono text-xs"
+                  class="input-base font-mono text-xs"
                 />
               </label>
             </div>
           </div>
 
-          <!-- 规则实时演示 -->
-          <div class="rounded-lg bg-page p-3 text-xs space-y-2">
+          <!-- 规则实时演示（无裸 emoji） -->
+          <div class="space-y-2 rounded-xl bg-canvas-soft p-3.5 text-xs">
             <div class="flex items-center justify-between gap-2">
-              <span class="font-medium text-ink-soft">规则测试预览：</span>
+              <label for="cfg-preview-sid" class="font-medium text-ink-secondary">
+                规则测试学号
+              </label>
               <input
+                id="cfg-preview-sid"
                 v-model="previewStudentId"
                 type="text"
-                placeholder="输入示例学号"
-                class="input-base w-32 font-mono text-xs py-1 px-2"
+                spellcheck="false"
+                placeholder="输入示例学号…"
+                class="input-base !w-36 !px-2.5 !py-1 font-mono text-xs"
               />
             </div>
-            <div class="text-[11px] text-ink-soft space-y-1">
-              <div>🎯 对应年级板块：<span class="font-medium text-ink">{{ previewGradeBlock }}</span></div>
-              <div>🎯 对应班级板块：<span class="font-medium text-ink">{{ previewClassBlock }}</span></div>
-            </div>
+            <dl class="space-y-1 text-xs text-ink-muted">
+              <div class="flex items-center gap-2">
+                <AppSvgIcon name="blocks" :size="13" class="shrink-0 text-primary" />
+                <dt class="shrink-0">年级板块：</dt>
+                <dd class="font-medium text-ink">{{ previewGradeBlock }}</dd>
+              </div>
+              <div class="flex items-center gap-2">
+                <AppSvgIcon name="users" :size="13" class="shrink-0 text-primary" />
+                <dt class="shrink-0">班级板块：</dt>
+                <dd class="font-medium text-ink">{{ previewClassBlock }}</dd>
+              </div>
+            </dl>
           </div>
-        </div>
+        </section>
 
         <!-- 访问控制（登录墙） -->
-        <div class="card-base space-y-3">
-          <h3 class="text-sm font-semibold text-ink-soft">访问控制</h3>
-          <p class="text-xs text-ink-soft">没登录的人能看到什么。</p>
+        <section class="space-y-3 px-4 py-5 sm:px-5">
+          <div>
+            <h2 class="text-sm font-semibold text-ink">访问控制（登录墙）</h2>
+            <p class="mt-1 text-xs text-ink-muted">控制未登录游客的可见范围。</p>
+          </div>
+
           <div class="space-y-2">
             <label
               v-for="opt in LOGIN_WALL_OPTIONS"
               :key="opt.value"
-              class="flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 transition-colors"
-              :class="(form.loginWall ?? 'hard') === opt.value
-                ? 'border-primary bg-[color-mix(in_srgb,var(--c-primary)_6%,transparent)]'
-                : 'border-line'"
+              class="flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 transition-colors"
+              :class="
+                (form.loginWall ?? 'hard') === opt.value
+                  ? 'border-primary bg-accent-soft'
+                  : 'border-subtle bg-surface hover:border-strong'
+              "
             >
               <input
                 v-model="form.loginWall"
                 type="radio"
+                name="loginWall"
                 :value="opt.value"
                 class="mt-0.5 h-4 w-4 accent-[var(--c-primary)]"
               />
               <span class="min-w-0 flex-1">
-                <span class="block text-sm font-medium">{{ opt.label }}</span>
-                <span class="block text-xs text-ink-soft">{{ opt.desc }}</span>
+                <span class="block text-sm font-medium text-ink">{{ opt.label }}</span>
+                <span class="mt-0.5 block text-xs leading-relaxed text-ink-muted">
+                  {{ opt.desc }}
+                </span>
               </span>
             </label>
           </div>
-          <p class="text-[11px] text-ink-soft">
-            保存后最多 10 秒生效（档位在服务端有短缓存）。只影响浏览入口，接口那边同样按这个挡。
+
+          <p class="text-xs text-ink-muted">
+            保存后最多 10 秒生效（服务端短缓存），同时作用于页面路由与后端接口。
           </p>
-        </div>
+        </section>
 
         <!-- 推荐流权重 -->
-        <div class="card-base space-y-3">
-          <h3 class="text-sm font-semibold text-ink-soft">推荐流权重</h3>
+        <section class="space-y-3 px-4 py-5 sm:px-5">
+          <h2 class="text-sm font-semibold text-ink">推荐流权重</h2>
           <div class="grid grid-cols-2 gap-3">
             <label v-for="field in WEIGHT_FIELDS" :key="field.key" class="block">
-              <span class="mb-1 block text-xs text-ink-soft">{{ field.label }}</span>
+              <span class="mb-1 block text-xs text-ink-secondary">{{ field.label }}</span>
               <input
                 v-model.number="form.recommendWeights[field.key]"
                 type="number"
                 min="0"
                 step="0.1"
-                class="input-base w-full"
+                class="input-base tabular-nums"
               />
             </label>
           </div>
-        </div>
+        </section>
 
-        <!-- 推荐流 · 各类型基础分 -->
-        <div class="card-base space-y-3">
-          <h3 class="text-sm font-semibold text-ink-soft">推荐流 · 类型基础分</h3>
-          <p class="text-[11px] leading-relaxed text-ink-soft">
-            在权重算完之后直接加到这个类型的每一条内容上。想让大事记/表白墙更容易出现就调大它。
-          </p>
+        <!-- 推荐流类型基础分 -->
+        <section class="space-y-3 px-4 py-5 sm:px-5">
+          <div>
+            <h2 class="text-sm font-semibold text-ink">推荐流 · 类型基础分</h2>
+            <p class="mt-1 text-xs leading-relaxed text-ink-muted">
+              在综合权重得分后叠加到对应内容类型上；调高对应分值可提升曝光优先级。
+            </p>
+          </div>
           <div class="grid grid-cols-2 gap-3">
             <label v-for="field in TYPE_BONUS_FIELDS" :key="field.key" class="block">
-              <span class="mb-1 block text-xs text-ink-soft">{{ field.label }}</span>
+              <span class="mb-1 block text-xs text-ink-secondary">{{ field.label }}</span>
               <input
                 v-if="form.recommendTypeBonus"
                 v-model.number="form.recommendTypeBonus[field.key]"
                 type="number"
                 min="0"
                 step="0.5"
-                class="input-base w-full"
+                class="input-base tabular-nums"
               />
             </label>
           </div>
-        </div>
+        </section>
 
-        <!-- 主题 -->
-        <div class="card-base space-y-3">
-          <h3 class="text-sm font-semibold text-ink-soft">主题</h3>
+        <!-- 全站默认主题 -->
+        <section class="space-y-3.5 px-4 py-5 sm:px-5">
+          <h2 class="text-sm font-semibold text-ink">全站默认主题</h2>
           <div>
-            <span class="mb-1 block text-xs text-ink-soft">预设</span>
-            <div class="flex gap-2">
+            <span class="mb-1.5 block text-xs text-ink-secondary">默认预设</span>
+            <div class="flex flex-wrap gap-2">
               <button
-                v-for="preset in PRESETS"
+                v-for="preset in PRESET_ORDER"
                 :key="preset"
                 type="button"
-                class="rounded-full px-4 py-1.5 text-sm transition-colors"
-                :class="form.theme.preset === preset ? 'bg-primary text-white' : 'bg-page text-ink-soft'"
+                class="rounded-full px-3.5 py-1.5 text-xs font-medium pressable"
+                :class="
+                  form.theme.preset === preset
+                    ? 'bg-primary text-white'
+                    : 'bg-hover text-ink-secondary hover:text-ink'
+                "
                 @click="form.theme.preset = preset"
               >
-                {{ preset }}
+                {{ PRESET_LABELS[preset] }}
               </button>
             </div>
           </div>
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label v-for="field in THEME_FIELDS" :key="field.key" class="block">
-              <span class="mb-1 block text-xs text-ink-soft">{{ field.label }}</span>
+              <span class="mb-1 block text-xs text-ink-secondary">{{ field.label }}</span>
               <div class="flex items-center gap-2">
                 <input
                   v-model="form.theme[field.key]"
                   type="color"
-                  class="h-9 w-9 shrink-0 cursor-pointer rounded border border-line bg-surface"
+                  :aria-label="`${field.label}色块`"
+                  class="h-9 w-10 shrink-0 cursor-pointer rounded-lg border border-strong bg-surface p-0.5"
                 />
                 <input
                   v-model="form.theme[field.key]"
                   type="text"
-                  class="input-base w-full font-mono text-xs"
+                  spellcheck="false"
+                  class="input-base font-mono text-xs"
                 />
               </div>
             </label>
           </div>
-        </div>
+        </section>
 
         <!-- 用户等级颜色 -->
-        <div class="card-base space-y-3">
-          <h3 class="text-sm font-semibold text-ink-soft">用户等级颜色</h3>
-          <p class="text-xs text-ink-soft">
-            用户名颜色按用户等级动态计算，此处配置各等级的展示颜色
-          </p>
-          <div class="grid grid-cols-2 gap-3">
+        <section class="space-y-3.5 px-4 py-5 sm:px-5">
+          <div>
+            <h2 class="text-sm font-semibold text-ink">用户等级颜色</h2>
+            <p class="mt-1 text-xs text-ink-muted">
+              用户名展示色按用户等级动态计算，可在此统一调整各等级配色。
+            </p>
+          </div>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label v-for="field in LEVEL_FIELDS" :key="field.key" class="block">
-              <span class="mb-1 flex items-center gap-1.5 text-xs text-ink-soft">
-                <!-- 颜色预览：实时展示当前配置色 -->
+              <span class="mb-1 flex items-center gap-1.5 text-xs text-ink-secondary">
                 <span
-                  class="inline-block h-3 w-3 shrink-0 rounded-full border border-line"
+                  class="inline-block h-2.5 w-2.5 shrink-0 rounded-full border border-subtle"
                   :style="{ backgroundColor: form.nameColors[field.key] }"
+                  aria-hidden="true"
                 />
                 {{ field.label }}
               </span>
@@ -555,29 +593,32 @@ onMounted(load);
                 <input
                   v-model="form.nameColors[field.key]"
                   type="color"
-                  class="h-9 w-9 shrink-0 cursor-pointer rounded border border-line bg-surface"
+                  :aria-label="`${field.label}颜色`"
+                  class="h-9 w-10 shrink-0 cursor-pointer rounded-lg border border-strong bg-surface p-0.5"
                 />
                 <input
                   v-model="form.nameColors[field.key]"
                   type="text"
-                  class="input-base w-full font-mono text-xs"
+                  spellcheck="false"
+                  class="input-base font-mono text-xs"
                 />
               </div>
             </label>
           </div>
-        </div>
+        </section>
       </fieldset>
 
       <!-- 保存按钮 -->
-      <button
-        v-if="props.canEdit"
-        type="button"
-        class="btn-primary mt-4 w-full"
-        :disabled="saving"
-        @click="save"
-      >
-        {{ saving ? "保存中…" : "保存配置" }}
-      </button>
+      <div v-if="props.canEdit" class="border-t border-subtle px-4 py-4 sm:px-5">
+        <button
+          type="button"
+          class="btn-primary w-full !py-2.5"
+          :disabled="saving"
+          @click="save"
+        >
+          {{ saving ? "保存中…" : "保存配置" }}
+        </button>
+      </div>
     </template>
   </div>
 </template>

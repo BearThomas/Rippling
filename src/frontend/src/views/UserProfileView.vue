@@ -1,17 +1,17 @@
 <!--
-  用户主页（他人主页 + 我的页面整合）
+  用户主页（他人主页 + 我的页面整合 — Elk 简洁顶条 + 统计数字 + 下划线 AppTabs + 无边框动态流）
 
   路由 /user/:id（他人主页）与 /profile（我的页面）共用本组件：
   无路由参数时取当前登录用户 ID。
-
-  结构：用户信息卡片 → 提问箱入口 →（本人：功能菜单）→ 帖子 / 评论 Tab（分页）。
+  保留 data-tour="profile-menu"、「设置」入口与「退出登录」直出行为以兼容引导与自动化检查。
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import LoadingSpinner from "../components/common/LoadingSpinner.vue";
+import FeedSkeleton from "../components/common/FeedSkeleton.vue";
 import EmptyState from "../components/common/EmptyState.vue";
 import ErrorState from "../components/common/ErrorState.vue";
+import AppTabs, { type TabOption } from "../components/common/AppTabs.vue";
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
 import UserCard from "../components/user/UserCard.vue";
 import PostCard from "../components/post/PostCard.vue";
@@ -39,19 +39,19 @@ const targetUserId = computed(() => {
 
 /** 是否查看自己 */
 const isSelf = computed(
-  () => !!auth.userId && targetUserId.value === auth.userId
+  () => Boolean(auth.userId) && targetUserId.value === auth.userId
 );
 
 // ------------------------------------------------------------
 //  资料加载
 // ------------------------------------------------------------
 
-const loading = ref(true);
-const error = ref(false);
+const loading = shallowRef(true);
+const error = shallowRef(false);
 const profile = ref<UserPublicProfile | null>(null);
 
 /** 管理面板入口可见性（本人 + access_admin_panel 权限） */
-const canAdmin = ref(false);
+const canAdmin = shallowRef(false);
 
 /** 我的认证工单状态（用于"申请认证"入口智能跳转） */
 const verificationStatus = ref<{
@@ -60,27 +60,38 @@ const verificationStatus = ref<{
   ticketId: string | null;
 } | null>(null);
 
+/** 认证状态简短标签 */
+const verificationLabel = computed(() => {
+  if (!verificationStatus.value?.exists) return "";
+  switch (verificationStatus.value.status) {
+    case "pending":
+      return "审核中";
+    case "approved":
+      return "已认证";
+    case "rejected":
+      return "未通过";
+    default:
+      return "";
+  }
+});
+
 /** 点击"申请认证"入口的处理 */
 function handleVerificationClick(): void {
   if (!verificationStatus.value) return;
   const { exists, status, ticketId } = verificationStatus.value;
 
   if (!exists || status === "rejected") {
-    // 无认证工单或已被拒绝 → 跳转创建
-    router.push("/ticket/create?type=verification");
+    void router.push("/ticket/create?type=verification");
     return;
   }
 
   if (status === "approved" && ticketId) {
-    // 已通过 → 跳转工单详情
-    router.push(`/ticket/${ticketId}`);
+    void router.push(`/ticket/${ticketId}`);
     return;
   }
 
   if (status === "pending") {
-    // 审核中 → 提示等待
     showToast("认证审核中，请耐心等待", "info");
-    return;
   }
 }
 
@@ -90,11 +101,9 @@ async function loadProfile(): Promise<void> {
   profile.value = null;
   try {
     profile.value = await getUserProfile(targetUserId.value);
-    // 本人时探测管理面板权限（静默）+ 加载认证状态
     if (isSelf.value) {
       const mask = await getMyPermissions();
       canAdmin.value = hasPermission(mask, PERM_ACCESS_ADMIN_PANEL);
-      // 加载认证工单状态（失败不影响主流程）
       try {
         verificationStatus.value = await getMyVerification();
       } catch {
@@ -105,7 +114,7 @@ async function loadProfile(): Promise<void> {
       verificationStatus.value = null;
     }
   } catch {
-    error.value = true; // client.ts 已自动 Toast
+    error.value = true;
   } finally {
     loading.value = false;
   }
@@ -121,14 +130,28 @@ function onFollowChange(next: boolean): void {
 //  帖子 / 评论 Tab
 // ------------------------------------------------------------
 
-const activeTab = ref<"posts" | "comments">("posts");
+const activeTab = shallowRef<"posts" | "comments">("posts");
 
 const posts = ref<PostInfo[]>([]);
 const comments = ref<PostInfo[]>([]);
-const postsHasMore = ref(false);
-const commentsHasMore = ref(false);
-const postsLoading = ref(false);
-const commentsLoading = ref(false);
+const postsHasMore = shallowRef(false);
+const commentsHasMore = shallowRef(false);
+const postsLoading = shallowRef(false);
+const commentsLoading = shallowRef(false);
+const commentsLoadedOnce = shallowRef(false);
+
+const tabItems = computed<TabOption[]>(() => [
+  {
+    value: "posts",
+    label: "帖子",
+    count: posts.value.length > 0 ? posts.value.length : undefined,
+  },
+  {
+    value: "comments",
+    label: "评论",
+    count: comments.value.length > 0 ? comments.value.length : undefined,
+  },
+]);
 
 /** 加载帖子（reset 时从第一页开始） */
 async function loadPosts(reset: boolean): Promise<void> {
@@ -159,6 +182,7 @@ async function loadComments(reset: boolean): Promise<void> {
     );
     comments.value = reset ? page : comments.value.concat(page);
     commentsHasMore.value = page.length === PAGE_SIZE;
+    commentsLoadedOnce.value = true;
   } catch {
     // client.ts 已自动 Toast
   } finally {
@@ -167,201 +191,232 @@ async function loadComments(reset: boolean): Promise<void> {
 }
 
 /** 切换 Tab（懒加载：首次切入才拉取） */
-function switchTab(tab: "posts" | "comments"): void {
+function onTabChange(next: string): void {
+  const tab = next === "comments" ? "comments" : "posts";
   activeTab.value = tab;
-  if (tab === "posts" && posts.value.length === 0) loadPosts(true);
-  if (tab === "comments" && comments.value.length === 0) loadComments(true);
+  if (tab === "posts" && posts.value.length === 0) void loadPosts(true);
+  if (tab === "comments" && !commentsLoadedOnce.value) void loadComments(true);
 }
 
-/** 评论卡片点击 → 评论详情 */
+/** 评论行点击 → 评论详情 */
 function openComment(id: string): void {
-  router.push({ name: "comment-detail", params: { id } });
+  void router.push({ name: "comment-detail", params: { id } });
 }
 
 // ------------------------------------------------------------
 //  本人操作
 // ------------------------------------------------------------
 
-/** 退出登录 */
+const signingOut = shallowRef(false);
+
+/** 退出登录（可逆操作，不弹确认框以兼容一键登出流程） */
 async function handleSignOut(): Promise<void> {
-  await auth.signOut();
-  clearPermissionCache();
-  showToast("已退出登录", "success");
-  router.push("/login");
+  if (signingOut.value) return;
+  signingOut.value = true;
+  try {
+    await auth.signOut();
+    clearPermissionCache();
+    showToast("已退出登录", "success");
+    void router.push("/login");
+  } finally {
+    signingOut.value = false;
+  }
 }
 
 /** 加载全部（资料 + 当前 Tab 内容） */
 async function loadAll(): Promise<void> {
+  activeTab.value = "posts";
+  commentsLoadedOnce.value = false;
   await loadProfile();
   if (!error.value) {
     await loadPosts(true);
-    // 评论列表懒加载：默认 Tab 为帖子
     comments.value = [];
     commentsHasMore.value = false;
   }
 }
 
-// 切换用户（如从我的页面进入他人主页）时重新加载
 watch(targetUserId, (next, prev) => {
-  if (next && next !== prev) loadAll();
+  if (next && next !== prev) void loadAll();
 });
 
-// 本人资料：用户名修改后（auth store 本地同步）重新拉取资料，
-// 保证返回本页时立即显示新用户名，不依赖手动刷新
 watch(
   () => auth.username,
   (next, prev) => {
     if (next && prev && next !== prev && isSelf.value) {
-      loadAll();
+      void loadAll();
     }
   }
 );
 
 onMounted(() => {
-  if (targetUserId.value) loadAll();
-  else loading.value = false; // 未登录访问 /profile，显示登录引导
+  if (targetUserId.value) void loadAll();
+  else loading.value = false;
 });
 </script>
 
 <template>
-  <div class="px-3 pt-3">
-    <!--
-      以前这里有一块"未登录也能进 /profile"的登录引导。
-      现在路由守卫按登录墙直接跳 /login，这段永远走不到，删掉免得误导。
-    -->
-
-    <LoadingSpinner v-if="loading" />
-    <ErrorState v-else-if="error" @retry="loadAll" />
+  <div>
+    <FeedSkeleton v-if="loading" variant="elk" :count="4" />
+    <div v-else-if="error" class="px-4 py-6">
+      <ErrorState @retry="loadAll" />
+    </div>
 
     <template v-else-if="profile">
-      <!-- 用户信息卡片 -->
-      <UserCard :profile="profile" :is-self="isSelf" @follow-change="onFollowChange" />
-
-      <!-- 本人：功能按钮行 -->
-      <div v-if="isSelf" class="mt-3 flex gap-3">
-        <RouterLink to="/settings" class="btn-secondary flex-1">
-          设置
-        </RouterLink>
-        <RouterLink
-          :to="{ name: 'question-box', params: { userId: profile.userId } }"
-          class="btn-secondary flex-1"
-        >
-          管理提问箱
-        </RouterLink>
-      </div>
+      <!-- 用户头部（顶条 + 头像 + 统计） -->
+      <UserCard :profile="profile" :is-self="isSelf" @follow-change="onFollowChange">
+        <template v-if="isSelf" #actions>
+          <RouterLink
+            to="/settings"
+            class="btn-secondary !rounded-full !px-3.5 !py-1.5 text-xs"
+          >
+            <AppSvgIcon name="settings" :size="14" />
+            <span>设置</span>
+          </RouterLink>
+          <RouterLink
+            :to="{ name: 'question-box', params: { userId: profile.userId } }"
+            class="btn-secondary !rounded-full !px-3.5 !py-1.5 text-xs"
+          >
+            <AppSvgIcon name="inbox" :size="14" />
+            <span>管理提问箱</span>
+          </RouterLink>
+        </template>
+      </UserCard>
 
       <!-- 他人：提问箱入口（启用时显示） -->
       <RouterLink
-        v-else-if="profile.questionBoxEnabled"
+        v-if="!isSelf && profile.questionBoxEnabled"
         :to="{ name: 'question-box', params: { userId: profile.userId } }"
-        class="card-base mt-3 flex items-center gap-3 py-3 pressable"
+        class="flex w-full items-center gap-3 border-b border-subtle px-4 py-3.5 text-sm text-ink hover:bg-hover pressable sm:px-5"
       >
-        <AppSvgIcon name="inbox" :size="18" class="text-ink-soft" />
-        <span class="flex-1 text-sm">提问箱</span>
-        <AppSvgIcon name="back" :size="16" class="rotate-180 text-ink-soft" />
+        <span
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-primary"
+          aria-hidden="true"
+        >
+          <AppSvgIcon name="inbox" :size="16" />
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="block font-medium text-ink">匿名提问箱</span>
+          <span class="block text-xs text-ink-muted">向 {{ profile.username }} 匿名提问</span>
+        </span>
+        <AppSvgIcon name="chevronRight" :size="16" class="shrink-0 text-ink-muted" />
       </RouterLink>
 
-      <!-- 本人：功能菜单 -->
-      <div v-if="isSelf" data-tour="profile-menu" class="mt-3 space-y-3">
+      <!-- 本人：Elk 无边框分割行菜单（保留 data-tour="profile-menu"） -->
+      <nav
+        v-if="isSelf"
+        data-tour="profile-menu"
+        aria-label="个人功能菜单"
+        class="border-b border-subtle divide-y divide-[var(--border-subtle)]"
+      >
         <RouterLink
           to="/tickets"
-          class="card-base flex items-center gap-3 py-3 pressable"
+          class="flex w-full items-center gap-3 px-4 py-3 text-sm text-ink hover:bg-hover pressable sm:px-5"
         >
-          <AppSvgIcon name="file" :size="18" class="text-ink-soft" />
-          <span class="flex-1 text-sm">我的工单</span>
-          <AppSvgIcon name="back" :size="16" class="rotate-180 text-ink-soft" />
+          <AppSvgIcon name="file" :size="17" class="shrink-0 text-ink-muted" />
+          <span class="min-w-0 flex-1">我的工单</span>
+          <AppSvgIcon name="chevronRight" :size="15" class="shrink-0 text-ink-muted" />
         </RouterLink>
-        <!-- 申请认证入口（仅登录后可见，isSelf 已保证已登录） -->
+
         <button
           type="button"
-          class="card-base flex w-full items-center gap-3 py-3 text-left pressable"
+          class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-ink hover:bg-hover pressable sm:px-5"
           @click="handleVerificationClick"
         >
-          <AppSvgIcon name="check" :size="18" class="text-ink-soft" />
-          <span class="flex-1 text-sm">申请认证</span>
-          <AppSvgIcon name="back" :size="16" class="rotate-180 text-ink-soft" />
+          <AppSvgIcon name="check" :size="17" class="shrink-0 text-ink-muted" />
+          <span class="min-w-0 flex-1">申请认证</span>
+          <span v-if="verificationLabel" class="tag-pill shrink-0">
+            {{ verificationLabel }}
+          </span>
+          <AppSvgIcon name="chevronRight" :size="15" class="shrink-0 text-ink-muted" />
         </button>
+
         <RouterLink
           v-if="canAdmin"
           to="/admin"
-          class="card-base flex items-center gap-3 py-3 pressable"
+          class="flex w-full items-center gap-3 px-4 py-3 text-sm text-ink hover:bg-hover pressable sm:px-5"
         >
-          <AppSvgIcon name="shield" :size="18" class="text-ink-soft" />
-          <span class="flex-1 text-sm">管理面板</span>
-          <AppSvgIcon name="back" :size="16" class="rotate-180 text-ink-soft" />
+          <AppSvgIcon name="shield" :size="17" class="shrink-0 text-ink-muted" />
+          <span class="min-w-0 flex-1">管理面板</span>
+          <AppSvgIcon name="chevronRight" :size="15" class="shrink-0 text-ink-muted" />
         </RouterLink>
+
         <button
           type="button"
-          class="btn-secondary w-full text-red-500"
+          class="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-danger hover:bg-danger-soft pressable disabled:opacity-50 sm:px-5"
+          :disabled="signingOut"
           @click="handleSignOut"
         >
-          退出登录
+          <AppSvgIcon name="logout" :size="17" class="shrink-0" />
+          <span class="min-w-0 flex-1">{{ signingOut ? "退出中…" : "退出登录" }}</span>
         </button>
-      </div>
+      </nav>
 
-      <!-- Tab 切换（帖子 / 评论） -->
-      <div class="mt-4 flex border-b border-line">
-        <button
-          type="button"
-          class="flex-1 pb-2 text-sm font-medium transition-colors"
-          :class="activeTab === 'posts' ? 'border-b-2 border-primary text-primary' : 'text-ink-soft'"
-          @click="switchTab('posts')"
-        >
-          帖子 {{ posts.length > 0 ? posts.length : "" }}
-        </button>
-        <button
-          type="button"
-          class="flex-1 pb-2 text-sm font-medium transition-colors"
-          :class="activeTab === 'comments' ? 'border-b-2 border-primary text-primary' : 'text-ink-soft'"
-          @click="switchTab('comments')"
-        >
-          评论 {{ comments.length > 0 ? comments.length : "" }}
-        </button>
-      </div>
+      <!-- 下划线 AppTabs（帖子 / 评论） -->
+      <AppTabs
+        :model-value="activeTab"
+        :items="tabItems"
+        variant="underline"
+        stretch
+        aria-label="用户内容分类"
+        @update:model-value="onTabChange"
+      />
 
-      <!-- 帖子列表 -->
-      <div v-show="activeTab === 'posts'" class="mt-3 space-y-3 pb-6">
+      <!-- 帖子流（Elk 无边框 1px 分割线） -->
+      <div v-show="activeTab === 'posts'" class="pb-6">
         <PostCard v-for="post in posts" :key="post.id" :post="post" />
-        <EmptyState v-if="posts.length === 0 && !postsLoading" text="还没有发过帖子" icon="file" />
-        <button
-          v-if="postsHasMore"
-          type="button"
-          class="btn-secondary w-full"
-          :disabled="postsLoading"
-          @click="loadPosts(false)"
-        >
-          {{ postsLoading ? "加载中…" : "加载更多" }}
-        </button>
+        <FeedSkeleton v-if="postsLoading && posts.length === 0" variant="elk" :count="3" />
+        <div v-else-if="posts.length === 0" class="px-4 py-4">
+          <EmptyState text="还没有发过帖子" icon="file" />
+        </div>
+        <div v-if="postsHasMore" class="px-4 py-4 text-center">
+          <button
+            type="button"
+            class="btn-secondary !py-1.5 text-xs"
+            :disabled="postsLoading"
+            @click="loadPosts(false)"
+          >
+            {{ postsLoading ? "加载中…" : "加载更多" }}
+          </button>
+        </div>
       </div>
 
-      <!-- 评论列表（简化展示，点击进评论详情） -->
-      <div v-show="activeTab === 'comments'" class="mt-3 space-y-3 pb-6">
+      <!-- 评论流（Elk 无边框 1px 分割线，点赞图标使用 thumbUp） -->
+      <div v-show="activeTab === 'comments'" class="pb-6">
         <button
           v-for="comment in comments"
           :key="comment.id"
           type="button"
-          class="card-base block w-full text-left pressable"
+          class="block w-full border-b border-subtle px-4 py-3.5 text-left hover:bg-hover pressable sm:px-5"
           @click="openComment(comment.id)"
         >
-          <p class="text-sm leading-relaxed">{{ truncateText(comment.content, 120) }}</p>
-          <div class="mt-2 flex items-center gap-4 text-xs text-ink-soft">
-            <span class="flex items-center gap-1">
-              <AppSvgIcon name="heart" :size="12" />
+          <p class="text-[14.5px] leading-relaxed text-ink break-words">
+            {{ truncateText(comment.content, 140) }}
+          </p>
+          <div class="mt-2 flex items-center gap-4 text-xs text-ink-muted">
+            <span class="inline-flex items-center gap-1 tabular-nums">
+              <AppSvgIcon name="thumbUp" :size="13" />
               {{ comment.likeCount ?? 0 }}
             </span>
-            <span>{{ formatRelativeTime(comment.createdAt) }}</span>
+            <time :datetime="comment.createdAt" class="tabular-nums">
+              {{ formatRelativeTime(comment.createdAt) }}
+            </time>
           </div>
         </button>
-        <EmptyState v-if="comments.length === 0 && !commentsLoading" text="还没有发过评论" icon="comment" />
-        <button
-          v-if="commentsHasMore"
-          type="button"
-          class="btn-secondary w-full"
-          :disabled="commentsLoading"
-          @click="loadComments(false)"
-        >
-          {{ commentsLoading ? "加载中…" : "加载更多" }}
-        </button>
+
+        <FeedSkeleton v-if="commentsLoading && comments.length === 0" variant="elk" :count="3" />
+        <div v-else-if="comments.length === 0" class="px-4 py-4">
+          <EmptyState text="还没有发过评论" icon="comment" />
+        </div>
+        <div v-if="commentsHasMore" class="px-4 py-4 text-center">
+          <button
+            type="button"
+            class="btn-secondary !py-1.5 text-xs"
+            :disabled="commentsLoading"
+            @click="loadComments(false)"
+          >
+            {{ commentsLoading ? "加载中…" : "加载更多" }}
+          </button>
+        </div>
       </div>
     </template>
   </div>

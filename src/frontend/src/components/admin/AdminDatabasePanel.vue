@@ -1,44 +1,34 @@
 <!--
-  管理面板 — 数据库子面板
+  管理面板 — 数据库子面板（克制工具页：只读 SQL 查询 + 无边框表列表 + 紧凑数据表）
 
+  - SQL 查询（edit_database 权限）：仅允许 SELECT / WITH，最多返回 500 行
   - 表列表（GET /database/tables）：点击表名查看前 100 行（横向滚动表格）
-  - SQL 查询（edit_database 权限）：仅允许 SELECT / WITH，
-    结果最多 500 行，超出截断并提示
 -->
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import LoadingSpinner from "../common/LoadingSpinner.vue";
+import { onMounted, ref, shallowRef } from "vue";
+import FeedSkeleton from "../common/FeedSkeleton.vue";
+import EmptyState from "../common/EmptyState.vue";
 import ErrorState from "../common/ErrorState.vue";
-import {
-  listDatabaseTables,
-  getTableData,
-  executeSql,
-} from "../../api/admin";
+import AppSvgIcon from "../layout/AppSvgIcon.vue";
+import { listDatabaseTables, getTableData, executeSql } from "../../api/admin";
 import type { DatabaseTableInfo } from "../../api/admin";
 import { showToast } from "../../utils/toast";
 
-/** 是否具备 edit_database（决定是否显示 SQL 查询框） */
 const props = defineProps<{ canQuery: boolean }>();
 
-// ---------- 表列表与表数据 ----------
-const tablesLoading = ref(true);
-const tablesError = ref(false);
+const tablesLoading = shallowRef(true);
+const tablesError = shallowRef(false);
 const tables = ref<DatabaseTableInfo[]>([]);
 
-/** 当前查看的表名（null = 未选表） */
-const activeTable = ref<string | null>(null);
+const activeTable = shallowRef<string | null>(null);
 const tableRows = ref<Record<string, unknown>[]>([]);
-const tableLoading = ref(false);
-
-/** 结果列名（从首行字段推断） */
+const tableLoading = shallowRef(false);
 const tableColumns = ref<string[]>([]);
 
-// ---------- SQL 查询 ----------
-const sqlInput = ref("");
-const sqlRunning = ref(false);
+const sqlInput = shallowRef("");
+const sqlRunning = shallowRef(false);
 const sqlColumns = ref<string[]>([]);
 const sqlRows = ref<Record<string, unknown>[]>([]);
-/** 结果元信息 */
 const sqlMeta = ref<{ rowCount: number; truncated: boolean } | null>(null);
 
 async function loadTables(): Promise<void> {
@@ -53,7 +43,6 @@ async function loadTables(): Promise<void> {
   }
 }
 
-/** 点击表名：拉取前 100 行 */
 async function openTable(name: string): Promise<void> {
   if (tableLoading.value) return;
   activeTable.value = name;
@@ -71,7 +60,6 @@ async function openTable(name: string): Promise<void> {
   }
 }
 
-/** 执行只读 SQL（前端先做 SELECT / WITH 预检，后端二次校验） */
 async function runSql(): Promise<void> {
   const sql = sqlInput.value.trim();
   if (!sql) {
@@ -90,122 +78,156 @@ async function runSql(): Promise<void> {
     sqlRows.value = result.rows;
     sqlMeta.value = { rowCount: result.rowCount, truncated: result.truncated };
   } catch {
-    // 错误 Toast 由 client 层统一处理
+    // client.ts 已自动 Toast
   } finally {
     sqlRunning.value = false;
   }
 }
 
-/** 单元格值格式化：null → NULL；对象 → JSON */
 function cellText(value: unknown): string {
   if (value === null || value === undefined) return "NULL";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
 
-onMounted(loadTables);
+onMounted(() => {
+  void loadTables();
+});
 </script>
 
 <template>
-  <div class="space-y-4">
-    <!-- SQL 查询（仅 edit_database） -->
-    <div v-if="props.canQuery" class="card-base">
-      <h3 class="mb-1 text-sm font-semibold text-ink-soft">SQL 查询</h3>
-      <p class="mb-2 rounded-lg bg-page px-2 py-1.5 text-xs text-red-500">
-        ⚠ 仅允许 SELECT / WITH 只读查询，禁止分号多语句；最多返回 500 行，每次执行将写入管理日志
+  <div class="divide-y divide-[var(--border-subtle)]">
+    <!-- 只读 SQL 查询（仅 edit_database 权限） -->
+    <section v-if="props.canQuery" class="space-y-3 px-4 py-5 sm:px-5">
+      <div class="flex items-center justify-between gap-2">
+        <label for="admin-sql-input" class="text-sm font-semibold text-ink">SQL 查询</label>
+        <span class="text-xs text-ink-muted">最多 500 行</span>
+      </div>
+
+      <p class="flex items-start gap-2 rounded-xl bg-danger-soft px-3 py-2 text-xs leading-relaxed text-danger">
+        <AppSvgIcon name="alertTriangle" :size="14" class="mt-0.5 shrink-0" />
+        <span>仅允许 SELECT / WITH 只读查询，禁止分号多语句；每次执行都会写入公开管理日志。</span>
       </p>
+
       <textarea
+        id="admin-sql-input"
         v-model="sqlInput"
         rows="3"
-        class="input-base w-full resize-y font-mono text-xs"
+        spellcheck="false"
+        class="input-base resize-y font-mono text-xs"
         placeholder="SELECT * FROM user_profile LIMIT 10"
-      ></textarea>
+      />
+
       <button
         type="button"
-        class="btn-primary mt-2 w-full"
+        class="btn-primary w-full"
         :disabled="sqlRunning"
         @click="runSql"
       >
         {{ sqlRunning ? "执行中…" : "执行查询" }}
       </button>
 
-      <!-- SQL 结果表格（横向滚动） -->
-      <template v-if="sqlMeta">
-        <p class="mt-3 text-xs text-ink-soft">
+      <!-- SQL 结果表格 -->
+      <div v-if="sqlMeta" class="space-y-2 pt-1">
+        <p class="text-xs tabular-nums text-ink-muted">
           共 {{ sqlMeta.rowCount }} 行{{ sqlMeta.truncated ? "（超过 500 行，已截断）" : "" }}
         </p>
-        <div class="mt-1 overflow-x-auto rounded-lg border border-line">
-          <table class="w-full min-w-max text-left text-xs">
-            <thead class="bg-page text-ink-soft">
+        <div class="overflow-x-auto rounded-xl border border-subtle bg-surface">
+          <table class="w-full min-w-max border-collapse text-left text-xs">
+            <thead class="border-b border-subtle bg-canvas-soft text-ink-secondary">
               <tr>
-                <th v-for="col in sqlColumns" :key="col" class="whitespace-nowrap px-2 py-1.5 font-medium">
+                <th
+                  v-for="col in sqlColumns"
+                  :key="col"
+                  scope="col"
+                  class="whitespace-nowrap px-3 py-2 font-mono font-medium"
+                >
                   {{ col }}
                 </th>
               </tr>
             </thead>
-            <tbody>
-              <tr v-for="(row, i) in sqlRows" :key="i" class="border-t border-line">
+            <tbody class="divide-y divide-[var(--border-subtle)]">
+              <tr v-for="(row, i) in sqlRows" :key="i" class="hover:bg-hover">
                 <td
                   v-for="col in sqlColumns"
                   :key="col"
-                  class="max-w-64 truncate whitespace-nowrap px-2 py-1.5"
+                  class="max-w-64 truncate whitespace-nowrap px-3 py-2 font-mono text-ink"
                 >
                   {{ cellText(row[col]) }}
                 </td>
               </tr>
             </tbody>
           </table>
-          <p v-if="sqlRows.length === 0" class="px-2 py-3 text-center text-xs text-ink-soft">
+          <p v-if="sqlRows.length === 0" class="px-3 py-4 text-center text-xs text-ink-muted">
             查询无结果
           </p>
         </div>
-      </template>
-    </div>
-
-    <!-- 表列表 -->
-    <div>
-      <h3 class="mb-2 px-1 text-sm font-semibold text-ink-soft">数据表</h3>
-      <LoadingSpinner v-if="tablesLoading" />
-      <ErrorState v-else-if="tablesError" @retry="loadTables" />
-      <div v-else class="card-base !p-0 divide-y divide-line">
-        <button
-          v-for="table in tables"
-          :key="table.name"
-          type="button"
-          class="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm pressable"
-          :class="activeTable === table.name ? 'text-primary' : ''"
-          @click="openTable(table.name)"
-        >
-          <span class="font-mono">{{ table.name }}</span>
-          <span class="text-xs text-ink-soft">查看前 100 行</span>
-        </button>
       </div>
-    </div>
+    </section>
+
+    <!-- 数据表列表 -->
+    <section>
+      <div class="border-b border-subtle bg-canvas-soft px-4 py-2 text-xs font-medium text-ink-muted sm:px-5">
+        数据表（只读浏览前 100 行）
+      </div>
+
+      <FeedSkeleton v-if="tablesLoading" variant="elk" :count="5" />
+      <div v-else-if="tablesError" class="px-4 py-6">
+        <ErrorState @retry="loadTables" />
+      </div>
+
+      <ul v-else role="list" class="divide-y divide-[var(--border-subtle)]">
+        <li v-for="table in tables" :key="table.name">
+          <button
+            type="button"
+            class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm hover:bg-hover pressable sm:px-5"
+            :class="activeTable === table.name ? 'bg-accent-soft text-primary' : 'text-ink'"
+            @click="openTable(table.name)"
+          >
+            <span class="truncate font-mono text-xs font-medium">{{ table.name }}</span>
+            <span class="inline-flex shrink-0 items-center gap-1 text-xs text-ink-muted">
+              <span>查看</span>
+              <AppSvgIcon name="chevronRight" :size="14" />
+            </span>
+          </button>
+        </li>
+      </ul>
+    </section>
 
     <!-- 表数据（横向滚动） -->
-    <div v-if="activeTable">
-      <h3 class="mb-2 px-1 text-sm font-semibold text-ink-soft">
-        {{ activeTable }} 数据
-      </h3>
-      <LoadingSpinner v-if="tableLoading" />
-      <div v-else-if="tableRows.length === 0" class="card-base text-center text-sm text-ink-soft">
-        空表
+    <section v-if="activeTable" class="px-4 py-5 sm:px-5">
+      <div class="mb-3 flex items-center justify-between gap-2">
+        <h2 class="truncate font-mono text-sm font-semibold text-ink">
+          {{ activeTable }}
+        </h2>
+        <span v-if="!tableLoading" class="shrink-0 text-xs tabular-nums text-ink-muted">
+          {{ tableRows.length }} 行
+        </span>
       </div>
-      <div v-else class="overflow-x-auto rounded-lg border border-line bg-surface">
-        <table class="w-full min-w-max text-left text-xs">
-          <thead class="bg-page text-ink-soft">
+
+      <FeedSkeleton v-if="tableLoading" variant="elk" :count="3" />
+      <EmptyState v-else-if="tableRows.length === 0" text="当前数据表为空" icon="file" />
+
+      <div v-else class="overflow-x-auto rounded-xl border border-subtle bg-surface">
+        <table class="w-full min-w-max border-collapse text-left text-xs">
+          <thead class="border-b border-subtle bg-canvas-soft text-ink-secondary">
             <tr>
-              <th v-for="col in tableColumns" :key="col" class="whitespace-nowrap px-2 py-1.5 font-medium">
+              <th
+                v-for="col in tableColumns"
+                :key="col"
+                scope="col"
+                class="whitespace-nowrap px-3 py-2 font-mono font-medium"
+              >
                 {{ col }}
               </th>
             </tr>
           </thead>
-          <tbody>
-            <tr v-for="(row, i) in tableRows" :key="i" class="border-t border-line">
+          <tbody class="divide-y divide-[var(--border-subtle)]">
+            <tr v-for="(row, i) in tableRows" :key="i" class="hover:bg-hover">
               <td
                 v-for="col in tableColumns"
                 :key="col"
-                class="max-w-64 truncate whitespace-nowrap px-2 py-1.5"
+                class="max-w-64 truncate whitespace-nowrap px-3 py-2 font-mono text-ink"
               >
                 {{ cellText(row[col]) }}
               </td>
@@ -213,6 +235,6 @@ onMounted(loadTables);
           </tbody>
         </table>
       </div>
-    </div>
+    </section>
   </div>
 </template>

@@ -1,12 +1,7 @@
 <!--
-  板块卡片（列表项）
+  板块目录卡片（适配 Elk 2 列轻量目录网格）
 
-  两种形态：
-    - 我的板块（mode="mine"）：整卡可点击进入详情，显示锁定图标
-    - 推荐板块（mode="recommend"）：右侧显示"申请加入 / 已申请"按钮
-
-  emit：
-    - join：点击申请加入按钮（推荐模式）
+  无高饱和度彩虹徽章；极淡中性图标容器 + 板块名 + 一句话简介 + 成员数 + 申请入口。
 -->
 <script setup lang="ts">
 import { useRouter } from "vue-router";
@@ -16,26 +11,20 @@ import type { BlockInfo } from "../../types";
 const props = withDefaults(
   defineProps<{
     block: BlockInfo;
-    /** mine = 我的板块（整卡可点）；recommend = 推荐板块（带申请按钮） */
     mode?: "mine" | "recommend";
-    /** 推荐模式下是否已提交申请（待审核） */
     applied?: boolean;
-    /** 推荐模式下申请按钮是否进行中 */
     applying?: boolean;
   }>(),
   { mode: "mine", applied: false, applying: false }
 );
 
 const emit = defineEmits<{ join: [] }>();
-
 const router = useRouter();
 
-/** 进入板块详情 */
 function openDetail(): void {
-  router.push({ name: "block-detail", params: { id: props.block.id } });
+  void router.push({ name: "block-detail", params: { id: props.block.id } });
 }
 
-/** 申请加入（阻止冒泡，避免触发卡片跳转） */
 function handleJoin(event: MouseEvent): void {
   event.stopPropagation();
   if (props.applied || props.applying) return;
@@ -44,49 +33,73 @@ function handleJoin(event: MouseEvent): void {
 </script>
 
 <template>
-  <div
-    class="card-base cursor-pointer pressable"
+  <article
+    class="flex h-full w-full cursor-pointer flex-col justify-between rounded-xl border border-subtle bg-surface p-4 hover:border-strong hover:bg-hover pressable"
     role="button"
     tabindex="0"
     @click="openDetail"
     @keydown.enter="openDetail"
   >
-    <div class="flex items-center gap-2">
-      <h3 class="min-w-0 flex-1 truncate font-semibold">{{ block.name }}</h3>
-      <!-- 锁定标记 -->
-      <span
-        v-if="block.isLocked"
-        class="flex shrink-0 items-center gap-0.5 rounded bg-[color-mix(in_srgb,var(--c-accent)_12%,transparent)] px-1 text-[10px] text-accent"
-      >
-        <AppSvgIcon name="lock" :size="10" />
-        已锁定
-      </span>
-      <!-- 成员数（后端提供时展示） -->
-      <span
-        v-if="block.memberCount !== undefined"
-        class="flex shrink-0 items-center gap-0.5 text-xs text-ink-soft"
-      >
-        <AppSvgIcon name="users" :size="12" />
-        {{ block.memberCount }}
-      </span>
+    <div>
+      <div class="flex items-start gap-3">
+        <span
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-canvas-soft text-primary"
+        >
+          <AppSvgIcon name="blocks" :size="18" />
+        </span>
+
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-1.5">
+            <h3 class="truncate text-[15px] font-semibold leading-5 text-ink">
+              {{ block.name }}
+            </h3>
+            <span
+              v-if="block.isLocked"
+              class="tag-pill !px-1.5 !py-0 text-[11px]"
+              title="已锁定"
+            >
+              <AppSvgIcon name="lock" :size="10" />
+              锁定
+            </span>
+          </div>
+          <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-ink-secondary">
+            {{ block.description || "暂无板块简介" }}
+          </p>
+        </div>
+      </div>
     </div>
 
-    <div class="mt-1 flex items-end gap-2">
-      <p class="min-w-0 flex-1 text-sm leading-relaxed text-ink-soft line-clamp-2">
-        {{ block.description || "暂无描述" }}
-      </p>
+    <div class="mt-3 flex items-center justify-between gap-2 border-t border-subtle pt-2.5">
+      <span
+        v-if="block.memberCount !== undefined"
+        class="inline-flex items-center gap-1 text-xs tabular-nums text-ink-muted"
+      >
+        <AppSvgIcon name="users" :size="13" />
+        {{ block.memberCount }} 成员
+      </span>
+      <span v-else class="text-xs text-ink-muted">点击进入</span>
 
-      <!-- 推荐模式：申请按钮 -->
       <button
         v-if="mode === 'recommend'"
         type="button"
-        class="btn-primary shrink-0 !px-3 !py-1.5 text-xs"
-        :class="applied || applying ? 'opacity-50' : ''"
+        class="shrink-0 rounded-lg px-2.5 py-1 text-xs font-medium pressable disabled:opacity-50"
+        :class="
+          applied
+            ? 'border border-subtle bg-canvas-soft text-ink-muted'
+            : 'bg-primary text-white hover:opacity-90'
+        "
         :disabled="applied || applying"
         @click="handleJoin"
       >
-        {{ applying ? "申请中…" : applied ? "已申请 / 审核中" : "申请加入" }}
+        {{ applying ? "申请中…" : applied ? "审核中" : "申请加入" }}
       </button>
+
+      <AppSvgIcon
+        v-else
+        name="chevronRight"
+        :size="15"
+        class="shrink-0 text-ink-muted"
+      />
     </div>
-  </div>
+  </article>
 </template>

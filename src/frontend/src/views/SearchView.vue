@@ -1,30 +1,28 @@
 <!--
-  搜索页
+  搜索页（Elk 无边框信息流 + reka-ui AppTabs 分类筛选）
 
-  功能：
-    - 关键词搜索（/api/search?q=&type=&limit=&offset=）
-    - 类型筛选 tab：全部 / 帖子 / 用户 / 板块 / 大事记 / 表白墙 / 评论
-    - 分类展示结果；帖子 / 评论结果点击进入详情
-    - 分页加载更多（offset 递增）
-    - 用户卡片带关注按钮；板块卡片进入板块详情
+  - 支持通过路由 query ?q=&type= 自动触发搜索（衔接桌面端右栏搜索框）
+  - 保留 data-tour="search-tabs"
+  - 所有用户头像统一使用 UserAvatar 并透传 :name-color
 -->
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref, shallowRef, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
-import LoadingSpinner from "../components/common/LoadingSpinner.vue";
+import AppTabs, { type TabOption } from "../components/common/AppTabs.vue";
+import FeedSkeleton from "../components/common/FeedSkeleton.vue";
 import EmptyState from "../components/common/EmptyState.vue";
 import ErrorState from "../components/common/ErrorState.vue";
-import { search } from "../api/search";
 import PostImageStrip from "../components/post/PostImageStrip.vue";
+import UserAvatar from "../components/user/UserAvatar.vue";
+import { search } from "../api/search";
 import { extractImageUrls, stripImages } from "../utils/markdownImages";
 import { followUser } from "../api/follow";
 import { formatRelativeTime, truncateText } from "../utils/format";
 import { showToast } from "../utils/toast";
 import { useAuthStore } from "../stores/auth";
-import type { SearchType } from "../types";
-import UserAvatar from "../components/user/UserAvatar.vue";
 import type {
+  SearchType,
   SearchPostResult,
   SearchUserResult,
   SearchBlockResult,
@@ -36,23 +34,18 @@ const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 
-/** 每页条数 */
 const PAGE_SIZE = 20;
 
-// ------------------------------------------------------------
-//  状态
-// ------------------------------------------------------------
+const keyword = shallowRef((route.query.q as string) ?? "");
+const activeType = shallowRef<SearchType>(
+  ((route.query.type as SearchType) ?? "all") as SearchType
+);
 
-const keyword = ref((route.query.q as string) ?? "");
-const activeType = ref<SearchType>(((route.query.type as SearchType) ?? "all") as SearchType);
+const loading = shallowRef(false);
+const error = shallowRef(false);
+const searched = shallowRef(false);
+const loadingMore = shallowRef(false);
 
-const loading = ref(false);
-const error = ref(false);
-/** 是否已执行过搜索（区分初始空态与无结果空态） */
-const searched = ref(false);
-const loadingMore = ref(false);
-
-/** 各类结果 */
 const posts = ref<SearchPostResult[]>([]);
 const comments = ref<SearchPostResult[]>([]);
 const users = ref<SearchUserResult[]>([]);
@@ -60,16 +53,11 @@ const blocks = ref<SearchBlockResult[]>([]);
 const timeline = ref<SearchTimelineResult[]>([]);
 const confessions = ref<SearchConfessionResult[]>([]);
 
-/** 当前搜索的偏移量（加载更多用） */
-const offset = ref(0);
-/** 是否还有更多（本页返回条数 == PAGE_SIZE 视为可能还有） */
-const hasMore = ref(false);
-
-/** 已关注的用户 ID（本地记录，无初始状态接口） */
+const offset = shallowRef(0);
+const hasMore = shallowRef(false);
 const followedIds = ref<Set<string>>(new Set());
 
-/** 类型 tab 配置 */
-const TYPE_TABS: { value: SearchType; label: string }[] = [
+const TYPE_TABS: readonly TabOption[] = [
   { value: "all", label: "全部" },
   { value: "post", label: "帖子" },
   { value: "user", label: "用户" },
@@ -79,7 +67,6 @@ const TYPE_TABS: { value: SearchType; label: string }[] = [
   { value: "comment", label: "评论" },
 ];
 
-/** 是否有任何结果 */
 const hasAnyResult = computed(
   () =>
     posts.value.length > 0 ||
@@ -90,11 +77,16 @@ const hasAnyResult = computed(
     confessions.value.length > 0
 );
 
-// ------------------------------------------------------------
-//  搜索
-// ------------------------------------------------------------
+function dedupeAppend<T>(
+  existing: T[],
+  incoming: T[],
+  keyOf: (item: T) => string = (item) => (item as { id: string }).id
+): T[] {
+  if (incoming.length === 0) return existing;
+  const keys = new Set(existing.map(keyOf));
+  return [...existing, ...incoming.filter((item) => !keys.has(keyOf(item)))];
+}
 
-/** 执行搜索（append = true 时追加到现有结果） */
 async function doSearch(append = false): Promise<void> {
   const q = keyword.value.trim();
   if (!q) {
@@ -119,7 +111,6 @@ async function doSearch(append = false): Promise<void> {
   try {
     const data = await search(q, activeType.value, PAGE_SIZE, offset.value);
     const r = data.results;
-    // 按 id 去重追加
     posts.value = dedupeAppend(posts.value, r.posts ?? []);
     comments.value = dedupeAppend(comments.value, r.comments ?? []);
     users.value = dedupeAppend(users.value, r.users ?? [], (u) => u.userId);
@@ -142,57 +133,40 @@ async function doSearch(append = false): Promise<void> {
   }
 }
 
-/** 去重追加辅助 */
-function dedupeAppend<T>(
-  existing: T[],
-  incoming: T[],
-  keyOf: (item: T) => string = (item) => (item as { id: string }).id
-): T[] {
-  if (incoming.length === 0) return existing;
-  const keys = new Set(existing.map(keyOf));
-  return [...existing, ...incoming.filter((item) => !keys.has(keyOf(item)))];
-}
-
-/** 提交搜索（输入框回车 / 按钮） */
 function onSubmit(): void {
   void doSearch(false);
 }
 
-/** 切换类型 tab → 重新搜索 */
-function selectType(type: SearchType): void {
-  if (activeType.value === type) return;
-  activeType.value = type;
-  if (searched.value) void doSearch(false);
+function selectType(type: string): void {
+  const next = type as SearchType;
+  if (activeType.value === next) return;
+  activeType.value = next;
+  if (searched.value || keyword.value.trim()) void doSearch(false);
 }
 
-// ------------------------------------------------------------
-//  结果交互
-// ------------------------------------------------------------
-
-/** 列表预览：去掉图片 Markdown（图片已经单独展示），再截断 */
 function previewText(content: string): string {
-  return truncateText(stripImages(content), 100);
+  return truncateText(stripImages(content), 140);
 }
 
-/** 打开帖子详情 */
 function openPost(post: SearchPostResult): void {
-  router.push({ name: "post-detail", params: { id: post.id } });
+  void router.push({ name: "post-detail", params: { id: post.id } });
 }
 
-/** 打开评论详情 */
 function openComment(comment: SearchPostResult): void {
-  router.push({ name: "comment-detail", params: { id: comment.id } });
+  void router.push({ name: "comment-detail", params: { id: comment.id } });
 }
 
-/** 打开板块详情 */
 function openBlock(block: SearchBlockResult): void {
-  router.push({ name: "block-detail", params: { id: block.id } });
+  void router.push({ name: "block-detail", params: { id: block.id } });
 }
 
-/** 关注用户（本地状态切换；初始状态需逐个查询，此处简化） */
+function openUser(user: SearchUserResult): void {
+  void router.push({ name: "user-profile", params: { id: user.userId } });
+}
+
 async function onFollow(user: SearchUserResult): Promise<void> {
   if (!auth.isLoggedIn) {
-    router.push({ path: "/login", query: { redirect: route.fullPath } });
+    void router.push({ path: "/login", query: { redirect: route.fullPath } });
     return;
   }
   if (followedIds.value.has(user.userId)) return;
@@ -204,225 +178,300 @@ async function onFollow(user: SearchUserResult): Promise<void> {
     // client.ts 已自动 Toast
   }
 }
+
+onMounted(() => {
+  if (keyword.value.trim()) {
+    void doSearch(false);
+  }
+});
+
+watch(
+  () => [route.query.q, route.query.type] as const,
+  ([nextQ, nextType]) => {
+    const qStr = typeof nextQ === "string" ? nextQ : "";
+    const tStr = (typeof nextType === "string" ? nextType : "all") as SearchType;
+    let changed = false;
+    if (qStr && qStr !== keyword.value) {
+      keyword.value = qStr;
+      changed = true;
+    }
+    if (tStr !== activeType.value) {
+      activeType.value = tStr;
+      changed = true;
+    }
+    if (changed && keyword.value.trim()) {
+      void doSearch(false);
+    }
+  }
+);
 </script>
 
 <template>
-  <div class="overflow-x-hidden px-3 pb-4 pt-3">
-    <!-- 搜索框 -->
-    <form class="flex items-center gap-2" @submit.prevent="onSubmit">
-      <div class="flex flex-1 items-center gap-2 rounded-full border border-line bg-surface px-3 py-2 focus-within:border-primary">
-        <AppSvgIcon name="search" :size="16" class="shrink-0 text-ink-soft" />
-        <input
-          v-model="keyword"
-          type="search"
-          class="w-full bg-transparent text-sm outline-none placeholder:text-ink-soft/60"
-          placeholder="搜索帖子 / 用户 / 板块…"
-          enterkeyhint="search"
-        />
-        <button v-if="keyword" type="button" aria-label="清空" @click="keyword = ''">
-          <AppSvgIcon name="close" :size="14" class="text-ink-soft" />
+  <div class="overflow-x-hidden pb-6">
+    <!-- 搜索框与类型筛选 -->
+    <div class="border-b border-subtle px-4 pb-3 pt-3.5 sm:px-5">
+      <form class="flex items-center gap-2" @submit.prevent="onSubmit">
+        <div
+          class="flex flex-1 items-center gap-2 rounded-full border border-strong bg-surface px-3.5 py-2 transition-colors focus-within:border-primary"
+        >
+          <AppSvgIcon name="search" :size="16" class="shrink-0 text-ink-muted" />
+          <input
+            v-model="keyword"
+            type="search"
+            class="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-muted"
+            placeholder="搜索帖子、用户、板块…"
+            enterkeyhint="search"
+          />
+          <button
+            v-if="keyword"
+            type="button"
+            class="shrink-0 text-ink-muted hover:text-ink"
+            aria-label="清空"
+            @click="keyword = ''"
+          >
+            <AppSvgIcon name="close" :size="14" />
+          </button>
+        </div>
+        <button type="submit" class="btn-primary shrink-0 !rounded-full !px-4 !py-2 text-sm">
+          搜索
         </button>
-      </div>
-      <button type="submit" class="btn-primary !py-2 text-sm">搜索</button>
-    </form>
+      </form>
 
-    <!-- 类型筛选 tab -->
-    <div
-      data-tour="search-tabs"
-      class="scrollbar-none -mx-3 mt-3 flex gap-2 overflow-x-auto px-3 pb-1"
-    >
-      <button
-        v-for="tab in TYPE_TABS"
-        :key="tab.value"
-        type="button"
-        class="shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
-        :class="
-          activeType === tab.value
-            ? 'bg-primary text-white'
-            : 'bg-surface text-ink-soft'
-        "
-        @click="selectType(tab.value)"
-      >
-        {{ tab.label }}
-      </button>
+      <!-- 分类筛选（reka-ui AppTabs，保留 data-tour="search-tabs"） -->
+      <div data-tour="search-tabs" class="mt-3">
+        <AppTabs
+          :model-value="activeType"
+          :items="TYPE_TABS"
+          variant="pills"
+          aria-label="搜索结果分类"
+          @update:model-value="selectType"
+        />
+      </div>
     </div>
 
     <!-- 结果区 -->
-    <div class="mt-3">
-      <LoadingSpinner v-if="loading" />
-      <ErrorState v-else-if="error" @retry="onSubmit" />
+    <FeedSkeleton v-if="loading" variant="elk" :count="4" />
+    <ErrorState v-else-if="error" @retry="onSubmit" />
 
-      <!-- 初始空态 -->
-      <EmptyState v-else-if="!searched" text="输入关键词开始搜索" icon="search" />
+    <EmptyState
+      v-else-if="!searched"
+      text="输入关键词开始搜索"
+      description="支持搜索帖子、评论、用户、板块、大事记与表白墙。"
+      icon="search"
+    />
 
-      <!-- 无结果 -->
-      <EmptyState v-else-if="!hasAnyResult" text="没有找到相关内容" icon="search" />
+    <EmptyState
+      v-else-if="!hasAnyResult"
+      text="没有找到相关内容"
+      description="换个关键词或切换分类再试试。"
+      icon="search"
+    />
 
-      <template v-else>
-        <!-- 帖子 -->
-        <section v-if="posts.length > 0" class="mb-4">
-          <h3 class="mb-2 px-1 text-sm font-semibold text-ink-soft">帖子</h3>
-          <div class="space-y-2">
-            <article
-              v-for="post in posts"
-              :key="post.id"
-              class="card-base cursor-pointer pressable"
-              role="button"
-              @click="openPost(post)"
-            >
-              <h4 v-if="post.title" class="mb-1 text-sm font-semibold">{{ post.title }}</h4>
-              <p v-if="previewText(post.content)" class="break-all text-sm text-ink">
-                {{ previewText(post.content) }}
-              </p>
-              <PostImageStrip :urls="extractImageUrls(post.content)" @open="openPost(post)" />
-              <div class="mt-2 text-[11px] text-ink-soft">{{ formatRelativeTime(post.createdAt) }}</div>
-            </article>
-          </div>
-        </section>
+    <template v-else>
+      <!-- 帖子 -->
+      <section v-if="posts.length > 0">
+        <h3 class="border-b border-subtle bg-canvas-soft px-4 py-1.5 text-xs font-semibold text-ink-secondary sm:px-5">
+          帖子
+        </h3>
+        <article
+          v-for="post in posts"
+          :key="post.id"
+          class="feed-row-interactive"
+          role="button"
+          tabindex="0"
+          @click="openPost(post)"
+          @keydown.enter="openPost(post)"
+        >
+          <h4 v-if="post.title" class="mb-1 line-clamp-2 text-[15px] font-semibold leading-[22px] text-ink">
+            {{ post.title }}
+          </h4>
+          <p v-if="previewText(post.content)" class="line-clamp-3 break-words text-sm leading-6 text-ink-secondary">
+            {{ previewText(post.content) }}
+          </p>
+          <PostImageStrip :urls="extractImageUrls(post.content)" @open="openPost(post)" />
+          <time class="mt-2 block text-xs tabular-nums text-ink-muted" :datetime="post.createdAt">
+            {{ formatRelativeTime(post.createdAt) }}
+          </time>
+        </article>
+      </section>
 
-        <!-- 用户 -->
-        <section v-if="users.length > 0" class="mb-4">
-          <h3 class="mb-2 px-1 text-sm font-semibold text-ink-soft">用户</h3>
-          <div class="card-base divide-y divide-line !py-1">
-            <div v-for="user in users" :key="user.userId" class="flex items-center gap-2 py-2.5">
-              <!-- 头像（有头像显示图片，否则首字占位） -->
-              <UserAvatar
-                :src="user.avatar"
-                :name="user.username"
-                :name-color="user.nameColor"
-                size="md"
-              />
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-1.5">
-                  <span class="truncate text-sm font-medium" :style="{ color: user.nameColor ?? undefined }">
-                    {{ user.username }}
-                  </span>
-                  <span
-                    v-if="user.badge"
-                    class="shrink-0 rounded bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] px-1 text-[10px] text-primary"
-                  >
-                    {{ user.badge }}
-                  </span>
-                </div>
-              </div>
-              <button
-                type="button"
-                class="shrink-0 rounded-full px-3 py-1 text-xs font-medium pressable"
-                :class="followedIds.has(user.userId) ? 'bg-line text-ink-soft' : 'bg-primary text-white'"
-                :disabled="followedIds.has(user.userId)"
-                @click="onFollow(user)"
+      <!-- 用户 -->
+      <section v-if="users.length > 0">
+        <h3 class="border-b border-subtle bg-canvas-soft px-4 py-1.5 text-xs font-semibold text-ink-secondary sm:px-5">
+          用户
+        </h3>
+        <div
+          v-for="user in users"
+          :key="user.userId"
+          class="feed-row-interactive flex items-center gap-3"
+          role="button"
+          tabindex="0"
+          @click="openUser(user)"
+          @keydown.enter="openUser(user)"
+        >
+          <UserAvatar
+            :src="user.avatar"
+            :name="user.username"
+            :name-color="user.nameColor"
+            size="md"
+          />
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1.5">
+              <span
+                class="truncate text-sm font-semibold text-ink"
+                :style="{ color: user.nameColor ?? undefined }"
               >
-                {{ followedIds.has(user.userId) ? "已关注" : "关注" }}
-              </button>
+                {{ user.username }}
+              </span>
+              <span v-if="user.badge" class="tag-pill-accent !px-2 !py-0 text-[11px]">
+                {{ user.badge }}
+              </span>
             </div>
           </div>
-        </section>
-
-        <!-- 板块 -->
-        <section v-if="blocks.length > 0" class="mb-4">
-          <h3 class="mb-2 px-1 text-sm font-semibold text-ink-soft">板块</h3>
-          <div class="space-y-2">
-            <article
-              v-for="block in blocks"
-              :key="block.id"
-              class="card-base cursor-pointer pressable"
-              role="button"
-              @click="openBlock(block)"
-            >
-              <div class="flex items-center gap-1.5">
-                <AppSvgIcon name="blocks" :size="15" class="text-primary" />
-                <h4 class="text-sm font-semibold">{{ block.name }}</h4>
-                <span
-                  v-if="block.isLocked"
-                  class="rounded bg-line px-1 text-[10px] text-ink-soft"
-                >
-                  已锁定
-                </span>
-              </div>
-              <p v-if="block.description" class="mt-1 break-all text-xs text-ink-soft">
-                {{ truncateText(block.description, 80) }}
-              </p>
-            </article>
-          </div>
-        </section>
-
-        <!-- 大事记 -->
-        <section v-if="timeline.length > 0" class="mb-4">
-          <h3 class="mb-2 px-1 text-sm font-semibold text-ink-soft">大事记</h3>
-          <div class="space-y-2">
-            <article
-              v-for="event in timeline"
-              :key="event.id"
-              class="card-base cursor-pointer pressable"
-              role="button"
-              @click="router.push({ name: 'timeline' })"
-            >
-              <div class="flex items-center gap-1.5">
-                <AppSvgIcon name="calendar" :size="15" class="text-primary" />
-                <h4 class="text-sm font-semibold">{{ event.title }}</h4>
-                <span class="ml-auto text-[11px] text-ink-soft">{{ event.eventDate.slice(0, 10) }}</span>
-              </div>
-              <p class="mt-1 break-all text-xs text-ink-soft">{{ truncateText(event.description, 80) }}</p>
-            </article>
-          </div>
-        </section>
-
-        <!-- 表白墙 -->
-        <section v-if="confessions.length > 0" class="mb-4">
-          <h3 class="mb-2 px-1 text-sm font-semibold text-ink-soft">表白墙</h3>
-          <div class="space-y-2">
-            <article
-              v-for="confession in confessions"
-              :key="confession.id"
-              class="card-base cursor-pointer pressable"
-              role="button"
-              @click="router.push({ name: 'confession' })"
-            >
-              <div class="mb-1 flex items-center gap-1.5 text-xs text-accent">
-                <AppSvgIcon name="heart" :size="13" />
-                表白墙
-                <span class="ml-auto text-ink-soft">{{ formatRelativeTime(confession.createdAt) }}</span>
-              </div>
-              <p class="break-all text-sm text-ink">{{ truncateText(confession.content, 100) }}</p>
-            </article>
-          </div>
-        </section>
-
-        <!-- 评论 -->
-        <section v-if="comments.length > 0" class="mb-4">
-          <h3 class="mb-2 px-1 text-sm font-semibold text-ink-soft">评论</h3>
-          <div class="space-y-2">
-            <article
-              v-for="comment in comments"
-              :key="comment.id"
-              class="card-base cursor-pointer pressable"
-              role="button"
-              @click="openComment(comment)"
-            >
-              <div class="mb-1 flex items-center gap-1.5 text-xs text-ink-soft">
-                <AppSvgIcon name="comment" :size="13" />
-                评论
-                <span class="ml-auto">{{ formatRelativeTime(comment.createdAt) }}</span>
-              </div>
-              <p class="break-all text-sm text-ink">{{ truncateText(comment.content, 100) }}</p>
-            </article>
-          </div>
-        </section>
-
-        <!-- 加载更多 -->
-        <div class="py-3 text-center">
           <button
-            v-if="hasMore"
+            v-if="user.userId !== auth.userId"
             type="button"
-            class="btn-secondary !py-2 text-sm"
-            :disabled="loadingMore"
-            @click="doSearch(true)"
+            class="shrink-0 rounded-full px-3.5 py-1 text-xs font-medium pressable"
+            :class="
+              followedIds.has(user.userId)
+                ? 'border border-subtle bg-canvas-soft text-ink-muted'
+                : 'bg-primary text-white hover:opacity-90'
+            "
+            :disabled="followedIds.has(user.userId)"
+            @click.stop="onFollow(user)"
           >
-            {{ loadingMore ? "加载中…" : "加载更多" }}
+            {{ followedIds.has(user.userId) ? "已关注" : "关注" }}
           </button>
-          <span v-else class="text-xs text-ink-soft">没有更多结果了</span>
         </div>
-      </template>
-    </div>
+      </section>
+
+      <!-- 板块 -->
+      <section v-if="blocks.length > 0">
+        <h3 class="border-b border-subtle bg-canvas-soft px-4 py-1.5 text-xs font-semibold text-ink-secondary sm:px-5">
+          板块
+        </h3>
+        <article
+          v-for="block in blocks"
+          :key="block.id"
+          class="feed-row-interactive"
+          role="button"
+          tabindex="0"
+          @click="openBlock(block)"
+          @keydown.enter="openBlock(block)"
+        >
+          <div class="flex items-center gap-2">
+            <AppSvgIcon name="blocks" :size="15" class="shrink-0 text-primary" />
+            <h4 class="truncate text-[15px] font-semibold text-ink">{{ block.name }}</h4>
+            <span v-if="block.isLocked" class="tag-pill !px-2 !py-0 text-[11px]">
+              已锁定
+            </span>
+          </div>
+          <p v-if="block.description" class="mt-1 line-clamp-2 break-words text-xs leading-relaxed text-ink-secondary">
+            {{ truncateText(block.description, 100) }}
+          </p>
+        </article>
+      </section>
+
+      <!-- 大事记 -->
+      <section v-if="timeline.length > 0">
+        <h3 class="border-b border-subtle bg-canvas-soft px-4 py-1.5 text-xs font-semibold text-ink-secondary sm:px-5">
+          大事记
+        </h3>
+        <article
+          v-for="event in timeline"
+          :key="event.id"
+          class="feed-row-interactive"
+          role="button"
+          tabindex="0"
+          @click="router.push({ name: 'timeline-detail', params: { id: event.id } })"
+          @keydown.enter="router.push({ name: 'timeline-detail', params: { id: event.id } })"
+        >
+          <div class="flex items-center gap-2">
+            <AppSvgIcon name="calendar" :size="15" class="shrink-0 text-primary" />
+            <h4 class="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink">
+              {{ event.title }}
+            </h4>
+            <span class="shrink-0 text-xs tabular-nums text-ink-muted">
+              {{ event.eventDate.slice(0, 10) }}
+            </span>
+          </div>
+          <p class="mt-1 line-clamp-2 break-words text-xs leading-relaxed text-ink-secondary">
+            {{ truncateText(event.description, 100) }}
+          </p>
+        </article>
+      </section>
+
+      <!-- 表白墙 -->
+      <section v-if="confessions.length > 0">
+        <h3 class="border-b border-subtle bg-canvas-soft px-4 py-1.5 text-xs font-semibold text-ink-secondary sm:px-5">
+          表白墙
+        </h3>
+        <article
+          v-for="confession in confessions"
+          :key="confession.id"
+          class="feed-row-interactive"
+          role="button"
+          tabindex="0"
+          @click="router.push({ name: 'confession-detail', params: { id: confession.id } })"
+          @keydown.enter="router.push({ name: 'confession-detail', params: { id: confession.id } })"
+        >
+          <div class="flex items-center gap-2 text-xs">
+            <span class="tag-pill-warm !px-2 !py-0 text-[11px]">
+              <AppSvgIcon name="heart" :size="11" />
+              表白墙
+            </span>
+            <time class="ml-auto tabular-nums text-ink-muted" :datetime="confession.createdAt">
+              {{ formatRelativeTime(confession.createdAt) }}
+            </time>
+          </div>
+          <p class="mt-1.5 line-clamp-3 break-words text-sm leading-6 text-ink">
+            {{ truncateText(confession.content, 120) }}
+          </p>
+        </article>
+      </section>
+
+      <!-- 评论 -->
+      <section v-if="comments.length > 0">
+        <h3 class="border-b border-subtle bg-canvas-soft px-4 py-1.5 text-xs font-semibold text-ink-secondary sm:px-5">
+          评论
+        </h3>
+        <article
+          v-for="comment in comments"
+          :key="comment.id"
+          class="feed-row-interactive"
+          role="button"
+          tabindex="0"
+          @click="openComment(comment)"
+          @keydown.enter="openComment(comment)"
+        >
+          <div class="flex items-center gap-2 text-xs text-ink-muted">
+            <span class="inline-flex items-center gap-1 font-medium text-ink-secondary">
+              <AppSvgIcon name="comment" :size="13" />
+              评论
+            </span>
+            <time class="ml-auto tabular-nums" :datetime="comment.createdAt">
+              {{ formatRelativeTime(comment.createdAt) }}
+            </time>
+          </div>
+          <p class="mt-1.5 line-clamp-3 break-words text-sm leading-6 text-ink">
+            {{ truncateText(comment.content, 120) }}
+          </p>
+        </article>
+      </section>
+
+      <!-- 加载更多 -->
+      <div class="py-5 text-center">
+        <button
+          v-if="hasMore"
+          type="button"
+          class="btn-secondary !py-2 text-xs"
+          :disabled="loadingMore"
+          @click="doSearch(true)"
+        >
+          {{ loadingMore ? "加载中…" : "加载更多" }}
+        </button>
+        <span v-else class="text-xs text-ink-muted">没有更多结果了</span>
+      </div>
+    </template>
   </div>
 </template>

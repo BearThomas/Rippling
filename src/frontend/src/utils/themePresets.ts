@@ -1,14 +1,11 @@
 /**
  * 主题预设表 —— 全站唯一一份数据
  *
- * 谁要用到它：主题 store（算"最终生效的是哪套"）、设置页（画预设色块）、
- * 管理面板（改全站默认）。以前这套颜色只写在 SettingsView 里，
- * store 拿不到 —— 于是"用户自己挑了深色"只能靠改 store.config.theme 来糊，
- * 结果管理员一改全站默认，所有人的自定义就一起被改掉了。
- *
- * 颜色值必须和 src/frontend/src/styles/theme.css 里
- * `[data-theme="..."]` 那几组变量一致：CSS 那份是"JS 没跑起来也有颜色"的兜底，
- * 这里是 JS 侧的同名副本。
+ * 颜色值与 src/frontend/src/styles/theme.css 中 `[data-theme="..."]`
+ * 的四条 --c-* 底座变量保持完全一致：
+ *   - light：DESIGN.md 浅色标准（#2563eb 主色 + #ffffff 主画布 + #18181b 正文 + #e11d48 心动色）
+ *   - dark：DESIGN.md 深色标准（#60a5fa 主色 + #111214 主画布 + #f4f4f5 正文 + #fb7185 心动色）
+ *   - campus / warm：保留既有预设色阶（兼容 test-theme.mjs 断言）
  */
 
 import type { SiteConfigTheme } from "../types";
@@ -27,16 +24,16 @@ export const PRESET_LABELS: Record<ThemePreset, string> = {
 
 export const PRESET_COLORS: Record<ThemePreset, Omit<SiteConfigTheme, "preset">> = {
   light: {
-    primaryColor: "#3b82f6",
-    backgroundColor: "#f9fafb",
-    textColor: "#1f2937",
-    accentColor: "#10b981",
+    primaryColor: "#2563eb",
+    backgroundColor: "#ffffff",
+    textColor: "#18181b",
+    accentColor: "#e11d48",
   },
   dark: {
     primaryColor: "#60a5fa",
-    backgroundColor: "#111827",
-    textColor: "#f9fafb",
-    accentColor: "#34d399",
+    backgroundColor: "#111214",
+    textColor: "#f4f4f5",
+    accentColor: "#fb7185",
   },
   campus: {
     primaryColor: "#0d9488",
@@ -74,8 +71,6 @@ function isPreset(value: unknown): value is ThemePreset {
  * 严格校验：本地存的那份自定义主题
  *
  * 认不出来就返回 null（= 当作没自定义过，回落到全站主题）。
- * 这里不"尽量救"：半个合法的主题比没有更麻烦（比如 preset 丢了却还有颜色，
- * 页面会停在上一套预设的 CSS 变量组里，看起来像随机出错）。
  */
 export function normalizeTheme(input: unknown): SiteConfigTheme | null {
   if (!input || typeof input !== "object") return null;
@@ -98,7 +93,6 @@ export function normalizeTheme(input: unknown): SiteConfigTheme | null {
  * 宽松纠正：服务端下发的全站主题
  *
  * 预设认不出来 → 明亮；某个颜色缺失/不合法 → 用该预设自带的颜色补上。
- * 这里不能返回 null：全站主题坏掉也得有东西可画。
  */
 export function coerceSiteTheme(input: unknown): SiteConfigTheme {
   if (!input || typeof input !== "object") return DEFAULT_THEME;

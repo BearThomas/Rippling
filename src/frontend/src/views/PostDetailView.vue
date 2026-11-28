@@ -1,27 +1,29 @@
 <!--
-  帖子详情页
+  帖子详情页（Elk 详情阅读流）
 
-  功能：
-    - 帖子正文（Markdown 渲染）+ 作者信息（用户名 + 颜色，匿名显示「匿名」）
-    - 点赞 / 取消赞（/api/like）
-    - 关注 / 取消关注作者（/api/follow）
-    - 编辑 / 删除（仅作者本人或对应管理权限者可见）
-    - 置顶（仅探测到 pin_post 权限者可见）
-    - 评论区：树状（最多 3 层）、点赞、回复定位、删除、Markdown 输入
+  改造亮点：
+    - 去除正文、评论区与输入框的双层卡片套娃
+    - 主标题 20px–22px/30px font-bold，正文 15px / 1.7 阅读行高
+    - 置顶 / 编辑 / 删除 / 复制链接收口至 AppDropdown（reka-ui DropdownMenu）
+    - 删除二次确认接入 ConfirmDialog（reka-ui AlertDialog）
+    - 吸底评论框改为中栏内 sticky bottom-0，桌面端完美贴合 660px 中栏宽度
+    - 保留 data-tour="post-actions" 与 ImageLightbox 大图查看
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, shallowRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MarkdownRenderer from "../components/markdown/MarkdownRenderer.vue";
 import ImageLightbox from "../components/common/ImageLightbox.vue";
-import { extractImageUrls } from "../utils/markdownImages";
 import LoadingSpinner from "../components/common/LoadingSpinner.vue";
 import ErrorState from "../components/common/ErrorState.vue";
 import EmptyState from "../components/common/EmptyState.vue";
+import AppDropdown, { type DropdownItem } from "../components/common/AppDropdown.vue";
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
 import CommentItem from "../components/post/CommentItem.vue";
 import CommentComposer from "../components/post/CommentComposer.vue";
 import FollowButton from "../components/user/FollowButton.vue";
+import UserAvatar from "../components/user/UserAvatar.vue";
+import { extractImageUrls } from "../utils/markdownImages";
 import {
   getPost,
   getComments,
@@ -36,6 +38,7 @@ import { getUserProfile } from "../api/user";
 import { getBlockDetail } from "../api/block";
 import { formatDateTime, formatNumber } from "../utils/format";
 import { showToast } from "../utils/toast";
+import { confirmAction } from "../composables/useConfirm";
 import { useAuthStore } from "../stores/auth";
 import { getMyPermissions } from "../utils/myPermissions";
 import {
@@ -46,61 +49,41 @@ import {
   BLOCK_PERM_PIN_POST,
 } from "../utils/permission";
 import type { PostInfo } from "../types";
-import UserAvatar from "../components/user/UserAvatar.vue";
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 
-/** 帖子 ID（兼容 /post/:id 与 /post?id=xxx 两种形式） */
+/** 帖子 ID（兼容 /post/:id 与 /post?id=xxx） */
 const postId = (route.params.id as string) || (route.query.id as string) || "";
 
-// ------------------------------------------------------------
-//  数据状态
-// ------------------------------------------------------------
-
-const loading = ref(true);
-const error = ref(false);
+const loading = shallowRef(true);
+const error = shallowRef(false);
 const post = ref<PostInfo | null>(null);
 
-/** 评论列表（顶级） */
 const comments = ref<PostInfo[]>([]);
-const commentsLoading = ref(false);
-const commentsError = ref(false);
+const commentsLoading = shallowRef(false);
+const commentsError = shallowRef(false);
 
-/** 点赞本地状态（加载后由后端附加字段初始化） */
-const liked = ref(false);
-const likeCount = ref(0);
-const likeBusy = ref(false);
+const liked = shallowRef(false);
+const likeCount = shallowRef(0);
+const likeBusy = shallowRef(false);
 
-/** 关注状态（null = 未知 / 不可关注） */
-const following = ref<boolean | null>(null);
+const following = shallowRef<boolean | null>(null);
+const authorQuestionBoxEnabled = shallowRef<boolean | null>(null);
+const blockName = shallowRef<string | null>(null);
+const blockPermissions = shallowRef<string | null>(null);
 
-/** 作者是否开启提问箱（null = 未知 / 未查询到） */
-const authorQuestionBoxEnabled = ref<boolean | null>(null);
+const editing = shallowRef(false);
+const editContent = shallowRef("");
+const savingEdit = shallowRef(false);
+const deleting = shallowRef(false);
+const pinning = shallowRef(false);
 
-/** 所属板块名（blockId 存在时查询） */
-const blockName = ref<string | null>(null);
-/** 当前用户在所属板块内的权限掩码（非成员为 null） */
-const blockPermissions = ref<string | null>(null);
-
-// ------------------------------------------------------------
-//  编辑 / 删除 / 置顶
-// ------------------------------------------------------------
-
-const editing = ref(false);
-const editContent = ref("");
-const savingEdit = ref(false);
-const deleting = ref(false);
-const pinning = ref(false);
-
-/** 正文里的图片（用于放大查看；点正文里的图时按下标打开） */
 const bodyImages = computed(() => extractImageUrls(post.value?.content));
-/** 大图查看：是否打开 + 当前第几张 */
-const lightboxOpen = ref(false);
-const lightboxIndex = ref(0);
+const lightboxOpen = shallowRef(false);
+const lightboxIndex = shallowRef(0);
 
-/** 正文容器点击委托：点中的是 img 就打开大图 */
 function onContentClick(event: MouseEvent): void {
   const target = event.target as HTMLElement | null;
   if (!target || target.tagName !== "IMG") return;
@@ -108,29 +91,19 @@ function onContentClick(event: MouseEvent): void {
   const container = event.currentTarget as HTMLElement | null;
   if (!container) return;
 
-  // 按"正文里出现的顺序"定位被点的那张图
   const imgs = [...container.querySelectorAll("img")];
   const clicked = imgs.indexOf(target as HTMLImageElement);
   const urls = bodyImages.value;
   if (urls.length === 0) return;
 
-  // 用 src 再核对一次，避免正文里混入非 Markdown 图片时下标对不上
   const src = (target as HTMLImageElement).getAttribute("src") ?? "";
   const bySrc = urls.indexOf(src);
   lightboxIndex.value = bySrc >= 0 ? bySrc : Math.max(0, Math.min(clicked, urls.length - 1));
   lightboxOpen.value = true;
 }
 
-/** 权限探测结果（十进制掩码字符串） */
-const myPermissions = ref<string>("0");
-/**
- * 置顶按钮可见性
- *
- * 两种权限任一即可：
- *   · 全站 pin_post —— 非板块帖置顶
- *   · 板块内 block_pin_post —— 板块帖置顶（板块长也应该看得到按钮，
- *     原来只认全站权限，板块长点不到）
- */
+const myPermissions = shallowRef<string>("0");
+
 const canPin = computed(
   () =>
     hasPermission(myPermissions.value, PERM_PIN_POST) ||
@@ -138,42 +111,64 @@ const canPin = computed(
       hasPermission(blockPermissions.value, BLOCK_PERM_PIN_POST))
 );
 
-/** 是否作者本人（匿名帖 authorId 为 null，任何人都不视为作者） */
 const isAuthor = computed(
-  () => !!post.value?.authorId && post.value.authorId === auth.userId
+  () => Boolean(post.value?.authorId) && post.value?.authorId === auth.userId
 );
 
-/** 编辑按钮可见：作者本人 或 持有 edit_others_post 权限 */
 const canEdit = computed(
   () => isAuthor.value || hasPermission(myPermissions.value, PERM_EDIT_OTHERS_POST)
 );
 
-/** 删除按钮可见：作者本人 或 持有 delete_others_post 权限 */
 const canDelete = computed(
   () => isAuthor.value || hasPermission(myPermissions.value, PERM_DELETE_OTHERS_POST)
 );
 
-// ------------------------------------------------------------
-//  评论输入
-// ------------------------------------------------------------
+const moreMenuItems = computed<DropdownItem[]>(() => {
+  const list: DropdownItem[] = [
+    { key: "share", label: "复制链接", icon: "copy" },
+  ];
+  if (canPin.value) {
+    list.push({
+      key: "pin",
+      label: post.value?.isPinned ? "取消置顶" : "置顶帖子",
+      icon: "pin",
+      disabled: pinning.value,
+      separatorBefore: true,
+    });
+  }
+  if (canEdit.value && !editing.value) {
+    list.push({
+      key: "edit",
+      label: "编辑正文",
+      icon: "edit",
+      separatorBefore: !canPin.value,
+    });
+  }
+  if (canDelete.value) {
+    list.push({
+      key: "delete",
+      label: deleting.value ? "删除中…" : "删除帖子",
+      icon: "trash",
+      danger: true,
+      disabled: deleting.value,
+      separatorBefore: true,
+    });
+  }
+  return list;
+});
 
-/** 回复目标（null = 直接评论帖子） */
 const replyTarget = ref<PostInfo | null>(null);
-const submittingComment = ref(false);
+const submittingComment = shallowRef(false);
 const composerEl = ref<InstanceType<typeof CommentComposer> | null>(null);
 
-/** 输入框占位文案 */
 const composerPlaceholder = computed(() =>
   replyTarget.value
     ? `回复 @${replyTarget.value.author?.username ?? "匿名用户"}…`
     : "写下你的评论…（支持 Markdown）"
 );
 
-/** 作者显示名 */
-const authorName = computed(() => post.value?.author?.username ?? "匿名");
+const authorName = computed(() => post.value?.author?.username ?? "匿名用户");
 
-
-/** 作者主页路由（作者存在且有 id 时返回；匿名帖为 null → 不可点击） */
 const authorProfileLink = computed(() => {
   const author = post.value?.author;
   return author?.id
@@ -181,11 +176,6 @@ const authorProfileLink = computed(() => {
     : null;
 });
 
-// ------------------------------------------------------------
-//  加载
-// ------------------------------------------------------------
-
-/** 加载帖子详情 */
 async function load(): Promise<void> {
   loading.value = true;
   error.value = false;
@@ -194,7 +184,6 @@ async function load(): Promise<void> {
     post.value = data;
     liked.value = data.liked ?? false;
     likeCount.value = data.likeCount ?? 0;
-    // 并行发起附属查询（失败不影响正文展示）
     void loadComments();
     void loadRelations();
   } catch {
@@ -204,7 +193,6 @@ async function load(): Promise<void> {
   }
 }
 
-/** 加载顶级评论列表 */
 async function loadComments(): Promise<void> {
   commentsLoading.value = true;
   commentsError.value = false;
@@ -217,12 +205,10 @@ async function loadComments(): Promise<void> {
   }
 }
 
-/** 加载关注状态 / 板块名 / 权限探测（静默，互不阻塞） */
 async function loadRelations(): Promise<void> {
   const p = post.value;
   if (!p) return;
 
-  // 关注状态：有作者、非本人、已登录时查询
   if (p.authorId && p.authorId !== auth.userId && auth.isLoggedIn) {
     try {
       const status = await getFollowStatus(p.authorId);
@@ -232,7 +218,6 @@ async function loadRelations(): Promise<void> {
     }
   }
 
-  // 提问箱状态：作者公开资料中查询（决定「提问箱」入口可见性）
   if (p.authorId) {
     try {
       const profile = await getUserProfile(p.authorId);
@@ -242,7 +227,6 @@ async function loadRelations(): Promise<void> {
     }
   }
 
-  // 板块名
   if (p.blockId) {
     try {
       const block = await getBlockDetail(p.blockId);
@@ -253,22 +237,15 @@ async function loadRelations(): Promise<void> {
     }
   }
 
-  // 权限探测（决定置顶 / 管理按钮可见性）
   myPermissions.value = await getMyPermissions();
 }
 
-// ------------------------------------------------------------
-//  交互
-// ------------------------------------------------------------
-
-/** 未登录引导 */
 function requireLogin(): boolean {
   if (auth.isLoggedIn) return true;
-  router.push({ path: "/login", query: { redirect: route.fullPath } });
+  void router.push({ path: "/login", query: { redirect: route.fullPath } });
   return false;
 }
 
-/** 点赞 / 取消赞 */
 async function onToggleLike(): Promise<void> {
   if (!requireLogin() || likeBusy.value) return;
   likeBusy.value = true;
@@ -283,14 +260,12 @@ async function onToggleLike(): Promise<void> {
   }
 }
 
-/** 进入编辑模式 */
 function startEdit(): void {
   if (!post.value) return;
   editContent.value = post.value.content;
   editing.value = true;
 }
 
-/** 保存编辑 */
 async function saveEdit(): Promise<void> {
   if (!post.value || savingEdit.value) return;
   const content = editContent.value.trim();
@@ -311,21 +286,26 @@ async function saveEdit(): Promise<void> {
   }
 }
 
-/** 删除帖子（二次确认） */
 async function onDelete(): Promise<void> {
-  if (!window.confirm("确定删除这篇帖子吗？删除后不可恢复。")) return;
   if (deleting.value) return;
+  const confirmed = await confirmAction({
+    title: "确定删除这篇帖子吗？",
+    description: "删除后将无法恢复，评论也将一并不可见。",
+    confirmText: "删除帖子",
+    variant: "danger",
+  });
+  if (!confirmed) return;
+
   deleting.value = true;
   try {
     await deletePost(postId);
     showToast("帖子已删除", "success");
-    router.replace({ name: "home" });
+    void router.replace({ name: "home" });
   } catch {
     deleting.value = false;
   }
 }
 
-/** 置顶 / 取消置顶 */
 async function onTogglePin(): Promise<void> {
   if (!post.value || pinning.value) return;
   pinning.value = true;
@@ -340,7 +320,23 @@ async function onTogglePin(): Promise<void> {
   }
 }
 
-/** 提交评论（或回复） */
+async function copyShareLink(): Promise<void> {
+  const url = `${window.location.origin}/post/${postId}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    showToast("帖子链接已复制", "success");
+  } catch {
+    showToast("复制失败，请手动复制地址栏链接", "error");
+  }
+}
+
+function onSelectMenu(key: string): void {
+  if (key === "share") void copyShareLink();
+  else if (key === "pin") void onTogglePin();
+  else if (key === "edit") startEdit();
+  else if (key === "delete") void onDelete();
+}
+
 async function onSubmitComment(content: string, authorVisible: boolean): Promise<void> {
   if (!requireLogin()) return;
   submittingComment.value = true;
@@ -349,7 +345,6 @@ async function onSubmitComment(content: string, authorVisible: boolean): Promise
     await createComment(parentId, content, authorVisible);
     showToast("评论成功", "success");
     replyTarget.value = null;
-    // 重新加载顶级评论（子回复由 CommentItem 懒加载管理）
     await loadComments();
   } catch {
     // client.ts 已自动 Toast
@@ -358,18 +353,15 @@ async function onSubmitComment(content: string, authorVisible: boolean): Promise
   }
 }
 
-/** 点击评论的「回复」→ 定位输入框 */
 function onReply(comment: PostInfo): void {
   replyTarget.value = comment;
   composerEl.value?.focus();
 }
 
-/** 取消回复定位 */
 function cancelReply(): void {
   replyTarget.value = null;
 }
 
-/** 评论被删除 → 从顶级列表移除 */
 function onCommentDeleted(id: string): void {
   comments.value = comments.value.filter((c) => c.id !== id);
 }
@@ -378,216 +370,249 @@ onMounted(load);
 </script>
 
 <template>
-  <div class="px-3 pb-44 pt-3">
-    <LoadingSpinner v-if="loading" />
-    <ErrorState v-else-if="error" message="帖子不存在或无权访问" @retry="load" />
+  <div class="flex min-h-[calc(100dvh-var(--header-height)-1.5rem)] flex-col">
+    <div class="flex-1">
+      <LoadingSpinner v-if="loading" />
+      <ErrorState v-else-if="error" message="帖子不存在或无权访问" @retry="load" />
 
-    <template v-else-if="post">
-      <!-- 正文卡片 -->
-      <article class="card-base">
-        <!-- 作者行 -->
-        <div class="mb-3 flex items-center gap-2">
-          <!-- 头像（有作者时点击跳转用户主页；匿名不可点击） -->
-          <RouterLink v-if="authorProfileLink" :to="authorProfileLink" class="shrink-0">
-            <UserAvatar
-              :src="post.author?.avatar"
-              :name="authorName"
-              :name-color="post.author?.nameColor"
-              :anonymous="!post.author"
-              size="lg"
-            />
-          </RouterLink>
-          <UserAvatar v-else :name="authorName" anonymous size="lg" />
-          <div class="min-w-0">
-            <div class="flex items-center gap-1.5">
-              <RouterLink
-                v-if="authorProfileLink"
-                :to="authorProfileLink"
-                class="truncate text-sm font-semibold hover:underline"
-                :style="{ color: post.author?.nameColor ?? undefined }"
-              >
-                {{ authorName }}
-              </RouterLink>
-              <span v-else class="truncate text-sm font-semibold">
-                {{ authorName }}
-              </span>
-              <span
-                v-if="post.author?.badge"
-                class="shrink-0 rounded bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] px-1 text-[10px] text-primary"
-              >
-                {{ post.author.badge }}
-              </span>
-            </div>
-            <div class="text-[11px] text-ink-soft">{{ formatDateTime(post.createdAt) }}</div>
-          </div>
-
-          <!-- 作者操作区：提问箱入口（作者开启时）+ 关注按钮（非本人时） -->
-          <div class="ml-auto flex shrink-0 items-center gap-2">
-            <RouterLink
-              v-if="post.authorId && authorQuestionBoxEnabled"
-              :to="{ name: 'question-box', params: { userId: post.authorId } }"
-              class="flex items-center gap-1 rounded-full border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink-soft pressable"
-            >
-              <AppSvgIcon name="inbox" :size="14" />
-              提问箱
+      <template v-else-if="post">
+        <!-- 帖子阅读正文区（无卡片边框，通透排版） -->
+        <article class="border-b border-subtle px-4 pb-5 pt-4 sm:px-6">
+          <!-- 作者行 -->
+          <div class="flex items-center gap-2.5">
+            <RouterLink v-if="authorProfileLink" :to="authorProfileLink" class="shrink-0">
+              <UserAvatar
+                :src="post.author?.avatar"
+                :name="authorName"
+                :name-color="post.author?.nameColor"
+                :anonymous="!post.author"
+                size="lg"
+              />
             </RouterLink>
-            <FollowButton
-              v-if="post.authorId && post.authorId !== auth.userId"
-              :user-id="post.authorId"
-              :following="following ?? false"
-              @change="(next: boolean) => (following = next)"
-            />
+            <UserAvatar v-else :name="authorName" anonymous size="lg" />
+
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-1.5">
+                <RouterLink
+                  v-if="authorProfileLink"
+                  :to="authorProfileLink"
+                  class="truncate text-[15px] font-semibold text-ink hover:underline"
+                  :style="{ color: post.author?.nameColor ?? undefined }"
+                >
+                  {{ authorName }}
+                </RouterLink>
+                <span v-else class="truncate text-[15px] font-semibold text-ink-secondary">
+                  {{ authorName }}
+                </span>
+                <span
+                  v-if="post.author?.badge"
+                  class="tag-pill-accent !px-2 !py-0 text-[11px]"
+                >
+                  {{ post.author.badge }}
+                </span>
+                <span
+                  v-if="post.isPinned"
+                  class="tag-pill-warm !px-2 !py-0 text-[11px]"
+                >
+                  <AppSvgIcon name="pin" :size="11" />
+                  置顶
+                </span>
+              </div>
+              <time
+                class="block text-xs tabular-nums text-ink-muted"
+                :datetime="post.createdAt"
+              >
+                {{ formatDateTime(post.createdAt) }}
+              </time>
+            </div>
+
+            <!-- 作者关联操作：提问箱 + 关注 -->
+            <div class="flex shrink-0 items-center gap-2">
+              <RouterLink
+                v-if="post.authorId && authorQuestionBoxEnabled"
+                :to="{ name: 'question-box', params: { userId: post.authorId } }"
+                class="inline-flex items-center gap-1 rounded-full border border-subtle bg-surface px-3 py-1.5 text-xs font-medium text-ink-secondary hover:bg-hover hover:text-ink pressable"
+              >
+                <AppSvgIcon name="helpCircle" :size="14" />
+                提问箱
+              </RouterLink>
+              <FollowButton
+                v-if="post.authorId && post.authorId !== auth.userId"
+                :user-id="post.authorId"
+                :following="following ?? false"
+                @change="(next: boolean) => (following = next)"
+              />
+            </div>
           </div>
-        </div>
 
-        <!-- 板块标签 -->
-        <div
-          v-if="blockName"
-          class="mb-2 inline-flex items-center gap-1 rounded bg-[color-mix(in_srgb,var(--c-primary)_12%,transparent)] px-1.5 py-0.5 text-[11px] text-primary"
-        >
-          <AppSvgIcon name="blocks" :size="11" />
-          {{ blockName }}
-        </div>
-
-        <!-- 标题 -->
-        <h1 v-if="post.title" class="mb-2 text-lg font-bold">{{ post.title }}</h1>
-
-        <!-- 正文：查看 / 编辑（点图片可放大查看，仅此页启用） -->
-        <div
-          v-if="!editing"
-          class="post-body cursor-zoom-in"
-          @click="onContentClick"
-        >
-          <MarkdownRenderer :content="post.content" />
-        </div>
-        <div v-else>
-          <textarea
-            v-model="editContent"
-            class="min-h-[160px] w-full resize-y rounded-lg bg-page px-3 py-2 text-sm outline-none"
-            maxlength="1000"
-          />
-          <div class="mt-2 flex items-center justify-end gap-2">
-            <span class="mr-auto text-[10px] text-ink-soft">{{ editContent.length }}/1000</span>
-            <button type="button" class="btn-secondary !py-1.5 text-sm" @click="editing = false">
-              取消
-            </button>
-            <button
-              type="button"
-              class="btn-primary !py-1.5 text-sm disabled:opacity-50"
-              :disabled="savingEdit"
-              @click="saveEdit"
-            >
-              {{ savingEdit ? "保存中…" : "保存" }}
-            </button>
-          </div>
-        </div>
-
-        <!-- 操作行 -->
-        <div
-          data-tour="post-actions"
-          class="mt-4 flex items-center gap-4 border-t border-line pt-3 text-xs text-ink-soft"
-        >
-          <button
-            type="button"
-            class="flex items-center gap-1 transition-colors"
-            :class="liked ? 'text-primary' : ''"
-            :disabled="likeBusy"
-            @click="onToggleLike"
+          <!-- 所属板块标签 -->
+          <RouterLink
+            v-if="blockName && post.blockId"
+            :to="{ name: 'block-detail', params: { id: post.blockId } }"
+            class="tag-pill mt-3 hover:text-primary"
           >
-            <AppSvgIcon name="thumbUp" :size="16" />
-            {{ formatNumber(likeCount) }}
-          </button>
-          <span class="flex items-center gap-1">
-            <AppSvgIcon name="comment" :size="16" />
-            {{ formatNumber(post.commentCount ?? comments.length) }}
-          </span>
+            <AppSvgIcon name="blocks" :size="12" />
+            {{ blockName }}
+          </RouterLink>
 
-          <span class="ml-auto flex items-center gap-3">
-            <button
-              v-if="canPin"
-              type="button"
-              class="flex items-center gap-1 transition-colors"
-              :class="post.isPinned ? 'text-accent' : ''"
-              :disabled="pinning"
-              @click="onTogglePin"
-            >
-              <AppSvgIcon name="pin" :size="15" />
-              {{ post.isPinned ? "取消置顶" : "置顶" }}
-            </button>
-            <button
-              v-if="canEdit && !editing"
-              type="button"
-              class="flex items-center gap-1"
-              @click="startEdit"
-            >
-              <AppSvgIcon name="edit" :size="15" />
-              编辑
-            </button>
-            <button
-              v-if="canDelete"
-              type="button"
-              class="flex items-center gap-1 text-red-400"
-              :disabled="deleting"
-              @click="onDelete"
-            >
-              <AppSvgIcon name="trash" :size="15" />
-              {{ deleting ? "删除中…" : "删除" }}
-            </button>
-          </span>
-        </div>
-      </article>
+          <!-- 详情主标题（DESIGN.md: 20px–22px / 30px font-bold） -->
+          <h1
+            v-if="post.title"
+            class="mt-3 text-[20px] font-bold leading-[30px] tracking-tight text-ink sm:text-[22px]"
+          >
+            {{ post.title }}
+          </h1>
 
-      <!-- 评论区 -->
-      <section class="mt-3">
-        <h3 class="mb-1 px-1 text-sm font-semibold text-ink-soft">
-          评论（{{ post.commentCount ?? comments.length }}）
-        </h3>
-
-        <LoadingSpinner v-if="commentsLoading && comments.length === 0" />
-        <ErrorState
-          v-else-if="commentsError && comments.length === 0"
-          message="评论加载失败"
-          @retry="loadComments"
-        />
-        <template v-else>
-          <div class="card-base divide-y divide-line !py-1">
-            <CommentItem
-              v-for="comment in comments"
-              :key="comment.id"
-              :comment="comment"
-              @reply="onReply"
-              @deleted="onCommentDeleted"
-            />
+          <!-- 正文：阅读模式 / 编辑模式 -->
+          <div
+            v-if="!editing"
+            class="post-body mt-3 cursor-zoom-in"
+            @click="onContentClick"
+          >
+            <MarkdownRenderer :content="post.content" size="reading" />
           </div>
-          <EmptyState v-if="comments.length === 0 && !commentsLoading" text="还没有评论，来抢沙发" icon="comment" />
-        </template>
-      </section>
+          <div v-else class="mt-3">
+            <textarea
+              v-model="editContent"
+              class="input-base min-h-[168px] resize-y leading-relaxed"
+              maxlength="1000"
+            />
+            <div class="mt-2.5 flex items-center justify-end gap-2">
+              <span class="mr-auto text-xs tabular-nums text-ink-muted">
+                {{ editContent.length }}/1000
+              </span>
+              <button
+                type="button"
+                class="btn-secondary !py-1.5 text-sm"
+                @click="editing = false"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                class="btn-primary !py-1.5 text-sm"
+                :disabled="savingEdit"
+                @click="saveEdit"
+              >
+                {{ savingEdit ? "保存中…" : "保存修改" }}
+              </button>
+            </div>
+          </div>
 
-      <!-- 底部评论输入栏（固定） -->
+          <!-- 操作栏（保留 data-tour="post-actions"） -->
+          <div
+            data-tour="post-actions"
+            class="mt-5 flex items-center gap-5 border-t border-subtle pt-3 text-xs tabular-nums text-ink-muted"
+          >
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 hover:bg-hover hover:text-primary pressable"
+              :class="liked ? 'font-medium text-primary' : ''"
+              :disabled="likeBusy"
+              @click="onToggleLike"
+            >
+              <AppSvgIcon name="thumbUp" :size="16" />
+              {{ formatNumber(likeCount) }}
+            </button>
+
+            <span class="inline-flex items-center gap-1.5 px-1 py-1">
+              <AppSvgIcon name="comment" :size="16" />
+              {{ formatNumber(post.commentCount ?? comments.length) }}
+            </span>
+
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 hover:bg-hover hover:text-primary pressable"
+              aria-label="分享帖子"
+              @click="copyShareLink"
+            >
+              <AppSvgIcon name="share" :size="15" />
+              分享
+            </button>
+
+            <div class="ml-auto">
+              <AppDropdown
+                :items="moreMenuItems"
+                trigger-label="帖子更多操作"
+                @select="onSelectMenu"
+              />
+            </div>
+          </div>
+        </article>
+
+        <!-- 评论区（无套娃卡片，直接 1px 分割线时间轴） -->
+        <section>
+          <div class="flex items-center justify-between border-b border-subtle px-4 py-3 sm:px-6">
+            <h2 class="text-sm font-semibold text-ink">
+              全部评论
+              <span class="ml-1 font-normal tabular-nums text-ink-muted">
+                {{ post.commentCount ?? comments.length }}
+              </span>
+            </h2>
+          </div>
+
+          <LoadingSpinner v-if="commentsLoading && comments.length === 0" />
+          <ErrorState
+            v-else-if="commentsError && comments.length === 0"
+            message="评论加载失败"
+            @retry="loadComments"
+          />
+          <template v-else>
+            <div v-if="comments.length > 0">
+              <CommentItem
+                v-for="comment in comments"
+                :key="comment.id"
+                :comment="comment"
+                @reply="onReply"
+                @deleted="onCommentDeleted"
+              />
+            </div>
+            <EmptyState
+              v-else-if="!commentsLoading"
+              text="还没有评论"
+              description="发表第一条评论开启讨论吧。"
+              icon="comment"
+            />
+          </template>
+        </section>
+      </template>
+    </div>
+
+    <!-- 中栏吸底评论输入栏（sticky bottom-0 完美贴合 660px 中栏与移动端全宽） -->
+    <div
+      v-if="post"
+      class="sticky bottom-0 z-20 -mb-6 border-t border-subtle px-3 pt-2.5 backdrop-blur-md sm:px-5"
+      style="
+        background-color: color-mix(in srgb, var(--bg-canvas) 92%, transparent);
+        padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+      "
+    >
       <div
-        class="fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-app bg-page px-3 pt-2"
-        style="padding-bottom: max(0.75rem, env(safe-area-inset-bottom))"
+        v-if="replyTarget"
+        class="mb-2 flex items-center gap-2 rounded-lg bg-accent-soft px-3 py-1.5 text-xs text-primary"
       >
-        <!-- 回复提示 -->
-        <div
-          v-if="replyTarget"
-          class="mb-1.5 flex items-center gap-2 rounded-lg bg-[color-mix(in_srgb,var(--c-primary)_8%,transparent)] px-3 py-1.5 text-xs text-primary"
-        >
+        <span class="truncate">
           回复 @{{ replyTarget.author?.username ?? "匿名用户" }}
-          <button type="button" class="ml-auto" aria-label="取消回复" @click="cancelReply">
-            <AppSvgIcon name="close" :size="14" />
-          </button>
-        </div>
-        <CommentComposer
-          ref="composerEl"
-          :placeholder="composerPlaceholder"
-          :busy="submittingComment"
-          @submit="onSubmitComment"
-        />
+        </span>
+        <button
+          type="button"
+          class="ml-auto shrink-0 rounded-full p-0.5 hover:bg-hover"
+          aria-label="取消回复"
+          @click="cancelReply"
+        >
+          <AppSvgIcon name="close" :size="14" />
+        </button>
       </div>
-    </template>
-  
-    <!-- 大图查看（只有帖子详情页有；帖子流里的横滑条不放大） -->
+
+      <CommentComposer
+        ref="composerEl"
+        :placeholder="composerPlaceholder"
+        :busy="submittingComment"
+        @submit="onSubmitComment"
+      />
+    </div>
+
+    <!-- 大图查看（reka-ui Dialog 灯箱） -->
     <ImageLightbox
       :open="lightboxOpen"
       :urls="bodyImages"
@@ -595,18 +620,17 @@ onMounted(load);
       @update:index="lightboxIndex = $event"
       @close="lightboxOpen = false"
     />
-</div>
+  </div>
 </template>
 
 <style scoped>
-/* 正文里的图片：别让竖图占满整屏，统一圆角；可点开看大图 */
 .post-body :deep(img) {
   display: block;
   max-width: 100%;
   max-height: 60vh;
   object-fit: contain;
   border-radius: 0.5rem;
-  margin: 0.5rem 0;
-  background: color-mix(in srgb, var(--c-text) 6%, transparent);
+  margin: 0.65rem 0;
+  background: var(--bg-canvas-soft);
 }
 </style>

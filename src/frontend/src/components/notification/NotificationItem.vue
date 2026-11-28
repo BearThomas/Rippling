@@ -1,8 +1,8 @@
 <!--
-  通知列表项
+  通知列表项（Elk 无边框紧凑分割行）
 
-  按通知类型显示图标（评论 / 关注 / 系统）；
-  点击条目跳转对应内容，右侧删除按钮直接已读。
+  按通知类型显示语义图标（评论 / 关注 / 系统）；
+  左侧主体按钮点击跳转并已读，右侧独立删除按钮仅标记已读（避免交互元素嵌套）。
 -->
 <script setup lang="ts">
 import { computed } from "vue";
@@ -21,56 +21,70 @@ const emit = defineEmits<{
   delete: [];
 }>();
 
-/** 类型 → 图标映射（未知类型按系统通知处理） */
-const icon = computed(() => {
+/** 类型 → 图标与语义底色映射 */
+const typeMeta = computed(() => {
   switch (props.notification.type) {
     case "comment":
-      return "comment";
+      return {
+        icon: "comment",
+        badgeClass: "bg-accent-soft text-primary",
+        label: "互动回复",
+      };
     case "follow":
-      return "user";
+      return {
+        icon: "user",
+        badgeClass: "bg-accent-warm-soft text-accent-warm",
+        label: "新增关注",
+      };
     default:
-      return "bell";
-  }
-});
-
-/** 类型 → 图标底色（仅用预设令牌支持的颜色） */
-const iconClass = computed(() => {
-  switch (props.notification.type) {
-    case "comment":
-      return "text-primary";
-    case "follow":
-      return "text-accent";
-    default:
-      return "text-ink-soft";
+      return {
+        icon: "bell",
+        badgeClass: "bg-hover text-ink-secondary",
+        label: "系统通知",
+      };
   }
 });
 </script>
 
 <template>
-  <div
-    class="card-base flex cursor-pointer items-start gap-3 pressable"
-    role="button"
-    @click="emit('click')"
+  <li
+    class="flex items-start gap-2 border-b border-subtle px-4 py-3.5 transition-colors hover:bg-hover sm:px-5"
   >
-    <span class="mt-0.5 shrink-0">
-      <AppSvgIcon :name="icon" :size="18" :class="iconClass" />
-    </span>
+    <button
+      type="button"
+      class="flex min-w-0 flex-1 items-start gap-3 text-left pressable"
+      @click="emit('click')"
+    >
+      <span
+        class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+        :class="typeMeta.badgeClass"
+        aria-hidden="true"
+      >
+        <AppSvgIcon :name="typeMeta.icon" :size="15" />
+      </span>
 
-    <div class="min-w-0 flex-1">
-      <p class="text-sm leading-relaxed">{{ notification.content }}</p>
-      <p class="mt-1 text-xs text-ink-soft">
-        {{ formatRelativeTime(notification.createdAt) }}
-      </p>
-    </div>
+      <span class="min-w-0 flex-1">
+        <span class="block text-sm leading-relaxed text-ink break-words">
+          {{ notification.content }}
+        </span>
+        <span class="mt-1 flex items-center gap-2 text-xs text-ink-muted">
+          <span>{{ typeMeta.label }}</span>
+          <span aria-hidden="true">·</span>
+          <time :datetime="notification.createdAt" class="tabular-nums">
+            {{ formatRelativeTime(notification.createdAt) }}
+          </time>
+        </span>
+      </span>
+    </button>
 
     <!-- 删除（已读）按钮 -->
     <button
       type="button"
-      class="shrink-0 p-1 text-ink-soft transition-opacity active:opacity-60"
-      aria-label="删除通知"
-      @click.stop="emit('delete')"
+      class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink-muted hover:bg-canvas-soft hover:text-ink pressable"
+      aria-label="标记已读并移除通知"
+      @click="emit('delete')"
     >
-      <AppSvgIcon name="close" :size="16" />
+      <AppSvgIcon name="close" :size="15" />
     </button>
-  </div>
+  </li>
 </template>

@@ -1,16 +1,8 @@
 <!--
-  大事记详情页（/timeline/:id）
-
-  功能：
-    - 详情：标题 / 事件日期 / 描述（Markdown 渲染）/ 提交人 / 点赞数
-    - 审核信息（reviewedBy / reviewedAt，后端按权限附加，有才显示）
-    - 点赞 / 取消赞（/api/like targetType=timeline）
-    - 评论区（targetType=timeline）：复用 CommentItem / CommentComposer，
-      顶级评论走 /api/timeline/comments + /api/timeline/comment，
-      子回复仍走 /api/post/comment（父评论是 post 行）
+  大事记详情页（Elk 详情阅读流 + 中栏吸底评论栏）
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, shallowRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import MarkdownRenderer from "../components/markdown/MarkdownRenderer.vue";
 import LoadingSpinner from "../components/common/LoadingSpinner.vue";
@@ -31,48 +23,30 @@ const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 
-/** 大事记 ID */
 const timelineId = route.params.id as string;
 
-// ------------------------------------------------------------
-//  数据状态
-// ------------------------------------------------------------
-
-const loading = ref(true);
-const error = ref(false);
+const loading = shallowRef(true);
+const error = shallowRef(false);
 const event = ref<TimelineEvent | null>(null);
 
-/** 评论列表（顶级） */
 const comments = ref<PostInfo[]>([]);
-const commentsLoading = ref(false);
-const commentsError = ref(false);
+const commentsLoading = shallowRef(false);
+const commentsError = shallowRef(false);
 
-/** 点赞本地状态（列表 / 详情不返回是否已赞，默认未赞） */
-const liked = ref(false);
-const likeCount = ref(0);
-const likeBusy = ref(false);
+const liked = shallowRef(false);
+const likeCount = shallowRef(0);
+const likeBusy = shallowRef(false);
 
-// ------------------------------------------------------------
-//  评论输入
-// ------------------------------------------------------------
-
-/** 回复目标（null = 直接评论大事记） */
 const replyTarget = ref<PostInfo | null>(null);
-const submittingComment = ref(false);
+const submittingComment = shallowRef(false);
 const composerEl = ref<InstanceType<typeof CommentComposer> | null>(null);
 
-/** 输入框占位文案 */
 const composerPlaceholder = computed(() =>
   replyTarget.value
     ? `回复 @${replyTarget.value.author?.username ?? "匿名用户"}…`
     : "写下你的评论…（支持 Markdown）"
 );
 
-// ------------------------------------------------------------
-//  加载
-// ------------------------------------------------------------
-
-/** 加载大事记详情 */
 async function load(): Promise<void> {
   loading.value = true;
   error.value = false;
@@ -88,7 +62,6 @@ async function load(): Promise<void> {
   }
 }
 
-/** 加载顶级评论列表 */
 async function loadComments(): Promise<void> {
   commentsLoading.value = true;
   commentsError.value = false;
@@ -101,18 +74,12 @@ async function loadComments(): Promise<void> {
   }
 }
 
-// ------------------------------------------------------------
-//  交互
-// ------------------------------------------------------------
-
-/** 未登录引导 */
 function requireLogin(): boolean {
   if (auth.isLoggedIn) return true;
-  router.push({ path: "/login", query: { redirect: route.fullPath } });
+  void router.push({ path: "/login", query: { redirect: route.fullPath } });
   return false;
 }
 
-/** 点赞 / 取消赞 */
 async function onToggleLike(): Promise<void> {
   if (!requireLogin() || likeBusy.value) return;
   likeBusy.value = true;
@@ -127,16 +94,13 @@ async function onToggleLike(): Promise<void> {
   }
 }
 
-/** 提交评论（或回复） */
 async function onSubmitComment(content: string, authorVisible: boolean): Promise<void> {
   if (!requireLogin()) return;
   submittingComment.value = true;
   try {
     if (replyTarget.value) {
-      // 回复评论：父级是 post 行，走既有评论接口
       await createComment(replyTarget.value.id, content, authorVisible);
     } else {
-      // 顶级评论：走大事记评论接口
       await createTimelineComment(timelineId, content, authorVisible);
     }
     showToast("评论成功", "success");
@@ -149,18 +113,15 @@ async function onSubmitComment(content: string, authorVisible: boolean): Promise
   }
 }
 
-/** 点击评论的「回复」→ 定位输入框 */
 function onReply(comment: PostInfo): void {
   replyTarget.value = comment;
   composerEl.value?.focus();
 }
 
-/** 取消回复定位 */
 function cancelReply(): void {
   replyTarget.value = null;
 }
 
-/** 评论被删除 → 从顶级列表移除 */
 function onCommentDeleted(id: string): void {
   comments.value = comments.value.filter((c) => c.id !== id);
 }
@@ -169,103 +130,137 @@ onMounted(load);
 </script>
 
 <template>
-  <div class="px-3 pb-44 pt-3">
-    <LoadingSpinner v-if="loading" />
-    <ErrorState v-else-if="error" message="大事记不存在或无权访问" @retry="load" />
+  <div class="flex min-h-[calc(100dvh-var(--header-height)-1.5rem)] flex-col">
+    <div class="flex-1">
+      <LoadingSpinner v-if="loading" />
+      <ErrorState v-else-if="error" message="大事记不存在或无权访问" @retry="load" />
 
-    <template v-else-if="event">
-      <!-- 正文卡片 -->
-      <article class="card-base">
-        <!-- 类型标签 + 事件日期 -->
-        <div class="mb-2 flex items-center gap-2 text-xs text-ink-soft">
-          <span class="flex items-center gap-1 font-medium text-primary">
-            <AppSvgIcon name="calendar" :size="14" />
-            大事记
-          </span>
-          <span class="ml-auto">事件日期：{{ formatDate(event.eventDate) }}</span>
-        </div>
-
-        <!-- 标题 -->
-        <h1 class="mb-2 text-lg font-bold">{{ event.title }}</h1>
-
-        <!-- 描述（Markdown 渲染） -->
-        <MarkdownRenderer :content="event.description" />
-
-        <!-- 提交信息 -->
-        <div class="mt-3 border-t border-line pt-3 text-xs text-ink-soft">
-          <p>提交人：{{ event.submittedBy ?? "匿名用户" }} · {{ formatDateTime(event.createdAt) }}</p>
-          <!-- 审核信息（后端按权限附加） -->
-          <p v-if="event.reviewedBy || event.reviewedAt" class="mt-1">
-            审核人：{{ event.reviewedBy ?? "—" }}
-            <template v-if="event.reviewedAt"> · {{ formatDateTime(event.reviewedAt) }}</template>
-          </p>
-        </div>
-
-        <!-- 操作行 -->
-        <div class="mt-3 flex items-center gap-4 border-t border-line pt-3 text-xs text-ink-soft">
-          <button
-            type="button"
-            class="flex items-center gap-1 transition-colors"
-            :class="liked ? 'text-primary' : ''"
-            :disabled="likeBusy"
-            @click="onToggleLike"
-          >
-            <AppSvgIcon name="thumbUp" :size="16" />
-            {{ formatNumber(likeCount) }}
-          </button>
-          <span class="flex items-center gap-1">
-            <AppSvgIcon name="comment" :size="16" />
-            {{ formatNumber(comments.length) }}
-          </span>
-        </div>
-      </article>
-
-      <!-- 评论区 -->
-      <section class="mt-3">
-        <h3 class="mb-1 px-1 text-sm font-semibold text-ink-soft">评论（{{ comments.length }}）</h3>
-
-        <LoadingSpinner v-if="commentsLoading && comments.length === 0" />
-        <ErrorState
-          v-else-if="commentsError && comments.length === 0"
-          message="评论加载失败"
-          @retry="loadComments"
-        />
-        <template v-else>
-          <div class="card-base divide-y divide-line !py-1">
-            <CommentItem
-              v-for="comment in comments"
-              :key="comment.id"
-              :comment="comment"
-              @reply="onReply"
-              @deleted="onCommentDeleted"
-            />
+      <template v-else-if="event">
+        <!-- 正文阅读区 -->
+        <article class="border-b border-subtle px-4 pb-5 pt-4 sm:px-6">
+          <div class="flex items-center gap-2">
+            <span class="tag-pill-accent">
+              <AppSvgIcon name="calendar" :size="12" />
+              大事记
+            </span>
+            <time
+              class="ml-auto text-xs font-medium tabular-nums text-ink-muted"
+              :datetime="event.eventDate"
+            >
+              事件日期：{{ formatDate(event.eventDate) }}
+            </time>
           </div>
-          <EmptyState v-if="comments.length === 0 && !commentsLoading" text="还没有评论，来抢沙发" icon="comment" />
-        </template>
-      </section>
 
-      <!-- 底部评论输入栏（固定） -->
+          <h1 class="mt-3 text-[20px] font-bold leading-[30px] tracking-tight text-ink sm:text-[22px]">
+            {{ event.title }}
+          </h1>
+
+          <div class="mt-3">
+            <MarkdownRenderer :content="event.description" size="reading" />
+          </div>
+
+          <!-- 提交与审核元信息（浅底色辅助块，无嵌套边框） -->
+          <div class="mt-4 space-y-1 rounded-lg bg-canvas-soft px-3.5 py-2.5 text-xs text-ink-muted">
+            <p>
+              提交人：<span class="text-ink-secondary">{{ event.submittedBy ?? "匿名用户" }}</span>
+              · <span class="tabular-nums">{{ formatDateTime(event.createdAt) }}</span>
+            </p>
+            <p v-if="event.reviewedBy || event.reviewedAt">
+              审核人：<span class="text-ink-secondary">{{ event.reviewedBy ?? "—" }}</span>
+              <template v-if="event.reviewedAt">
+                · <span class="tabular-nums">{{ formatDateTime(event.reviewedAt) }}</span>
+              </template>
+            </p>
+          </div>
+
+          <!-- 操作行 -->
+          <div class="mt-4 flex items-center gap-5 border-t border-subtle pt-3 text-xs tabular-nums text-ink-muted">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 hover:bg-hover hover:text-primary pressable"
+              :class="liked ? 'font-medium text-primary' : ''"
+              :disabled="likeBusy"
+              @click="onToggleLike"
+            >
+              <AppSvgIcon name="thumbUp" :size="16" />
+              {{ formatNumber(likeCount) }}
+            </button>
+            <span class="inline-flex items-center gap-1.5 px-1 py-1">
+              <AppSvgIcon name="comment" :size="16" />
+              {{ formatNumber(comments.length) }}
+            </span>
+          </div>
+        </article>
+
+        <!-- 评论区 -->
+        <section>
+          <div class="border-b border-subtle px-4 py-3 sm:px-6">
+            <h2 class="text-sm font-semibold text-ink">
+              全部评论
+              <span class="ml-1 font-normal tabular-nums text-ink-muted">
+                {{ comments.length }}
+              </span>
+            </h2>
+          </div>
+
+          <LoadingSpinner v-if="commentsLoading && comments.length === 0" />
+          <ErrorState
+            v-else-if="commentsError && comments.length === 0"
+            message="评论加载失败"
+            @retry="loadComments"
+          />
+          <template v-else>
+            <div v-if="comments.length > 0">
+              <CommentItem
+                v-for="comment in comments"
+                :key="comment.id"
+                :comment="comment"
+                @reply="onReply"
+                @deleted="onCommentDeleted"
+              />
+            </div>
+            <EmptyState
+              v-else-if="!commentsLoading"
+              text="还没有评论"
+              description="分享你对这段校园记忆的看法吧。"
+              icon="comment"
+            />
+          </template>
+        </section>
+      </template>
+    </div>
+
+    <!-- 中栏吸底评论栏 -->
+    <div
+      v-if="event"
+      class="sticky bottom-0 z-20 -mb-6 border-t border-subtle px-3 pt-2.5 backdrop-blur-md sm:px-5"
+      style="
+        background-color: color-mix(in srgb, var(--bg-canvas) 92%, transparent);
+        padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+      "
+    >
       <div
-        class="fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-app bg-page px-3 pt-2"
-        style="padding-bottom: max(0.75rem, env(safe-area-inset-bottom))"
+        v-if="replyTarget"
+        class="mb-2 flex items-center gap-2 rounded-lg bg-accent-soft px-3 py-1.5 text-xs text-primary"
       >
-        <!-- 回复提示 -->
-        <div
-          v-if="replyTarget"
-          class="mb-1.5 flex items-center gap-2 rounded-lg bg-[color-mix(in_srgb,var(--c-primary)_8%,transparent)] px-3 py-1.5 text-xs text-primary"
-        >
+        <span class="truncate">
           回复 @{{ replyTarget.author?.username ?? "匿名用户" }}
-          <button type="button" class="ml-auto" aria-label="取消回复" @click="cancelReply">
-            <AppSvgIcon name="close" :size="14" />
-          </button>
-        </div>
-        <CommentComposer
-          ref="composerEl"
-          :placeholder="composerPlaceholder"
-          :busy="submittingComment"
-          @submit="onSubmitComment"
-        />
+        </span>
+        <button
+          type="button"
+          class="ml-auto shrink-0 rounded-full p-0.5 hover:bg-hover"
+          aria-label="取消回复"
+          @click="cancelReply"
+        >
+          <AppSvgIcon name="close" :size="14" />
+        </button>
       </div>
-    </template>
+      <CommentComposer
+        ref="composerEl"
+        :placeholder="composerPlaceholder"
+        :busy="submittingComment"
+        @submit="onSubmitComment"
+      />
+    </div>
   </div>
 </template>

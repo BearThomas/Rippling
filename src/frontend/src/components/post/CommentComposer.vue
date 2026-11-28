@@ -1,39 +1,33 @@
 <!--
-  评论输入组件
+  评论输入组件（去双层套娃，单层清爽边框输入容器）
 
-  支持 Markdown（textarea + 预览切换）、匿名选项（authorVisible=false）。
-  通过 ref 暴露 focus() 供「回复某条评论」时聚焦。
+  支持 Markdown（写作 / 预览切换）、匿名选项（authorVisible=false）；
+  通过 defineExpose({ focus }) 供详情页点击回复时聚焦。
 -->
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, shallowRef } from "vue";
 import MarkdownRenderer from "../markdown/MarkdownRenderer.vue";
 import AppSvgIcon from "../layout/AppSvgIcon.vue";
 
 withDefaults(
   defineProps<{
-    /** 输入框占位文案 */
     placeholder?: string;
-    /** 提交中状态（禁用发送按钮） */
     busy?: boolean;
   }>(),
   { placeholder: "写下你的评论…（支持 Markdown）", busy: false }
 );
 
 const emit = defineEmits<{
-  /** 提交评论：内容 + 是否公开署名 */
   submit: [content: string, authorVisible: boolean];
 }>();
 
-const content = ref("");
-/** 匿名发布（不公开署名） */
-const anonymous = ref(false);
-/** 预览模式 */
-const preview = ref(false);
+const content = shallowRef("");
+const anonymous = shallowRef(false);
+const preview = shallowRef(false);
+const textareaEl = ref<HTMLTextAreaElement | null>(null);
 
-/** 预览内容（空时占位） */
 const previewContent = computed(() => content.value || "（暂无内容）");
 
-/** 发送 */
 function onSubmit(): void {
   const text = content.value.trim();
   if (!text) return;
@@ -42,49 +36,59 @@ function onSubmit(): void {
   preview.value = false;
 }
 
-/** 聚焦输入框（回复定位用） */
 function focus(): void {
   preview.value = false;
   textareaEl.value?.focus();
 }
 
-const textareaEl = ref<HTMLTextAreaElement | null>(null);
-
 defineExpose({ focus });
 </script>
 
 <template>
-  <div class="card-base !p-2">
-    <!-- 编辑 / 预览切换 -->
-    <div v-if="preview" class="min-h-[72px] rounded-lg bg-page px-3 py-2">
-      <MarkdownRenderer :content="previewContent" />
+  <div
+    class="rounded-xl border border-strong bg-surface transition-colors focus-within:border-primary"
+  >
+    <!-- 编辑 / 预览区 -->
+    <div v-if="preview" class="min-h-[68px] max-h-44 overflow-y-auto px-3.5 py-2.5">
+      <MarkdownRenderer :content="previewContent" size="compact" />
     </div>
     <textarea
       v-else
       ref="textareaEl"
       v-model="content"
-      class="min-h-[72px] w-full resize-y rounded-lg bg-page px-3 py-2 text-base sm:text-sm outline-none placeholder:text-ink-soft/60"
+      rows="2"
+      class="min-h-[68px] max-h-44 w-full resize-none bg-transparent px-3.5 py-2.5 text-base leading-relaxed text-ink outline-none placeholder:text-ink-muted sm:text-sm"
       :placeholder="placeholder"
       maxlength="300"
     />
 
-    <!-- 工具行：匿名 + 预览切换 + 发送 -->
-    <div class="mt-1.5 flex items-center gap-3 px-1">
-      <label class="flex items-center gap-1 text-xs text-ink-soft">
-        <input v-model="anonymous" type="checkbox" class="accent-[var(--c-primary)]" />
+    <!-- 底部轻量工具栏 -->
+    <div class="flex items-center gap-2.5 border-t border-subtle px-3 py-1.5">
+      <label class="inline-flex cursor-pointer items-center gap-1.5 text-xs text-ink-secondary select-none">
+        <input
+          v-model="anonymous"
+          type="checkbox"
+          class="h-3.5 w-3.5 rounded accent-[var(--accent)]"
+        />
         匿名
       </label>
+
       <button
         type="button"
-        class="text-xs text-ink-soft transition-colors active:text-primary"
+        class="rounded-md px-2 py-1 text-xs font-medium transition-colors"
+        :class="preview ? 'bg-accent-soft text-primary' : 'text-ink-muted hover:bg-hover hover:text-ink'"
         @click="preview = !preview"
       >
         {{ preview ? "继续编辑" : "预览" }}
       </button>
-      <span class="ml-auto text-[10px] text-ink-soft">{{ content.length }}/300</span>
+
+      <span class="ml-auto text-xs tabular-nums text-ink-muted">
+        {{ content.length }}/300
+      </span>
+
       <button
         type="button"
-        class="flex items-center gap-1 rounded-full bg-primary px-3.5 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+        class="btn-primary !rounded-full !px-3.5 !py-1.5 text-xs"
         :disabled="!content.trim() || busy"
         @click="onSubmit"
       >

@@ -1,15 +1,14 @@
 <!--
-  管理面板页
+  管理面板页（克制工具页：下划线 AppTabs + KeepAlive 子面板）
 
   - 进入时校验 access_admin_panel 权限，无权限 Toast 提示并跳回首页
-  - 顶部 Tab：概览 / 用户管理 / 站点配置 / 数据库 / 归档查看
-    （数据库与归档仅 view_database 权限者可见）
-  - 各子面板独立加载数据，KeepAlive 缓存避免切 Tab 重复请求
+  - 保留 data-tour="admin-tabs" 与 KeepAlive 子面板缓存
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, shallowRef } from "vue";
 import { useRouter } from "vue-router";
-import LoadingSpinner from "../components/common/LoadingSpinner.vue";
+import FeedSkeleton from "../components/common/FeedSkeleton.vue";
+import AppTabs, { type TabOption } from "../components/common/AppTabs.vue";
 import AdminSummaryPanel from "../components/admin/AdminSummaryPanel.vue";
 import AdminUserPanel from "../components/admin/AdminUserPanel.vue";
 import AdminConfigPanel from "../components/admin/AdminConfigPanel.vue";
@@ -27,17 +26,13 @@ import { showToast } from "../utils/toast";
 
 const router = useRouter();
 
-/** 权限校验是否完成 */
-const permReady = ref(false);
-/** 是否具备面板访问权限 */
-const allowed = ref(false);
+const permReady = shallowRef(false);
+const allowed = shallowRef(false);
 
-/** 细分权限（控制子面板写操作与 Tab 显隐） */
-const canManageUsers = ref(false);
-const canViewDatabase = ref(false);
-const canEditDatabase = ref(false);
+const canManageUsers = shallowRef(false);
+const canViewDatabase = shallowRef(false);
+const canEditDatabase = shallowRef(false);
 
-/** Tab 定义（needViewDb 的 Tab 仅 view_database 权限者可见） */
 const TABS = [
   { key: "summary", label: "概览", needViewDb: false },
   { key: "users", label: "用户管理", needViewDb: false },
@@ -47,14 +42,21 @@ const TABS = [
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
-const activeTab = ref<TabKey>("summary");
+const activeTab = shallowRef<TabKey>("summary");
 
-/** 可见 Tab（数据库 / 归档按权限过滤） */
-const visibleTabs = computed(() =>
-  TABS.filter((tab) => !tab.needViewDb || canViewDatabase.value)
+const tabOptions = computed<TabOption[]>(() =>
+  TABS.filter((tab) => !tab.needViewDb || canViewDatabase.value).map((tab) => ({
+    value: tab.key,
+    label: tab.label,
+  }))
 );
 
-/** Tab key → 子面板组件映射 */
+function onTabChange(val: string): void {
+  if (TABS.some((t) => t.key === val)) {
+    activeTab.value = val as TabKey;
+  }
+}
+
 const PANELS: Record<TabKey, unknown> = {
   summary: AdminSummaryPanel,
   users: AdminUserPanel,
@@ -66,10 +68,9 @@ const PANELS: Record<TabKey, unknown> = {
 onMounted(async () => {
   const mask = await getMyPermissions();
 
-  // 无 access_admin_panel：Toast 提示并跳回首页
   if (!hasPermission(mask, PERM_ACCESS_ADMIN_PANEL)) {
     showToast("无权访问管理面板", "error");
-    router.replace("/");
+    void router.replace("/");
     return;
   }
 
@@ -82,45 +83,42 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="px-3 pt-3">
-    <LoadingSpinner v-if="!permReady || !allowed" />
+  <div>
+    <FeedSkeleton v-if="!permReady || !allowed" variant="elk" :count="5" />
 
     <template v-else>
-      <!-- 顶部 Tab（横向滚动，移动端友好） -->
-      <div data-tour="admin-tabs" class="-mx-3 mb-3 overflow-x-auto px-3">
-        <div class="flex gap-2 whitespace-nowrap">
-          <button
-            v-for="tab in visibleTabs"
-            :key="tab.key"
-            type="button"
-            class="rounded-full px-4 py-1.5 text-sm transition-colors"
-            :class="activeTab === tab.key ? 'bg-primary text-white' : 'bg-surface text-ink-soft'"
-            @click="activeTab = tab.key"
-          >
-            {{ tab.label }}
-          </button>
-        </div>
+      <!-- 顶部下划线 Tab（保留 data-tour="admin-tabs"） -->
+      <div data-tour="admin-tabs" class="bg-canvas">
+        <AppTabs
+          :model-value="activeTab"
+          :items="tabOptions"
+          variant="underline"
+          aria-label="管理面板栏目"
+          @update:model-value="onTabChange"
+        />
       </div>
 
       <!-- 子面板（KeepAlive 缓存已加载数据） -->
-      <KeepAlive>
-        <component
-          :is="PANELS[activeTab]"
-          v-if="activeTab === 'users'"
-          :can-manage="canManageUsers"
-        />
-        <component
-          :is="PANELS[activeTab]"
-          v-else-if="activeTab === 'config'"
-          :can-edit="canEditDatabase"
-        />
-        <component
-          :is="PANELS[activeTab]"
-          v-else-if="activeTab === 'database'"
-          :can-query="canEditDatabase"
-        />
-        <component :is="PANELS[activeTab]" v-else />
-      </KeepAlive>
+      <div class="pb-10">
+        <KeepAlive>
+          <component
+            :is="PANELS[activeTab]"
+            v-if="activeTab === 'users'"
+            :can-manage="canManageUsers"
+          />
+          <component
+            :is="PANELS[activeTab]"
+            v-else-if="activeTab === 'config'"
+            :can-edit="canEditDatabase"
+          />
+          <component
+            :is="PANELS[activeTab]"
+            v-else-if="activeTab === 'database'"
+            :can-query="canEditDatabase"
+          />
+          <component :is="PANELS[activeTab]" v-else />
+        </KeepAlive>
+      </div>
     </template>
   </div>
 </template>

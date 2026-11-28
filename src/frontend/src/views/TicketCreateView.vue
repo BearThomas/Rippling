@@ -1,32 +1,24 @@
 <!--
-  工单创建页（/ticket/create?type=xxx）
+  工单创建页（/ticket/create?type=xxx — 极简表单页 + AppSelect + ConfirmDialog）
 
-  根据 query.type 动态渲染表单，覆盖 7 种工单类型：
-    - timeline_submit：大事记标题 / 事件日期（extraData.eventDate）/ 描述
-    - block_create：板块名称 / 板块描述
-    - report：举报对象类型（query.targetType 预填）/ 目标 ID / 举报原因
-    - permission_request：下拉选择白名单权限（title 须含英文权限名）/ 申请理由
-    - appeal：申诉理由
-    - verification：认证说明 / 附件链接（可选，存 extraData）
-    - account_deletion：注销原因（二次确认）
-
-  提交走 api/ticket.ts createTicket，成功后跳「我的工单」。
+  覆盖 7 种工单类型：
+    timeline_submit / block_create / report / permission_request /
+    appeal / verification / account_deletion
 -->
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, shallowRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import AppSelect, { type SelectOptionItem } from "../components/common/AppSelect.vue";
+import EmptyState from "../components/common/EmptyState.vue";
+import { useConfirm } from "../composables/useConfirm";
 import { createTicket } from "../api/ticket";
 import { showToast } from "../utils/toast";
 import type { TicketType } from "../types";
 
 const route = useRoute();
 const router = useRouter();
+const { confirm } = useConfirm();
 
-// ============================================================
-//  类型配置
-// ============================================================
-
-/** 支持的工单类型 → 页面标题与说明 */
 const TYPE_META: Record<TicketType, { heading: string; hint: string }> = {
   timeline_submit: {
     heading: "提交大事记",
@@ -58,7 +50,6 @@ const TYPE_META: Record<TicketType, { heading: string; hint: string }> = {
   },
 };
 
-/** 可申请的权限白名单（与后端 REQUESTABLE_PERMISSIONS 一致；title 须含英文 key） */
 const REQUESTABLE_PERMISSIONS = [
   { key: "upload_image", label: "上传图片" },
   { key: "submit_timeline", label: "提交大事记" },
@@ -66,75 +57,65 @@ const REQUESTABLE_PERMISSIONS = [
   { key: "create_vote", label: "创建投票" },
 ] as const;
 
-/** 举报对象类型白名单（与后端 REPORT_TARGET_TYPES 一致） */
+const PERMISSION_SELECT_OPTIONS: readonly SelectOptionItem[] = REQUESTABLE_PERMISSIONS.map((p) => ({
+  value: p.key,
+  label: `${p.label}（${p.key}）`,
+}));
+
 const REPORT_TARGET_TYPES = [
   { value: "post", label: "帖子" },
   { value: "comment", label: "评论" },
   { value: "confession", label: "表白" },
 ] as const;
 
-/** 当前工单类型（query.type，非法时为空） */
+const REPORT_SELECT_OPTIONS: readonly SelectOptionItem[] = REPORT_TARGET_TYPES.map((t) => ({
+  value: t.value,
+  label: t.label,
+}));
+
 const ticketType = computed<TicketType | null>(() => {
   const t = route.query.type as string | undefined;
   return t && t in TYPE_META ? (t as TicketType) : null;
 });
 
-// ============================================================
-//  表单状态
-// ============================================================
+const title = shallowRef("");
+const content = shallowRef("");
+const eventDate = shallowRef("");
+const reportTargetType = shallowRef<string>((route.query.targetType as string) ?? "post");
+const reportTargetId = shallowRef<string>((route.query.targetId as string) ?? "");
+const requestedPermission = shallowRef<string>(REQUESTABLE_PERMISSIONS[0].key);
+const attachmentUrl = shallowRef("");
+const submitting = shallowRef(false);
 
-/** 通用标题 / 内容（部分类型自动生成 title，无需用户输入） */
-const title = ref("");
-const content = ref("");
-/** timeline_submit：事件日期（YYYY-MM-DD） */
-const eventDate = ref("");
-/** report：对象类型与目标 ID（从 query 预填） */
-const reportTargetType = ref<string>((route.query.targetType as string) ?? "post");
-const reportTargetId = ref<string>((route.query.targetId as string) ?? "");
-/** permission_request：所选权限 key */
-const requestedPermission = ref<string>(REQUESTABLE_PERMISSIONS[0].key);
-/** verification：附件链接（可选） */
-const attachmentUrl = ref("");
-
-const submitting = ref(false);
-
-/** 当前类型是否需要用户输入标题（其余类型自动生成） */
 const needsTitleInput = computed(
   () => ticketType.value === "timeline_submit" || ticketType.value === "block_create"
 );
 
-/** 标题占位文案 */
 const titlePlaceholder = computed(() =>
-  ticketType.value === "timeline_submit" ? "大事记标题" : "板块名称"
+  ticketType.value === "timeline_submit" ? "输入大事记标题…" : "输入板块名称…"
 );
 
-/** 内容占位文案 */
 const contentPlaceholder = computed(() => {
   switch (ticketType.value) {
     case "timeline_submit":
-      return "大事记描述（发生了什么）";
+      return "描述发生了什么…";
     case "block_create":
-      return "板块描述（主题、定位、规则等）";
+      return "介绍板块的主题、定位与基本规则…";
     case "report":
-      return "举报原因（请尽量提供具体说明）";
+      return "请尽量提供具体说明…";
     case "permission_request":
-      return "申请理由";
+      return "填写申请该权限的理由…";
     case "appeal":
-      return "申诉理由";
+      return "说明申诉理由…";
     case "verification":
-      return "认证说明（你是谁、希望认证什么身份）";
+      return "说明你的身份以及希望认证的标识…";
     case "account_deletion":
-      return "注销原因";
+      return "填写注销原因…";
     default:
       return "";
   }
 });
 
-// ============================================================
-//  提交
-// ============================================================
-
-/** 组装并校验后提交工单 */
 async function handleSubmit(): Promise<void> {
   if (!ticketType.value || submitting.value) return;
 
@@ -149,7 +130,6 @@ async function handleSubmit(): Promise<void> {
   let targetId: string | undefined;
   let extraData: Record<string, unknown> | undefined;
 
-  // 按类型组装特有字段
   switch (ticketType.value) {
     case "timeline_submit": {
       if (!finalTitle) {
@@ -191,7 +171,6 @@ async function handleSubmit(): Promise<void> {
         showToast("请选择申请的权限", "error");
         return;
       }
-      // 后端要求 title 中包含英文权限名（批准时据此定位权限位）
       finalTitle = `权限申请：${perm.key}（${perm.label}）`;
       break;
     }
@@ -206,13 +185,18 @@ async function handleSubmit(): Promise<void> {
       break;
     }
     case "account_deletion": {
-      if (!window.confirm("确定提交账号注销申请吗？此操作不可撤销。")) return;
+      const ok = await confirm({
+        title: "确定提交账号注销申请？",
+        description: "提交后将交由管理员审核处理，注销生效后不可撤销。",
+        confirmText: "确认提交",
+        variant: "danger",
+      });
+      if (!ok) return;
       finalTitle = "账号注销申请";
       break;
     }
   }
 
-  // 后端限制：title ≤100、content ≤2000
   if (finalTitle.length > 100) {
     showToast("标题最多 100 字", "error");
     return;
@@ -233,7 +217,7 @@ async function handleSubmit(): Promise<void> {
       extraData,
     });
     showToast("工单提交成功", "success");
-    router.replace({ name: "ticket-list" });
+    void router.replace({ name: "ticket-list" });
   } catch {
     // client.ts 已自动 Toast
   } finally {
@@ -243,86 +227,146 @@ async function handleSubmit(): Promise<void> {
 </script>
 
 <template>
-  <div class="px-3 pt-3">
-    <!-- 非法类型兜底 -->
-    <div v-if="!ticketType" class="card-base text-center text-sm text-ink-soft">
-      未知的工单类型，请从应用页入口进入。
-    </div>
+  <div class="mx-auto max-w-2xl px-4 pb-12 pt-4 sm:px-5 sm:pt-5">
+    <EmptyState
+      v-if="!ticketType"
+      text="未知的工单类型"
+      description="请从应用页或个人菜单中的对应入口发起工单。"
+      icon="file"
+    />
 
-    <form v-else class="space-y-4" @submit.prevent="handleSubmit">
-      <!-- 类型说明 -->
-      <div class="card-base">
-        <h2 class="text-base font-semibold">{{ TYPE_META[ticketType].heading }}</h2>
-        <p class="mt-1 text-xs leading-relaxed text-ink-soft">{{ TYPE_META[ticketType].hint }}</p>
-      </div>
+    <form v-else class="space-y-5" @submit.prevent="handleSubmit">
+      <!-- 顶部说明 -->
+      <header class="border-b border-subtle pb-4">
+        <h1 class="text-lg font-semibold text-ink">{{ TYPE_META[ticketType].heading }}</h1>
+        <p class="mt-1 text-sm leading-relaxed text-ink-muted">
+          {{ TYPE_META[ticketType].hint }}
+        </p>
+      </header>
 
-      <!-- 标题（仅 timeline_submit / block_create 需要用户输入） -->
+      <!-- 标题（timeline_submit / block_create） -->
       <div v-if="needsTitleInput">
-        <label class="mb-1.5 block text-sm font-medium">
+        <label for="ticket-title" class="mb-1.5 block text-sm font-medium text-ink">
           {{ ticketType === "timeline_submit" ? "大事记标题" : "板块名称" }}
         </label>
-        <input v-model="title" class="input-base" :placeholder="titlePlaceholder" maxlength="100" />
+        <input
+          id="ticket-title"
+          v-model="title"
+          name="title"
+          type="text"
+          autocomplete="off"
+          class="input-base"
+          :placeholder="titlePlaceholder"
+          maxlength="100"
+        />
       </div>
 
       <!-- timeline_submit：事件日期 -->
       <div v-if="ticketType === 'timeline_submit'">
-        <label class="mb-1.5 block text-sm font-medium">事件日期</label>
-        <input v-model="eventDate" type="date" class="input-base" />
+        <label for="ticket-event-date" class="mb-1.5 block text-sm font-medium text-ink">
+          事件日期
+        </label>
+        <input
+          id="ticket-event-date"
+          v-model="eventDate"
+          name="eventDate"
+          type="date"
+          class="input-base"
+        />
       </div>
 
       <!-- report：举报对象类型 + 目标 ID -->
       <template v-if="ticketType === 'report'">
         <div>
-          <label class="mb-1.5 block text-sm font-medium">举报对象类型</label>
-          <select v-model="reportTargetType" class="input-base">
-            <option v-for="t in REPORT_TARGET_TYPES" :key="t.value" :value="t.value">
-              {{ t.label }}
-            </option>
-          </select>
+          <span class="mb-1.5 block text-sm font-medium text-ink">举报对象类型</span>
+          <AppSelect
+            v-model="reportTargetType"
+            :options="REPORT_SELECT_OPTIONS"
+            aria-label="举报对象类型"
+          />
         </div>
         <div>
-          <label class="mb-1.5 block text-sm font-medium">目标 ID</label>
-          <input v-model="reportTargetId" class="input-base" placeholder="被举报对象的 ID" />
+          <label for="ticket-target-id" class="mb-1.5 block text-sm font-medium text-ink">
+            目标 ID
+          </label>
+          <input
+            id="ticket-target-id"
+            v-model="reportTargetId"
+            name="targetId"
+            type="text"
+            autocomplete="off"
+            spellcheck="false"
+            class="input-base font-mono text-sm"
+            placeholder="被举报对象的 ID…"
+          />
         </div>
       </template>
 
       <!-- permission_request：权限下拉 -->
       <div v-if="ticketType === 'permission_request'">
-        <label class="mb-1.5 block text-sm font-medium">申请权限</label>
-        <select v-model="requestedPermission" class="input-base">
-          <option v-for="p in REQUESTABLE_PERMISSIONS" :key="p.key" :value="p.key">
-            {{ p.label }}（{{ p.key }}）
-          </option>
-        </select>
+        <span class="mb-1.5 block text-sm font-medium text-ink">申请权限</span>
+        <AppSelect
+          v-model="requestedPermission"
+          :options="PERMISSION_SELECT_OPTIONS"
+          aria-label="申请权限"
+        />
       </div>
 
       <!-- 内容 / 理由 -->
       <div>
-        <label class="mb-1.5 block text-sm font-medium">
-          {{ ticketType === "appeal" ? "申诉理由" : ticketType === "account_deletion" ? "注销原因" : "详细说明" }}
-        </label>
+        <div class="mb-1.5 flex items-baseline justify-between">
+          <label for="ticket-content" class="text-sm font-medium text-ink">
+            {{
+              ticketType === "appeal"
+                ? "申诉理由"
+                : ticketType === "account_deletion"
+                  ? "注销原因"
+                  : "详细说明"
+            }}
+          </label>
+          <span class="text-xs tabular-nums text-ink-muted">{{ content.length }}/2000</span>
+        </div>
         <textarea
+          id="ticket-content"
           v-model="content"
-          class="input-base min-h-28 resize-y"
+          name="content"
+          rows="5"
+          class="input-base min-h-32 resize-y"
           :placeholder="contentPlaceholder"
           maxlength="2000"
         />
-        <p class="mt-1 text-right text-[10px] text-ink-soft">{{ content.length }}/2000</p>
       </div>
 
       <!-- verification：附件链接（可选） -->
       <div v-if="ticketType === 'verification'">
-        <label class="mb-1.5 block text-sm font-medium">附件链接（可选）</label>
-        <input v-model="attachmentUrl" class="input-base" placeholder="如证明材料链接" />
+        <label for="ticket-attachment" class="mb-1.5 block text-sm font-medium text-ink">
+          附件链接
+          <span class="ml-1 text-xs font-normal text-ink-muted">可选</span>
+        </label>
+        <input
+          id="ticket-attachment"
+          v-model="attachmentUrl"
+          name="attachmentUrl"
+          type="url"
+          autocomplete="off"
+          spellcheck="false"
+          class="input-base"
+          placeholder="例如 https://…（证明材料链接）"
+        />
       </div>
 
       <!-- 提交 -->
       <button
         type="submit"
-        class="btn-primary w-full disabled:opacity-50"
+        class="w-full !py-2.5 disabled:opacity-50"
+        :class="
+          ticketType === 'account_deletion'
+            ? 'inline-flex items-center justify-center rounded-lg bg-danger px-4 text-sm font-medium text-white pressable hover:opacity-90'
+            : 'btn-primary'
+        "
         :disabled="submitting || !content.trim()"
       >
-        {{ submitting ? "提交中…" : "提交工单" }}
+        {{ submitting ? "提交中…" : ticketType === "account_deletion" ? "提交注销申请" : "提交工单" }}
       </button>
     </form>
   </div>

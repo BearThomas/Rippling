@@ -1,15 +1,13 @@
 <!--
-  工单列表页 — 我的工单 / 全部工单（view_ticket 权限）
-
-  - Tab 切换两个数据源，各自独立分页（PAGE_SIZE 条"加载更多"）
-  - 每条显示：标题、类型（中文）、状态（中文）、提交时间
-  - 点击进入工单详情
+  工单列表页 — 我的工单 / 全部工单（Elk 下划线 AppTabs + 无边框分割行）
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import LoadingSpinner from "../components/common/LoadingSpinner.vue";
+import { computed, onMounted, ref, shallowRef } from "vue";
+import FeedSkeleton from "../components/common/FeedSkeleton.vue";
 import EmptyState from "../components/common/EmptyState.vue";
 import ErrorState from "../components/common/ErrorState.vue";
+import AppTabs, { type TabOption } from "../components/common/AppTabs.vue";
+import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
 import { getMyTickets, listTickets } from "../api/ticket";
 import { getMyPermissions } from "../utils/myPermissions";
 import { hasPermission, PERM_VIEW_TICKET } from "../utils/permission";
@@ -17,28 +15,28 @@ import { ticketTypeLabel, ticketStatusLabel } from "../utils/ticket";
 import { formatRelativeTime } from "../utils/format";
 import type { TicketInfo } from "../types";
 
-/** 每页条数 */
 const PAGE_SIZE = 20;
 
-/** Tab：我的工单 / 全部工单 */
 type TabKey = "my" | "all";
-const activeTab = ref<TabKey>("my");
+const activeTab = shallowRef<TabKey>("my");
+const canViewAll = shallowRef(false);
 
-/** 是否具备 view_ticket 权限（决定"全部工单" Tab 是否显示） */
-const canViewAll = ref(false);
-
-const loading = ref(true);
-const loadingMore = ref(false);
-const error = ref(false);
+const loading = shallowRef(true);
+const loadingMore = shallowRef(false);
+const error = shallowRef(false);
 const tickets = ref<TicketInfo[]>([]);
-/** 是否还有更多（返回条数不足一页则到底） */
-const hasMore = ref(true);
+const hasMore = shallowRef(true);
+
+const tabItems = computed<TabOption[]>(() => {
+  const items: TabOption[] = [{ value: "my", label: "我的工单" }];
+  if (canViewAll.value) items.push({ value: "all", label: "全部工单" });
+  return items;
+});
 
 const emptyText = computed(() =>
-  activeTab.value === "my" ? "还没有工单" : "暂无工单"
+  activeTab.value === "my" ? "还没有提交过工单" : "暂无工单记录"
 );
 
-/** 拉取指定 Tab 的一页数据 */
 async function fetchPage(tab: TabKey, offset: number): Promise<TicketInfo[]> {
   if (tab === "all") {
     return listTickets({ limit: PAGE_SIZE, offset });
@@ -46,7 +44,6 @@ async function fetchPage(tab: TabKey, offset: number): Promise<TicketInfo[]> {
   return getMyTickets(PAGE_SIZE, offset);
 }
 
-/** 加载第一页（切 Tab / 重试时调用） */
 async function load(): Promise<void> {
   loading.value = true;
   error.value = false;
@@ -60,7 +57,6 @@ async function load(): Promise<void> {
   }
 }
 
-/** 加载更多 */
 async function loadMore(): Promise<void> {
   if (loadingMore.value || !hasMore.value) return;
   loadingMore.value = true;
@@ -69,88 +65,98 @@ async function loadMore(): Promise<void> {
     tickets.value.push(...page);
     hasMore.value = page.length === PAGE_SIZE;
   } catch {
-    // 分页失败保留已加载数据，仅 Toast 提示（client 层统一处理）
+    // client.ts 已自动 Toast
   } finally {
     loadingMore.value = false;
   }
 }
 
-/** 切换 Tab：重置列表并重新加载 */
-function switchTab(tab: TabKey): void {
+function onTabChange(next: string): void {
+  const tab: TabKey = next === "all" ? "all" : "my";
   if (activeTab.value === tab) return;
   activeTab.value = tab;
-  load();
+  void load();
 }
 
 onMounted(async () => {
-  // 权限探测：决定是否展示"全部工单" Tab
   const mask = await getMyPermissions();
   canViewAll.value = hasPermission(mask, PERM_VIEW_TICKET);
-  load();
+  void load();
 });
 </script>
 
 <template>
-  <div class="px-3 pt-3">
-    <!-- Tab 切换 -->
-    <div class="mb-3 flex gap-2">
-      <button
-        type="button"
-        class="rounded-full px-4 py-1.5 text-sm transition-colors"
-        :class="activeTab === 'my' ? 'bg-primary text-white' : 'bg-surface text-ink-soft'"
-        @click="switchTab('my')"
-      >
-        我的工单
-      </button>
-      <button
-        v-if="canViewAll"
-        type="button"
-        class="rounded-full px-4 py-1.5 text-sm transition-colors"
-        :class="activeTab === 'all' ? 'bg-primary text-white' : 'bg-surface text-ink-soft'"
-        @click="switchTab('all')"
-      >
-        全部工单
-      </button>
+  <div>
+    <!-- 顶部下划线 Tab（有查看全部权限时展示切换） -->
+    <AppTabs
+      v-if="canViewAll"
+      :model-value="activeTab"
+      :items="tabItems"
+      variant="underline"
+      stretch
+      aria-label="工单范围切换"
+      @update:model-value="onTabChange"
+    />
+
+    <FeedSkeleton v-if="loading" variant="elk" :count="5" />
+    <div v-else-if="error" class="px-4 py-6">
+      <ErrorState @retry="load" />
     </div>
 
-    <LoadingSpinner v-if="loading" />
-    <ErrorState v-else-if="error" @retry="load" />
-
     <template v-else-if="tickets.length > 0">
-      <div class="space-y-3">
-        <RouterLink
-          v-for="ticket in tickets"
-          :key="ticket.id"
-          :to="{ name: 'ticket-detail', params: { id: ticket.id } }"
-          class="card-base block pressable"
-        >
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-primary">{{ ticketTypeLabel(ticket.type) }}</span>
-            <span
-              class="ml-auto rounded px-1.5 py-0.5 text-[10px]"
-              :class="ticket.status === 'open' ? 'text-accent' : 'bg-line text-ink-soft'"
-              :style="ticket.status === 'open' ? { background: 'color-mix(in srgb, var(--c-accent) 12%, transparent)' } : {}"
-            >
-              {{ ticketStatusLabel(ticket.status) }}
-            </span>
-          </div>
-          <p class="mt-1 truncate text-sm font-medium">{{ ticket.title }}</p>
-          <p class="mt-1 text-xs text-ink-soft">{{ formatRelativeTime(ticket.createdAt) }}</p>
-        </RouterLink>
-      </div>
+      <ul role="list" class="pb-6">
+        <li v-for="ticket in tickets" :key="ticket.id">
+          <RouterLink
+            :to="{ name: 'ticket-detail', params: { id: ticket.id } }"
+            class="flex items-start gap-3 border-b border-subtle px-4 py-3.5 hover:bg-hover pressable sm:px-5"
+          >
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="tag-pill-accent">{{ ticketTypeLabel(ticket.type) }}</span>
+                <span
+                  class="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                  :class="
+                    ticket.status === 'open'
+                      ? 'bg-accent-warm-soft text-accent-warm'
+                      : 'bg-hover text-ink-muted'
+                  "
+                >
+                  {{ ticketStatusLabel(ticket.status) }}
+                </span>
+                <time
+                  :datetime="ticket.createdAt"
+                  class="ml-auto shrink-0 text-xs tabular-nums text-ink-muted"
+                >
+                  {{ formatRelativeTime(ticket.createdAt) }}
+                </time>
+              </div>
+              <p class="mt-1.5 truncate text-[15px] font-medium text-ink">
+                {{ ticket.title }}
+              </p>
+            </div>
+            <AppSvgIcon
+              name="chevronRight"
+              :size="15"
+              class="mt-1 shrink-0 text-ink-muted"
+            />
+          </RouterLink>
+        </li>
+      </ul>
 
-      <!-- 加载更多 -->
-      <button
-        v-if="hasMore"
-        type="button"
-        class="btn-secondary mt-3 w-full"
-        :disabled="loadingMore"
-        @click="loadMore"
-      >
-        {{ loadingMore ? "加载中…" : "加载更多" }}
-      </button>
+      <div v-if="hasMore" class="px-4 pb-6 text-center">
+        <button
+          type="button"
+          class="btn-secondary !py-1.5 text-xs"
+          :disabled="loadingMore"
+          @click="loadMore"
+        >
+          {{ loadingMore ? "加载中…" : "加载更多" }}
+        </button>
+      </div>
     </template>
 
-    <EmptyState v-else :text="emptyText" icon="file" />
+    <div v-else class="px-4 py-6">
+      <EmptyState :text="emptyText" icon="file" />
+    </div>
   </div>
 </template>

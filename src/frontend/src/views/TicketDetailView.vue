@@ -1,16 +1,16 @@
 <!--
-  工单详情页
+  工单详情页（Elk 分层阅读流 + ConfirmDialog 处置确认）
 
   - 基本信息：标题 / 类型 / 状态 / 提交时间 / 提交人 / 内容 / extraData
-  - 已关闭显示处理结果；提交者本人显示"这是我的工单"标记
-  - 处理操作区：handle_ticket 权限 + 工单 open 时按类型动态渲染按钮组，
-    拒绝必须填写原因，处理成功后刷新详情
+  - 已关闭显示处理结果；提交者本人显示“我的工单”标记
+  - 处理操作区：handle_ticket 权限 + 工单 open 时按类型动态渲染按钮组
 -->
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, shallowRef } from "vue";
 import { useRoute } from "vue-router";
-import LoadingSpinner from "../components/common/LoadingSpinner.vue";
+import FeedSkeleton from "../components/common/FeedSkeleton.vue";
 import ErrorState from "../components/common/ErrorState.vue";
+import { useConfirm } from "../composables/useConfirm";
 import { getTicket, handleTicket } from "../api/ticket";
 import type { HandleAction } from "../api/ticket";
 import { getUserProfile } from "../api/user";
@@ -29,39 +29,30 @@ import type { TicketInfo } from "../types";
 
 const route = useRoute();
 const auth = useAuthStore();
+const { confirm } = useConfirm();
 const ticketId = route.params.id as string;
 
-const loading = ref(true);
-const error = ref(false);
+const loading = shallowRef(true);
+const error = shallowRef(false);
 const ticket = ref<TicketInfo | null>(null);
 
-/** 提交人用户名（后端工单只存 userId，异步拉取公开资料获得） */
-const submitterName = ref<string | null>(null);
+const submitterName = shallowRef<string | null>(null);
+const canHandle = shallowRef(false);
+const handling = shallowRef(false);
+const rejectReason = shallowRef("");
 
-/** 是否具备 handle_ticket 权限 */
-const canHandle = ref(false);
-
-/** 处理中（按钮防重复点击） */
-const handling = ref(false);
-/** 拒绝原因（仅 reject 必填） */
-const rejectReason = ref("");
-
-/** 当前工单是否由我提交 */
 const isMine = computed(
-  () => !!ticket.value && !!auth.userId && ticket.value.submittedBy === auth.userId
+  () => Boolean(ticket.value) && Boolean(auth.userId) && ticket.value?.submittedBy === auth.userId
 );
 
-/** 按类型取允许的处理动作（与后端 ALLOWED_ACTIONS 一致） */
 const actions = computed<string[]>(() =>
   ticket.value ? TICKET_ALLOWED_ACTIONS[ticket.value.type] ?? [] : []
 );
 
-/** 是否显示处理操作区：有权限 + 工单未关闭 + 有可用动作 */
 const showHandlePanel = computed(
   () => canHandle.value && ticket.value?.status === "open" && actions.value.length > 0
 );
 
-/** extraData 解析结果（JSON 字符串 → 对象，解析失败为 null） */
 const extraEntries = computed<{ key: string; value: string }[]>(() => {
   if (!ticket.value?.extraData) return [];
   try {
@@ -75,13 +66,11 @@ const extraEntries = computed<{ key: string; value: string }[]>(() => {
   }
 });
 
-/** 加载工单详情 + 提交人用户名 + 处理权限 */
 async function load(): Promise<void> {
   loading.value = true;
   error.value = false;
   try {
     ticket.value = await getTicket(ticketId);
-    // 提交人用户名拉取失败不影响详情页展示
     getUserProfile(ticket.value.submittedBy)
       .then((profile) => {
         submitterName.value = profile.username;
@@ -94,11 +83,6 @@ async function load(): Promise<void> {
   }
 }
 
-/**
- * 执行处理动作
- *
- * 拒绝时必填原因（按钮禁用双保险）；警告 / 处罚 / 封禁二次确认防误触。
- */
 async function doHandle(action: HandleAction): Promise<void> {
   if (!ticket.value || handling.value) return;
 
@@ -109,8 +93,14 @@ async function doHandle(action: HandleAction): Promise<void> {
   }
 
   if (["warn", "punish", "ban"].includes(action)) {
-    const confirmed = window.confirm(`确认对举报目标执行「${HANDLE_ACTION_LABELS[action]}」？`);
-    if (!confirmed) return;
+    const actionLabel = HANDLE_ACTION_LABELS[action] ?? action;
+    const ok = await confirm({
+      title: `确认执行「${actionLabel}」？`,
+      description: "该操作将对被举报目标生效，并计入公开管理日志。",
+      confirmText: `确认${actionLabel}`,
+      variant: "danger",
+    });
+    if (!ok) return;
   }
 
   handling.value = true;
@@ -118,10 +108,9 @@ async function doHandle(action: HandleAction): Promise<void> {
     await handleTicket(ticket.value.id, action, reason);
     showToast("处理成功", "success");
     rejectReason.value = "";
-    // 重新拉取详情展示最新状态与结果
     await load();
   } catch {
-    // 错误 Toast 由 client 层统一处理
+    // client.ts 已自动 Toast
   } finally {
     handling.value = false;
   }
@@ -130,73 +119,97 @@ async function doHandle(action: HandleAction): Promise<void> {
 onMounted(async () => {
   const mask = await getMyPermissions();
   canHandle.value = hasPermission(mask, PERM_HANDLE_TICKET);
-  load();
+  void load();
 });
 </script>
 
 <template>
-  <div class="px-3 pt-3">
-    <LoadingSpinner v-if="loading" />
-    <ErrorState v-else-if="error" message="工单不存在或无权访问" @retry="load" />
+  <div>
+    <FeedSkeleton v-if="loading" variant="elk" :count="3" />
+    <div v-else-if="error" class="px-4 py-6">
+      <ErrorState message="工单不存在或无权访问" @retry="load" />
+    </div>
 
-    <template v-else-if="ticket">
-      <div class="card-base">
-        <!-- 状态行 -->
-        <div class="mb-2 flex items-center gap-2 text-xs">
-          <span class="text-primary">{{ ticketTypeLabel(ticket.type) }}</span>
+    <div v-else-if="ticket" class="divide-y divide-[var(--border-subtle)] pb-10">
+      <!-- 工单主体 -->
+      <article class="px-4 py-5 sm:px-5">
+        <div class="mb-3 flex flex-wrap items-center gap-2 text-xs">
+          <span class="tag-pill-accent">{{ ticketTypeLabel(ticket.type) }}</span>
           <span
-            class="rounded px-1.5 py-0.5 text-[10px]"
-            :class="ticket.status === 'open' ? 'text-accent' : 'bg-line text-ink-soft'"
-            :style="ticket.status === 'open' ? { background: 'color-mix(in srgb, var(--c-accent) 12%, transparent)' } : {}"
+            class="rounded-full px-2 py-0.5 text-[11px] font-medium"
+            :class="
+              ticket.status === 'open'
+                ? 'bg-accent-warm-soft text-accent-warm'
+                : 'bg-hover text-ink-muted'
+            "
           >
             {{ ticketStatusLabel(ticket.status) }}
           </span>
-          <span v-if="isMine" class="rounded bg-line px-1.5 py-0.5 text-[10px] text-ink-soft">
-            这是我的工单
-          </span>
-          <span class="ml-auto text-ink-soft">{{ formatDateTime(ticket.createdAt) }}</span>
+          <span v-if="isMine" class="tag-pill">我的工单</span>
+          <time
+            :datetime="ticket.createdAt"
+            class="ml-auto tabular-nums text-ink-muted"
+          >
+            {{ formatDateTime(ticket.createdAt) }}
+          </time>
         </div>
 
-        <h2 class="text-lg font-bold">{{ ticket.title }}</h2>
+        <h1 class="text-xl font-bold leading-snug text-ink break-words">
+          {{ ticket.title }}
+        </h1>
 
-        <!-- 提交人 -->
-        <p v-if="submitterName" class="mt-1 text-xs text-ink-soft">提交人：{{ submitterName }}</p>
+        <p v-if="submitterName" class="mt-1.5 text-xs text-ink-muted">
+          提交人：
+          <RouterLink
+            :to="{ name: 'user-profile', params: { id: ticket.submittedBy } }"
+            class="font-medium text-ink-secondary hover:text-primary hover:underline underline-offset-4"
+          >
+            {{ submitterName }}
+          </RouterLink>
+        </p>
 
-        <p class="mt-2 whitespace-pre-line break-all text-sm leading-relaxed">
+        <p class="mt-4 whitespace-pre-line break-words text-[15px] leading-[1.7] text-ink">
           {{ ticket.content ?? "（无正文）" }}
         </p>
 
-        <!-- extraData 格式化展示（如 timeline_submit 的 eventDate） -->
-        <div v-if="extraEntries.length > 0" class="mt-3 rounded-lg bg-page p-3 text-sm">
-          <div v-for="entry in extraEntries" :key="entry.key" class="flex gap-2 py-0.5">
-            <span class="shrink-0 text-ink-soft">{{ entry.key }}</span>
-            <span class="break-all">{{ entry.value }}</span>
+        <!-- extraData 浅底信息块（禁止二级边框套娃） -->
+        <dl
+          v-if="extraEntries.length > 0"
+          class="mt-4 space-y-1.5 rounded-xl bg-canvas-soft p-3.5 text-sm"
+        >
+          <div v-for="entry in extraEntries" :key="entry.key" class="flex gap-3">
+            <dt class="shrink-0 font-mono text-xs text-ink-muted">{{ entry.key }}</dt>
+            <dd class="min-w-0 flex-1 break-all text-xs text-ink">{{ entry.value }}</dd>
           </div>
-        </div>
-      </div>
+        </dl>
+      </article>
 
       <!-- 处理结果（已关闭时展示） -->
-      <div v-if="ticket.status === 'closed' && ticket.result" class="card-base mt-3">
-        <h3 class="mb-1 text-sm font-semibold text-ink-soft">处理结果</h3>
-        <p class="whitespace-pre-line text-sm">{{ ticket.result }}</p>
-      </div>
+      <section v-if="ticket.status === 'closed' && ticket.result" class="px-4 py-5 sm:px-5">
+        <h2 class="mb-2 text-sm font-semibold text-ink">处理结果</h2>
+        <p class="whitespace-pre-line break-words text-sm leading-relaxed text-ink-secondary">
+          {{ ticket.result }}
+        </p>
+      </section>
 
       <!-- 处理操作区（handle_ticket 权限 + open） -->
-      <div v-if="showHandlePanel" class="card-base mt-3">
-        <h3 class="mb-2 text-sm font-semibold text-ink-soft">处理工单</h3>
+      <section v-if="showHandlePanel" class="px-4 py-5 sm:px-5">
+        <h2 class="mb-3 text-sm font-semibold text-ink">处理工单</h2>
 
-        <!-- 拒绝原因输入 -->
-        <div v-if="actions.includes('reject')" class="mb-3">
+        <div v-if="actions.includes('reject')" class="mb-3.5">
+          <label for="ticket-reject-reason" class="mb-1.5 block text-xs text-ink-muted">
+            拒绝原因（执行拒绝操作时必填）
+          </label>
           <textarea
+            id="ticket-reject-reason"
             v-model="rejectReason"
             rows="2"
             maxlength="500"
-            class="input-base w-full resize-none"
-            placeholder="拒绝原因（拒绝时必填）"
-          ></textarea>
+            class="input-base resize-none"
+            placeholder="填写拒绝原因…"
+          />
         </div>
 
-        <!-- 动态按钮组 -->
         <div class="flex flex-wrap gap-2">
           <button
             v-for="action in actions"
@@ -205,10 +218,10 @@ onMounted(async () => {
             class="rounded-lg px-4 py-2 text-sm font-medium pressable disabled:opacity-40"
             :class="
               action === 'approve'
-                ? 'bg-primary text-white'
+                ? 'bg-primary text-white hover:opacity-90'
                 : ['reject', 'punish', 'ban'].includes(action)
-                  ? 'bg-red-500 text-white'
-                  : 'border border-line bg-surface text-ink'
+                  ? 'bg-danger text-white hover:opacity-90'
+                  : 'border border-strong bg-surface text-ink hover:bg-hover'
             "
             :disabled="handling || (action === 'reject' && !rejectReason.trim())"
             @click="doHandle(action as HandleAction)"
@@ -216,8 +229,8 @@ onMounted(async () => {
             {{ HANDLE_ACTION_LABELS[action] ?? action }}
           </button>
         </div>
-        <p v-if="handling" class="mt-2 text-xs text-ink-soft">处理中…</p>
-      </div>
-    </template>
+        <p v-if="handling" class="mt-2.5 text-xs text-ink-muted">处理中…</p>
+      </section>
+    </div>
   </div>
 </template>

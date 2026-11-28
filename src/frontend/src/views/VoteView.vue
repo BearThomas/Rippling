@@ -1,72 +1,47 @@
 <!--
-  投票页 — 投票列表
-
-  - 数据源：GET /api/vote/list（description 预览 + totalVotes 可见性由后端控制）
-  - 每条显示标题 / 描述预览 / 截止倒计时 / 总票数（可见时）
-  - 持有 create_vote 权限（位 37）时显示「创建投票」→ 页面内底部弹出层
-  - 分页加载更多
+  投票列表页（Elk 无边框信息流 + AppDialog/AppSwitch 创建投票弹窗）
 -->
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { onMounted, onUnmounted, ref, shallowRef } from "vue";
+import { useRouter } from "vue-router";
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
-import LoadingSpinner from "../components/common/LoadingSpinner.vue";
+import AppDialog from "../components/common/AppDialog.vue";
+import AppSwitch from "../components/common/AppSwitch.vue";
+import FeedSkeleton from "../components/common/FeedSkeleton.vue";
 import EmptyState from "../components/common/EmptyState.vue";
 import ErrorState from "../components/common/ErrorState.vue";
 import { getVoteList, createVote } from "../api/vote";
-import { formatCountdown, formatDateTime, formatNumber } from "../utils/format";
-import { showToast } from "../utils/toast";
-import { useAuthStore } from "../stores/auth";
 import { getMyPermissions } from "../utils/myPermissions";
 import { hasPermission, PERM_CREATE_VOTE } from "../utils/permission";
+import { formatCountdown, formatDateTime, formatNumber } from "../utils/format";
+import { showToast } from "../utils/toast";
 import type { VoteListItem } from "../types";
 
-const route = useRoute();
 const router = useRouter();
-const auth = useAuthStore();
-
-/** 每页条数 */
 const PAGE_SIZE = 20;
 
-const loading = ref(true);
-const error = ref(false);
+const loading = shallowRef(true);
+const error = shallowRef(false);
 const votes = ref<VoteListItem[]>([]);
 
-/** 分页状态 */
-const loadingMore = ref(false);
-const hasMore = ref(true);
+const loadingMore = shallowRef(false);
+const hasMore = shallowRef(true);
 
-/** 响应式当前时间（每 30 秒刷新一次倒计时） */
-const now = ref(Date.now());
+const canCreate = shallowRef(false);
+const now = shallowRef(Date.now());
 let timer: ReturnType<typeof setInterval> | null = null;
 
-/** 是否有 create_vote 权限（创建按钮可见性） */
-const canCreate = ref(false);
-
-// ------------------------------------------------------------
-//  创建投票弹层
-// ------------------------------------------------------------
-
-const showCreator = ref(false);
-const creating = ref(false);
-
-/** 创建表单状态 */
+const showCreator = shallowRef(false);
+const creating = shallowRef(false);
 const form = ref({
   title: "",
   description: "",
   isMultiple: false,
   isRealTimeVisible: true,
-  /** datetime-local 输入值（YYYY-MM-DDTHH:mm） */
   endAt: "",
   options: ["", ""],
 });
 
-/** 是否已结束（关闭或超时） */
-function isEnded(item: VoteListItem): boolean {
-  return item.isClosed || new Date(item.endAt).getTime() <= now.value;
-}
-
-/** 首次加载 */
 async function load(): Promise<void> {
   loading.value = true;
   error.value = false;
@@ -80,7 +55,6 @@ async function load(): Promise<void> {
   }
 }
 
-/** 加载更多 */
 async function loadMore(): Promise<void> {
   if (loadingMore.value || !hasMore.value) return;
   loadingMore.value = true;
@@ -95,54 +69,55 @@ async function loadMore(): Promise<void> {
   }
 }
 
-/** 进详情 */
-function openDetail(item: VoteListItem): void {
-  router.push({ name: "vote-detail", params: { id: item.id } });
-}
-
-/** 探测创建权限 */
 async function loadPermissions(): Promise<void> {
   const mask = await getMyPermissions();
   canCreate.value = hasPermission(mask, PERM_CREATE_VOTE);
 }
 
-/** 打开创建弹层 */
+function isEnded(item: VoteListItem): boolean {
+  return item.isClosed || new Date(item.endAt).getTime() <= now.value;
+}
+
+function openDetail(item: VoteListItem): void {
+  void router.push({ name: "vote-detail", params: { id: item.id } });
+}
+
 function openCreator(): void {
-  if (!auth.isLoggedIn) {
-    router.push({ path: "/login", query: { redirect: route.fullPath } });
-    return;
+  if (!form.value.endAt) {
+    const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    form.value.endAt =
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+      `T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
   showCreator.value = true;
 }
 
-/** 关闭创建弹层 */
 function closeCreator(): void {
   if (creating.value) return;
   showCreator.value = false;
 }
 
-/** 增加 / 删除选项 */
 function addOption(): void {
-  if (form.value.options.length < 8) form.value.options.push("");
+  if (form.value.options.length >= 8) return;
+  form.value.options.push("");
 }
 
 function removeOption(index: number): void {
-  if (form.value.options.length > 2) form.value.options.splice(index, 1);
+  if (form.value.options.length <= 2) return;
+  form.value.options.splice(index, 1);
 }
 
-/** 提交创建投票 */
 async function handleCreate(): Promise<void> {
   if (creating.value) return;
-
   const title = form.value.title.trim();
-  const options = form.value.options.map((o) => o.trim()).filter(Boolean);
-
   if (!title) {
-    showToast("标题不能为空", "error");
+    showToast("请输入投票标题", "error");
     return;
   }
+  const options = form.value.options.map((o) => o.trim()).filter(Boolean);
   if (options.length < 2) {
-    showToast("至少需要 2 个非空选项", "error");
+    showToast("至少需要 2 个有效选项", "error");
     return;
   }
   if (!form.value.endAt) {
@@ -165,7 +140,6 @@ async function handleCreate(): Promise<void> {
       isRealTimeVisible: form.value.isRealTimeVisible,
       endAt: endAtDate.toISOString(),
     });
-    // 本地构造列表项插入顶部（结果不可见时 totalVotes 为 null）
     votes.value = [
       {
         id,
@@ -180,7 +154,6 @@ async function handleCreate(): Promise<void> {
     ];
     showToast("投票创建成功", "success");
     showCreator.value = false;
-    // 重置表单
     form.value = {
       title: "",
       description: "",
@@ -210,163 +183,180 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="px-3 pt-3">
-    <!-- 顶部操作行：说明 + 创建入口（需 create_vote 权限） -->
-    <div class="mb-3 flex items-center justify-between gap-2">
-      <p class="text-xs text-ink-soft">参与或创建校园投票。</p>
+  <div class="pb-6">
+    <!-- 顶部操作栏 -->
+    <div class="flex items-center justify-between gap-3 border-b border-subtle px-4 py-3 sm:px-5">
+      <p class="text-xs text-ink-muted">参与或发起校园投票。</p>
       <button
         v-if="canCreate"
         type="button"
-        class="btn-primary shrink-0 !py-1.5 text-sm"
+        class="btn-primary shrink-0 !px-3.5 !py-1.5 text-xs"
         @click="openCreator"
       >
+        <AppSvgIcon name="plus" :size="14" />
         创建投票
       </button>
     </div>
 
-    <LoadingSpinner v-if="loading" />
+    <FeedSkeleton v-if="loading" variant="elk" :count="4" />
     <ErrorState v-else-if="error" @retry="load" />
 
     <template v-else>
-      <div v-if="votes.length > 0" class="space-y-3">
+      <div v-if="votes.length > 0">
         <article
           v-for="item in votes"
           :key="item.id"
-          class="card-base cursor-pointer pressable"
+          class="feed-row-interactive"
           role="button"
           tabindex="0"
           @click="openDetail(item)"
           @keydown.enter="openDetail(item)"
         >
-          <div class="flex items-center justify-between gap-2">
-            <h3 class="font-semibold">{{ item.title }}</h3>
+          <div class="flex items-start justify-between gap-2.5">
+            <h3 class="text-[15px] font-semibold leading-[22px] text-ink sm:text-base">
+              {{ item.title }}
+            </h3>
             <span
-              class="shrink-0 rounded px-1.5 py-0.5 text-[10px]"
-              :class="isEnded(item) ? 'bg-line text-ink-soft' : 'text-accent'"
-              :style="!isEnded(item) ? { background: 'color-mix(in srgb, var(--c-accent) 12%, transparent)' } : {}"
+              class="shrink-0 tabular-nums"
+              :class="isEnded(item) ? 'tag-pill' : 'tag-pill-accent'"
             >
               {{ isEnded(item) ? "已结束" : formatCountdown(item.endAt, now) }}
             </span>
           </div>
-          <p v-if="item.description" class="mt-1 text-sm text-ink-soft">{{ item.description }}</p>
-          <div class="mt-2 flex items-center gap-3 text-xs text-ink-soft">
-            <span>截止：{{ formatDateTime(item.endAt) }}</span>
+
+          <p v-if="item.description" class="mt-1 line-clamp-2 text-sm leading-6 text-ink-secondary">
+            {{ item.description }}
+          </p>
+
+          <div class="mt-2.5 flex items-center gap-4 text-xs tabular-nums text-ink-muted">
+            <span>截止 {{ formatDateTime(item.endAt) }}</span>
             <span v-if="item.totalVotes !== null">共 {{ formatNumber(item.totalVotes) }} 票</span>
           </div>
         </article>
 
-        <!-- 加载更多 -->
-        <div class="py-2 text-center">
+        <div class="py-5 text-center">
           <button
             v-if="hasMore"
             type="button"
-            class="btn-secondary !py-1.5 text-sm"
+            class="btn-secondary !py-1.5 text-xs"
             :disabled="loadingMore"
             @click="loadMore"
           >
             {{ loadingMore ? "加载中…" : "加载更多" }}
           </button>
-          <span v-else class="text-xs text-ink-soft">已经到底啦</span>
+          <span v-else class="text-xs text-ink-muted">已经到底啦</span>
         </div>
       </div>
 
       <EmptyState v-else text="还没有投票" icon="chart" />
     </template>
 
-    <!-- 创建投票弹层（底部弹出） -->
-    <div
-      v-if="showCreator"
-      class="fixed inset-0 z-50 flex items-end bg-black/40"
-      @click.self="closeCreator"
+    <!-- 创建投票弹窗（reka-ui AppDialog + AppSwitch） -->
+    <AppDialog
+      :open="showCreator"
+      title="创建投票"
+      description="设置投票主题、选项与截止时间"
+      size="md"
+      :dismissible="!creating"
+      @close="closeCreator"
     >
-      <div class="max-h-[85vh] w-full overflow-y-auto rounded-t-2xl bg-surface px-4 pb-6 pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <h3 class="text-base font-semibold">创建投票</h3>
-          <button type="button" aria-label="关闭" @click="closeCreator">
-            <AppSvgIcon name="close" :size="18" class="text-ink-soft" />
+      <div class="space-y-4">
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-ink-secondary">投票标题 *</label>
+          <input
+            v-model="form.title"
+            class="input-base"
+            placeholder="例如：本周电影之夜放哪一部？"
+            maxlength="100"
+          />
+        </div>
+
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-ink-secondary">补充说明</label>
+          <textarea
+            v-model="form.description"
+            class="input-base min-h-[68px] resize-y"
+            placeholder="投票背景或规则说明（可选）"
+            maxlength="500"
+          />
+        </div>
+
+        <div>
+          <p class="mb-1.5 text-xs font-medium text-ink-secondary">选项（至少 2 个，最多 8 个）</p>
+          <div class="space-y-2">
+            <div
+              v-for="(_option, index) in form.options"
+              :key="index"
+              class="flex items-center gap-2"
+            >
+              <input
+                v-model="form.options[index]"
+                class="input-base flex-1"
+                :placeholder="`选项 ${index + 1}`"
+                maxlength="100"
+              />
+              <button
+                v-if="form.options.length > 2"
+                type="button"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-ink-muted hover:bg-danger-soft hover:text-danger pressable"
+                aria-label="删除选项"
+                @click="removeOption(index)"
+              >
+                <AppSvgIcon name="trash" :size="15" />
+              </button>
+            </div>
+          </div>
+          <button
+            v-if="form.options.length < 8"
+            type="button"
+            class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            @click="addOption"
+          >
+            <AppSvgIcon name="plus" :size="14" />
+            添加选项
           </button>
         </div>
 
-        <div class="space-y-3">
-          <!-- 标题 -->
-          <input v-model="form.title" class="input-base" placeholder="投票标题（必填）" maxlength="100" />
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-ink-secondary">截止时间 *</label>
+          <input v-model="form.endAt" type="datetime-local" class="input-base" />
+        </div>
 
-          <!-- 描述 -->
-          <textarea
-            v-model="form.description"
-            class="input-base min-h-16 resize-y"
-            placeholder="投票描述（可选）"
-            maxlength="500"
-          />
-
-          <!-- 选项 -->
-          <div>
-            <p class="mb-1.5 text-xs text-ink-soft">选项（至少 2 个，最多 8 个）</p>
-            <div class="space-y-2">
-              <div
-                v-for="(option, index) in form.options"
-                :key="index"
-                class="flex items-center gap-2"
-              >
-                <input
-                  v-model="form.options[index]"
-                  class="input-base flex-1"
-                  :placeholder="`选项 ${index + 1}`"
-                  maxlength="100"
-                />
-                <button
-                  v-if="form.options.length > 2"
-                  type="button"
-                  class="shrink-0 text-ink-soft"
-                  aria-label="删除选项"
-                  @click="removeOption(index)"
-                >
-                  <AppSvgIcon name="trash" :size="16" />
-                </button>
-              </div>
+        <div class="divide-y divide-subtle rounded-xl border border-subtle bg-canvas-soft px-3.5">
+          <div class="flex items-center justify-between gap-3 py-2.5">
+            <span class="text-sm text-ink">允许多选</span>
+            <AppSwitch v-model="form.isMultiple" aria-label="允许多选" />
+          </div>
+          <div class="flex items-center justify-between gap-3 py-2.5">
+            <div>
+              <span class="block text-sm text-ink">实时公开票数</span>
+              <span class="block text-xs text-ink-muted">关闭后仅在截止时展示结果</span>
             </div>
-            <button
-              v-if="form.options.length < 8"
-              type="button"
-              class="mt-2 flex items-center gap-1 text-xs text-primary"
-              @click="addOption"
-            >
-              <AppSvgIcon name="plusSquare" :size="14" />
-              添加选项
-            </button>
+            <AppSwitch v-model="form.isRealTimeVisible" aria-label="实时公开票数" />
           </div>
+        </div>
+      </div>
 
-          <!-- 截止时间 -->
-          <div>
-            <p class="mb-1.5 text-xs text-ink-soft">截止时间（必填）</p>
-            <input v-model="form.endAt" type="datetime-local" class="input-base" />
-          </div>
-
-          <!-- 开关选项 -->
-          <label class="flex items-center gap-2 text-sm">
-            <input v-model="form.isMultiple" type="checkbox" class="accent-[var(--c-primary)]" />
-            允许多选
-          </label>
-          <label class="flex items-center gap-2 text-sm">
-            <input
-              v-model="form.isRealTimeVisible"
-              type="checkbox"
-              class="accent-[var(--c-primary)]"
-            />
-            实时公开票数（关闭则结束后才显示结果）
-          </label>
-
-          <!-- 提交 -->
+      <template #footer>
+        <div class="flex items-center justify-end gap-2.5">
           <button
             type="button"
-            class="btn-primary w-full disabled:opacity-50"
+            class="btn-secondary flex-1 sm:flex-none"
+            :disabled="creating"
+            @click="closeCreator"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="btn-primary flex-1 sm:flex-none"
             :disabled="creating"
             @click="handleCreate"
           >
-            {{ creating ? "创建中…" : "创建投票" }}
+            {{ creating ? "创建中…" : "发布投票" }}
           </button>
         </div>
-      </div>
-    </div>
+      </template>
+    </AppDialog>
   </div>
 </template>

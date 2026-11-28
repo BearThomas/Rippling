@@ -1,0 +1,37 @@
+/**
+ * 基础结构 Token（布局尺寸、圆角阶梯、字体栈、动效曲线）
+ *
+ * 与 styles/theme.css（语义色变量）分工明确，由 styles/main.css 统一引入。
+ * 动效红线详见 docs/motion.md：所有过渡时长必须引用这里的 --dur-* 变量。
+ */
+
+:root {
+  /* 布局骨架尺寸（Elk 三栏 + 平板折叠侧栏 + 吸顶顶栏） */
+  --layout-max-width: 1200px;
+  --rail-left-width: 232px;
+  --rail-left-compact: 68px;
+  --main-col-width: 660px;
+  --rail-right-width: 272px;
+  --header-height: 52px;
+
+  /* 圆角三档阶梯（DESIGN.md 第 4 节） */
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-pill: 9999px;
+
+  /* 字体栈（DESIGN.md 第 3 节） */
+  --font-sans:
+    Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", monospace;
+
+  /* 动效 Token —— 全站唯一的时长与缓动来源 */
+  --dur-fast: 120ms; /* 按压、hover 这类即时反馈 */
+  --dur-base: 180ms; /* 展开收起、主题切换、轻过渡 */
+  --dur-slow: 240ms; /* 浮层、骨架淡出等需要看清过程的过渡 */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1); /* 进入：先快后缓 */
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --press-scale: 0.98; /* 按压反馈缩放，1 为关闭 */
+}

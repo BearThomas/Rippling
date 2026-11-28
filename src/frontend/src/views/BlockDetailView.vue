@@ -1,30 +1,29 @@
 <!--
   板块详情页（/block/:id）
 
-  功能：
-    1. 板块信息：名称 / 描述 / 锁定提示
-    2. 按权限显示的操作按钮区：
-       - 成员：发帖（block_create_post）、退出板块（owner 不可退出）
-       - 非成员：申请加入（已申请则显示待审核状态）
-       - owner / manage_block：管理入口
-       - manage_block：锁定 / 解锁；block_delete 或 manage_block：删除板块
-    3. 板块帖子流：GET /api/block/posts，offset 分页 + IntersectionObserver 无限滚动
-    4. 管理面板（页面内 tab 切换）：成员 / 申请 / 黑名单 / 设置
-       （转让板块、删除板块在"设置"tab；成员权限编辑使用 PermissionEditor 弹窗）
-
-  锁定板块：普通成员仍可访问，但发帖等写操作按钮禁用并提示。
+  Elk 无边框信息流 + 紧凑管理面板：
+    - 顶栏板块信息改为通栏分割头，低频/危险操作收口至 AppDropdown
+    - 帖子流改为 1px 分割线流（FeedSkeleton 骨架加载）
+    - 管理面板改用 AppTabs（reka-ui Tabs）、MemberItem（AppDropdown）、
+      PermissionEditor（AppDialog + AppSwitch）、AppSelect（转让目标）
+    - 全部 7 处原生 window.confirm 替换为全局 ConfirmDialog
 -->
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppSvgIcon from "../components/layout/AppSvgIcon.vue";
 import PostCard from "../components/post/PostCard.vue";
 import MemberItem from "../components/block/MemberItem.vue";
 import JoinRequestItem from "../components/block/JoinRequestItem.vue";
 import PermissionEditor from "../components/block/PermissionEditor.vue";
+import AppDropdown, { type DropdownItem } from "../components/common/AppDropdown.vue";
+import AppSelect, { type SelectOptionItem } from "../components/common/AppSelect.vue";
+import AppTabs, { type TabOption } from "../components/common/AppTabs.vue";
+import FeedSkeleton from "../components/common/FeedSkeleton.vue";
 import LoadingSpinner from "../components/common/LoadingSpinner.vue";
 import EmptyState from "../components/common/EmptyState.vue";
 import ErrorState from "../components/common/ErrorState.vue";
+import UserAvatar from "../components/user/UserAvatar.vue";
 import {
   addToBlacklist,
   approveJoin,
@@ -51,6 +50,7 @@ import type {
   BlockMemberInfo,
 } from "../api/block";
 import { showToast } from "../utils/toast";
+import { confirmAction } from "../composables/useConfirm";
 import { getMyPermissions } from "../utils/myPermissions";
 import {
   BLOCK_PERM_CREATE_POST,
@@ -60,14 +60,11 @@ import {
   hasPermission,
 } from "../utils/permission";
 import type { BlockDetailInfo, PostAuthor } from "../types";
-import UserAvatar from "../components/user/UserAvatar.vue";
 
-/** 板块帖子流条目的最小数据结构（与 PostCard 兼容） */
 interface BlockPostItem {
   id: string;
   title: string | null;
   content: string;
-  /** 匿名时为 null */
   author?: PostAuthor | null;
   createdAt: string;
   likeCount?: number;
@@ -78,79 +75,48 @@ interface BlockPostItem {
 
 const route = useRoute();
 const router = useRouter();
-
 const blockId = route.params.id as string;
 
-/** 每页帖子数 */
 const PAGE_SIZE = 20;
 
-// ------------------------------------------------------------
-//  板块信息状态
-// ------------------------------------------------------------
-
-const loading = ref(true);
-const error = ref(false);
+const loading = shallowRef(true);
+const error = shallowRef(false);
 const block = ref<BlockDetailInfo | null>(null);
 
-/** 当前用户全站权限掩码（十进制字符串） */
-const globalPerms = ref("0");
-/** 是否已提交过本板块的加入申请（待审核） */
-const applied = ref(false);
-/** 申请进行中 */
-const applying = ref(false);
-/** 操作按钮进行中（锁定 / 解锁等） */
-const actionBusy = ref(false);
-
-// ------------------------------------------------------------
-//  帖子流状态
-// ------------------------------------------------------------
+const globalPerms = shallowRef("0");
+const applied = shallowRef(false);
+const applying = shallowRef(false);
+const actionBusy = shallowRef(false);
 
 const posts = ref<BlockPostItem[]>([]);
-const postsError = ref(false);
-const loadingMore = ref(false);
-const noMore = ref(false);
+const postsLoading = shallowRef(true);
+const postsError = shallowRef(false);
+const loadingMore = shallowRef(false);
+const noMore = shallowRef(false);
 
-/** 底部哨兵元素（IntersectionObserver 监听目标） */
 const sentinelEl = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | null = null;
 
-// ------------------------------------------------------------
-//  管理面板状态
-// ------------------------------------------------------------
-
-/** 页面视图：帖子流 / 管理面板 */
-const viewMode = ref<"posts" | "manage">("posts");
-/** 管理面板当前 tab */
-const manageTab = ref<"members" | "requests" | "blacklist" | "settings">("members");
+const viewMode = shallowRef<"posts" | "manage">("posts");
+const manageTab = shallowRef<"members" | "requests" | "blacklist" | "settings">("members");
 
 const members = ref<BlockMemberInfo[]>([]);
-const membersLoading = ref(false);
+const membersLoading = shallowRef(false);
 const requests = ref<BlockJoinRequestInfo[]>([]);
-const requestsLoading = ref(false);
+const requestsLoading = shallowRef(false);
 const blacklist = ref<BlockBlacklistEntry[]>([]);
-const blacklistLoading = ref(false);
+const blacklistLoading = shallowRef(false);
 
-/** 权限编辑弹窗状态 */
-const permEditorVisible = ref(false);
+const permEditorVisible = shallowRef(false);
 const permEditorTarget = ref<BlockMemberInfo | null>(null);
-const permSaving = ref(false);
+const permSaving = shallowRef(false);
 
-/** 转让板块选择的新 owner */
-const transferTargetId = ref("");
-/** 管理操作进行中（移除 / 审批 / 黑名单 / 转让） */
-const manageBusy = ref(false);
+const transferTargetId = shallowRef("");
+const manageBusy = shallowRef(false);
 
-// ------------------------------------------------------------
-//  权限计算
-// ------------------------------------------------------------
-
-/** 是否为板块长 */
 const isOwner = computed(() => block.value?.myRole === "owner");
-
-/** 全站 manage_block 权限 */
 const hasGlobalManage = computed(() => hasPermission(globalPerms.value, PERM_MANAGE_BLOCK));
 
-/** 是否显示管理入口（owner / 全站 manage_block / 板块级成员管理权限） */
 const canManage = computed(() => {
   if (!block.value) return false;
   return (
@@ -161,7 +127,6 @@ const canManage = computed(() => {
   );
 });
 
-/** 是否可发帖（成员 + 板块发帖权限 + 板块未锁定） */
 const canCreatePost = computed(() => {
   if (!block.value || !block.value.isMember || block.value.isLocked) return false;
   return (
@@ -170,10 +135,8 @@ const canCreatePost = computed(() => {
   );
 });
 
-/** 是否可锁定 / 解锁（后端要求全站 manage_block） */
 const canLock = computed(() => hasGlobalManage.value);
 
-/** 是否可删除板块（全站 manage_block 或板块级 block_delete） */
 const canDelete = computed(() => {
   if (!block.value) return false;
   return (
@@ -183,20 +146,57 @@ const canDelete = computed(() => {
   );
 });
 
-/** 可转让对象：非 owner 的成员列表 */
-const transferCandidates = computed(() => members.value.filter((m) => m.role !== "owner"));
+const blockMoreMenu = computed<DropdownItem[]>(() => {
+  if (!block.value) return [];
+  const items: DropdownItem[] = [];
+  if (canLock.value) {
+    items.push({
+      key: "lock",
+      label: block.value.isLocked ? "解锁板块" : "锁定板块",
+      icon: "lock",
+      disabled: actionBusy.value,
+    });
+  }
+  if (block.value.isMember && !isOwner.value) {
+    items.push({
+      key: "leave",
+      label: "退出板块",
+      icon: "logout",
+      disabled: actionBusy.value,
+      separatorBefore: items.length > 0,
+    });
+  }
+  if (canDelete.value) {
+    items.push({
+      key: "delete",
+      label: "删除板块",
+      icon: "trash",
+      danger: true,
+      disabled: actionBusy.value,
+      separatorBefore: items.length > 0,
+    });
+  }
+  return items;
+});
 
-// ------------------------------------------------------------
-//  数据加载
-// ------------------------------------------------------------
+const manageTabItems = computed<TabOption[]>(() => [
+  { value: "members", label: "成员", count: members.value.length || undefined },
+  { value: "requests", label: "申请", count: requests.value.length || undefined },
+  { value: "blacklist", label: "黑名单", count: blacklist.value.length || undefined },
+  { value: "settings", label: "设置" },
+]);
 
-/** 加载板块详情 + 全站权限 + 申请状态 */
+const transferOptions = computed<SelectOptionItem[]>(() =>
+  members.value
+    .filter((m) => m.role !== "owner")
+    .map((m) => ({ value: m.userId, label: m.username }))
+);
+
 async function load(): Promise<void> {
   loading.value = true;
   error.value = false;
   try {
     block.value = await getBlockDetail(blockId);
-    // 全站权限与待审申请并发拉取（失败不阻塞主流程）
     const [, pending] = await Promise.all([
       getMyPermissions().then((p) => {
         globalPerms.value = p;
@@ -211,8 +211,8 @@ async function load(): Promise<void> {
   }
 }
 
-/** 拉取第一页帖子 */
 async function loadPosts(): Promise<void> {
+  postsLoading.value = true;
   postsError.value = false;
   noMore.value = false;
   try {
@@ -221,10 +221,11 @@ async function loadPosts(): Promise<void> {
     noMore.value = data.posts.length < PAGE_SIZE;
   } catch {
     postsError.value = true;
+  } finally {
+    postsLoading.value = false;
   }
 }
 
-/** 加载下一页帖子（offset 分页，防重复触发） */
 async function loadMorePosts(): Promise<void> {
   if (loadingMore.value || noMore.value || postsError.value) return;
   loadingMore.value = true;
@@ -233,13 +234,12 @@ async function loadMorePosts(): Promise<void> {
     posts.value.push(...data.posts);
     if (data.posts.length < PAGE_SIZE) noMore.value = true;
   } catch {
-    // silentError 已设置，这里仅停止加载（重试入口见模板）
+    // 静默停止
   } finally {
     loadingMore.value = false;
   }
 }
 
-/** 无限滚动观察器 */
 function setupObserver(): void {
   if (!sentinelEl.value) return;
   observer = new IntersectionObserver(
@@ -266,11 +266,6 @@ onBeforeUnmount(() => {
   observer = null;
 });
 
-// ------------------------------------------------------------
-//  板块操作
-// ------------------------------------------------------------
-
-/** 申请加入板块 */
 async function handleJoin(): Promise<void> {
   if (applying.value || applied.value) return;
   applying.value = true;
@@ -279,15 +274,21 @@ async function handleJoin(): Promise<void> {
     applied.value = true;
     showToast("申请已提交，等待审核", "success");
   } catch {
-    // client.ts 已自动 Toast（黑名单 / 已是成员由后端 404 兜底）
+    // client.ts 已自动 Toast
   } finally {
     applying.value = false;
   }
 }
 
-/** 退出板块（owner 不显示此按钮） */
 async function handleLeave(): Promise<void> {
-  if (!window.confirm("确定退出该板块吗？")) return;
+  const confirmed = await confirmAction({
+    title: "确定退出该板块吗？",
+    description: "退出后将失去成员权限，锁定板块需重新申请才能进入。",
+    confirmText: "退出板块",
+    variant: "danger",
+  });
+  if (!confirmed) return;
+
   actionBusy.value = true;
   try {
     await leaveBlock(blockId);
@@ -301,12 +302,18 @@ async function handleLeave(): Promise<void> {
   }
 }
 
-/** 锁定 / 解锁板块 */
 async function handleToggleLock(): Promise<void> {
   if (!block.value) return;
   const willLock = !block.value.isLocked;
-  if (!window.confirm(willLock ? "确定锁定该板块吗？锁定后非成员不可见。" : "确定解锁该板块吗？"))
-    return;
+  const confirmed = await confirmAction({
+    title: willLock ? "确定锁定该板块吗？" : "确定解锁该板块吗？",
+    description: willLock
+      ? "锁定后非成员不可见，且暂停发帖等写操作。"
+      : "解锁后将恢复板块正常访问与发帖。",
+    confirmText: willLock ? "锁定" : "解锁",
+  });
+  if (!confirmed) return;
+
   actionBusy.value = true;
   try {
     if (willLock) {
@@ -324,29 +331,39 @@ async function handleToggleLock(): Promise<void> {
   }
 }
 
-/** 删除板块（二次确认，成功后跳回列表） */
 async function handleDelete(): Promise<void> {
-  if (!window.confirm("确定删除该板块吗？删除后不可恢复。")) return;
+  const confirmed = await confirmAction({
+    title: "确定删除该板块吗？",
+    description: "此操作不可恢复，请谨慎确认。",
+    confirmText: "删除板块",
+    variant: "danger",
+  });
+  if (!confirmed) return;
+
   actionBusy.value = true;
   try {
     await deleteBlock(blockId);
     showToast("板块已删除", "success");
-    router.replace({ name: "blocks" });
+    void router.replace({ name: "blocks" });
   } catch {
     actionBusy.value = false;
   }
 }
 
-/** 跳转发帖页 */
+function onSelectBlockAction(key: string): void {
+  if (key === "lock") void handleToggleLock();
+  else if (key === "leave") void handleLeave();
+  else if (key === "delete") void handleDelete();
+}
+
 function goCreatePost(): void {
   if (block.value?.isLocked) {
     showToast("板块已锁定，无法发帖", "error");
     return;
   }
-  router.push({ name: "post-create", query: { blockId } });
+  void router.push({ name: "post-create", query: { blockId } });
 }
 
-/** 进入 / 退出管理面板 */
 function enterManage(): void {
   viewMode.value = "manage";
   void loadMembers();
@@ -357,16 +374,12 @@ function exitManage(): void {
   viewMode.value = "posts";
 }
 
-// ------------------------------------------------------------
-//  管理面板：数据加载
-// ------------------------------------------------------------
-
 async function loadMembers(): Promise<void> {
   membersLoading.value = true;
   try {
     members.value = await getBlockMembers(blockId);
   } catch {
-    // 无权限时后端 404，client 已 Toast
+    // client.ts 已自动 Toast
   } finally {
     membersLoading.value = false;
   }
@@ -377,7 +390,7 @@ async function loadRequests(): Promise<void> {
   try {
     requests.value = await getJoinRequests(blockId);
   } catch {
-    // 无权限时后端 404
+    // client.ts 已自动 Toast
   } finally {
     requestsLoading.value = false;
   }
@@ -388,30 +401,24 @@ async function loadBlacklist(): Promise<void> {
   try {
     blacklist.value = await getBlockBlacklist(blockId);
   } catch {
-    // 无权限时后端 404
+    // client.ts 已自动 Toast
   } finally {
     blacklistLoading.value = false;
   }
 }
 
-/** 切换管理 tab（黑名单 / 设置 tab 首次进入时懒加载） */
-function switchManageTab(tab: typeof manageTab.value): void {
-  manageTab.value = tab;
-  if (tab === "blacklist") void loadBlacklist();
-  if (tab === "settings" && members.value.length === 0) void loadMembers();
+function switchManageTab(tab: string): void {
+  const next = tab as "members" | "requests" | "blacklist" | "settings";
+  manageTab.value = next;
+  if (next === "blacklist") void loadBlacklist();
+  if (next === "settings" && members.value.length === 0) void loadMembers();
 }
 
-// ------------------------------------------------------------
-//  管理面板：成员操作
-// ------------------------------------------------------------
-
-/** 打开权限编辑弹窗 */
 function openPermEditor(member: BlockMemberInfo): void {
   permEditorTarget.value = member;
   permEditorVisible.value = true;
 }
 
-/** 保存成员权限 */
 async function savePermissions(permissions: string): Promise<void> {
   const target = permEditorTarget.value;
   if (!target) return;
@@ -428,9 +435,15 @@ async function savePermissions(permissions: string): Promise<void> {
   }
 }
 
-/** 移除成员 */
 async function handleRemoveMember(member: BlockMemberInfo): Promise<void> {
-  if (!window.confirm(`确定移除成员「${member.username}」吗？`)) return;
+  const confirmed = await confirmAction({
+    title: `移除成员「${member.username}」？`,
+    description: "移除后对方将不再是该板块成员。",
+    confirmText: "移除",
+    variant: "danger",
+  });
+  if (!confirmed) return;
+
   manageBusy.value = true;
   try {
     await removeMember(blockId, member.userId);
@@ -443,9 +456,15 @@ async function handleRemoveMember(member: BlockMemberInfo): Promise<void> {
   }
 }
 
-/** 将成员加入黑名单（会同时移除其成员身份） */
 async function handleBlacklistMember(member: BlockMemberInfo): Promise<void> {
-  if (!window.confirm(`确定将「${member.username}」加入黑名单吗？该用户将无法再申请加入。`)) return;
+  const confirmed = await confirmAction({
+    title: `将「${member.username}」加入黑名单？`,
+    description: "该用户将被移除成员身份且无法再申请加入本板块。",
+    confirmText: "加入黑名单",
+    variant: "danger",
+  });
+  if (!confirmed) return;
+
   manageBusy.value = true;
   try {
     await addToBlacklist(blockId, member.userId);
@@ -457,10 +476,6 @@ async function handleBlacklistMember(member: BlockMemberInfo): Promise<void> {
     manageBusy.value = false;
   }
 }
-
-// ------------------------------------------------------------
-//  管理面板：申请审批
-// ------------------------------------------------------------
 
 async function handleApprove(request: BlockJoinRequestInfo): Promise<void> {
   manageBusy.value = true;
@@ -488,12 +503,13 @@ async function handleReject(request: BlockJoinRequestInfo): Promise<void> {
   }
 }
 
-// ------------------------------------------------------------
-//  管理面板：黑名单
-// ------------------------------------------------------------
-
 async function handleRemoveBlacklist(entry: BlockBlacklistEntry): Promise<void> {
-  if (!window.confirm(`确定将「${entry.username ?? "该用户"}」移出黑名单吗？`)) return;
+  const confirmed = await confirmAction({
+    title: `将「${entry.username ?? "该用户"}」移出黑名单？`,
+    confirmText: "移出黑名单",
+  });
+  if (!confirmed) return;
+
   manageBusy.value = true;
   try {
     await removeFromBlacklist(blockId, entry.userId);
@@ -506,18 +522,20 @@ async function handleRemoveBlacklist(entry: BlockBlacklistEntry): Promise<void> 
   }
 }
 
-// ------------------------------------------------------------
-//  管理面板：转让板块
-// ------------------------------------------------------------
-
 async function handleTransfer(): Promise<void> {
   const target = members.value.find((m) => m.userId === transferTargetId.value);
   if (!target) {
     showToast("请选择新板块长", "error");
     return;
   }
-  if (!window.confirm(`确定将板块转让给「${target.username}」吗？转让后你将变为普通成员。`))
-    return;
+  const confirmed = await confirmAction({
+    title: `将板块转让给「${target.username}」？`,
+    description: "转让后你将变为普通成员，不再拥有板块长权限。",
+    confirmText: "确认转让",
+    variant: "danger",
+  });
+  if (!confirmed) return;
+
   manageBusy.value = true;
   try {
     await transferOwnership(blockId, target.userId);
@@ -533,145 +551,132 @@ async function handleTransfer(): Promise<void> {
 </script>
 
 <template>
-  <div class="px-3 pb-10 pt-3">
+  <div class="pb-10">
     <LoadingSpinner v-if="loading" />
     <ErrorState v-else-if="error" message="板块不存在或无权访问" @retry="load" />
 
     <template v-else-if="block">
-      <!-- ==================== 板块信息 ==================== -->
-      <div class="card-base mb-3">
-        <div class="flex items-center gap-2">
-          <h2 class="min-w-0 flex-1 truncate text-lg font-bold">{{ block.name }}</h2>
+      <!-- 板块通栏头 -->
+      <header class="border-b border-subtle px-4 py-4 sm:px-6">
+        <div class="flex items-start gap-3">
           <span
-            v-if="block.isLocked"
-            class="flex shrink-0 items-center gap-0.5 rounded bg-[color-mix(in_srgb,var(--c-accent)_12%,transparent)] px-1.5 py-0.5 text-[10px] text-accent"
+            class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-canvas-soft text-primary"
           >
-            <AppSvgIcon name="lock" :size="10" />
-            已锁定
+            <AppSvgIcon name="blocks" :size="20" />
           </span>
-        </div>
-        <p v-if="block.description" class="mt-2 text-sm leading-relaxed text-ink-soft">
-          {{ block.description }}
-        </p>
-        <p v-if="block.isLocked" class="mt-2 text-xs text-ink-soft">
-          板块已锁定，发帖等写操作暂不可用
-        </p>
 
-        <!-- 操作按钮区 -->
-        <div class="mt-3 flex flex-wrap gap-2">
-          <!-- 已加入：发帖 -->
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <h2 class="truncate text-xl font-bold leading-7 text-ink">
+                {{ block.name }}
+              </h2>
+              <span v-if="block.isLocked" class="tag-pill">
+                <AppSvgIcon name="lock" :size="11" />
+                已锁定
+              </span>
+            </div>
+            <p v-if="block.description" class="mt-1 text-sm leading-relaxed text-ink-secondary">
+              {{ block.description }}
+            </p>
+            <p v-if="block.isLocked" class="mt-1.5 text-xs text-ink-muted">
+              板块已锁定，发帖等写操作暂不可用
+            </p>
+          </div>
+        </div>
+
+        <!-- 主操作与更多菜单 -->
+        <div class="mt-4 flex flex-wrap items-center gap-2">
           <button
             v-if="block.isMember"
             type="button"
-            class="btn-primary !px-4 !py-2 text-sm disabled:opacity-50"
+            class="btn-primary !px-4 !py-2 text-sm"
             :disabled="!canCreatePost || actionBusy"
             :title="!canCreatePost && block.isLocked ? '板块已锁定' : undefined"
             @click="goCreatePost"
           >
+            <AppSvgIcon name="penLine" :size="15" />
             发帖
           </button>
 
-          <!-- 已加入：退出板块（owner 不可退出） -->
           <button
-            v-if="block.isMember && !isOwner"
+            v-else
             type="button"
-            class="btn-secondary !px-4 !py-2 text-sm"
-            :disabled="actionBusy"
-            @click="handleLeave"
-          >
-            退出板块
-          </button>
-
-          <!-- 未加入：申请加入 -->
-          <button
-            v-if="!block.isMember"
-            type="button"
-            class="btn-primary !px-4 !py-2 text-sm disabled:opacity-50"
+            class="btn-primary !px-4 !py-2 text-sm"
             :disabled="applied || applying"
             @click="handleJoin"
           >
             {{ applying ? "申请中…" : applied ? "已申请，待审核" : "申请加入" }}
           </button>
 
-          <!-- 管理入口（owner / manage_block / 成员管理权限） -->
           <button
             v-if="canManage && viewMode === 'posts'"
             type="button"
-            class="btn-secondary !px-4 !py-2 text-sm"
+            class="btn-secondary !px-3.5 !py-2 text-sm"
             @click="enterManage"
           >
-            管理
+            <AppSvgIcon name="sliders" :size="15" />
+            管理板块
           </button>
+
           <button
             v-if="canManage && viewMode === 'manage'"
             type="button"
-            class="btn-secondary !px-4 !py-2 text-sm"
+            class="btn-secondary !px-3.5 !py-2 text-sm"
             @click="exitManage"
           >
+            <AppSvgIcon name="back" :size="15" />
             返回帖子
           </button>
 
-          <!-- 锁定 / 解锁（manage_block） -->
-          <button
-            v-if="canLock"
-            type="button"
-            class="btn-secondary !px-4 !py-2 text-sm"
-            :disabled="actionBusy"
-            @click="handleToggleLock"
-          >
-            {{ block.isLocked ? "解锁" : "锁定" }}
-          </button>
-
-          <!-- 删除板块（block_delete / manage_block） -->
-          <button
-            v-if="canDelete"
-            type="button"
-            class="rounded-lg border border-red-300 px-4 py-2 text-sm font-medium text-red-500 pressable disabled:opacity-50"
-            :disabled="actionBusy"
-            @click="handleDelete"
-          >
-            删除板块
-          </button>
-        </div>
-      </div>
-
-      <!-- ==================== 帖子流视图 ==================== -->
-      <template v-if="viewMode === 'posts'">
-        <div v-if="posts.length > 0" class="space-y-3">
-          <PostCard v-for="post in posts" :key="post.id" :post="post" />
-        </div>
-        <EmptyState v-else-if="!postsError" icon="file" text="板块里还没有帖子" />
-        <ErrorState v-if="postsError" message="帖子加载失败" @retry="loadPosts" />
-
-        <!-- 底部哨兵 + 加载状态 -->
-        <div ref="sentinelEl" class="py-4">
-          <div v-if="loadingMore" class="text-center text-xs text-ink-soft">加载中…</div>
-          <div v-else-if="noMore && posts.length > 0" class="text-center text-xs text-ink-soft">
-            已经到底啦
+          <div v-if="blockMoreMenu.length > 0" class="ml-auto">
+            <AppDropdown
+              :items="blockMoreMenu"
+              trigger-label="板块更多操作"
+              @select="onSelectBlockAction"
+            />
           </div>
         </div>
+      </header>
+
+      <!-- 帖子流视图 -->
+      <template v-if="viewMode === 'posts'">
+        <FeedSkeleton v-if="postsLoading" variant="elk" :count="4" />
+        <template v-else>
+          <div v-if="posts.length > 0">
+            <PostCard v-for="post in posts" :key="post.id" :post="post" />
+          </div>
+          <EmptyState
+            v-else-if="!postsError"
+            icon="file"
+            text="板块里还没有帖子"
+            description="成为第一个在这个板块发声的人吧。"
+          />
+          <ErrorState v-if="postsError" message="帖子加载失败" @retry="loadPosts" />
+
+          <div ref="sentinelEl" class="py-5 text-center">
+            <div v-if="loadingMore" class="text-xs text-ink-muted">加载中…</div>
+            <div v-else-if="noMore && posts.length > 0" class="text-xs text-ink-muted">
+              已经到底啦
+            </div>
+          </div>
+        </template>
       </template>
 
-      <!-- ==================== 管理面板视图 ==================== -->
-      <template v-if="viewMode === 'manage'">
-        <!-- tab 切换 -->
-        <div class="mb-3 flex gap-1 rounded-xl bg-line/60 p-1">
-          <button
-            v-for="tab in (['members', 'requests', 'blacklist', 'settings'] as const)"
-            :key="tab"
-            type="button"
-            class="flex-1 rounded-lg py-1.5 text-sm transition-colors"
-            :class="manageTab === tab ? 'bg-surface font-semibold text-primary' : 'text-ink-soft'"
-            @click="switchManageTab(tab)"
-          >
-            {{ tab === "members" ? "成员" : tab === "requests" ? "申请" : tab === "blacklist" ? "黑名单" : "设置" }}
-          </button>
-        </div>
+      <!-- 管理面板视图 -->
+      <template v-else>
+        <AppTabs
+          :model-value="manageTab"
+          :items="manageTabItems"
+          variant="underline"
+          stretch
+          aria-label="板块管理分类"
+          @update:model-value="switchManageTab"
+        />
 
-        <!-- 成员列表 -->
+        <!-- 成员 -->
         <section v-if="manageTab === 'members'">
           <LoadingSpinner v-if="membersLoading" />
-          <div v-else-if="members.length > 0" class="space-y-2">
+          <div v-else-if="members.length > 0">
             <MemberItem
               v-for="member in members"
               :key="member.userId"
@@ -684,10 +689,10 @@ async function handleTransfer(): Promise<void> {
           <EmptyState v-else icon="users" text="暂无成员" />
         </section>
 
-        <!-- 申请列表 -->
+        <!-- 申请 -->
         <section v-if="manageTab === 'requests'">
           <LoadingSpinner v-if="requestsLoading" />
-          <div v-else-if="requests.length > 0" class="space-y-2">
+          <div v-else-if="requests.length > 0">
             <JoinRequestItem
               v-for="request in requests"
               :key="request.id"
@@ -700,19 +705,21 @@ async function handleTransfer(): Promise<void> {
           <EmptyState v-else icon="inbox" text="暂无待审核的申请" />
         </section>
 
-        <!-- 黑名单列表 -->
+        <!-- 黑名单 -->
         <section v-if="manageTab === 'blacklist'">
           <LoadingSpinner v-if="blacklistLoading" />
-          <div v-else-if="blacklist.length > 0" class="space-y-2">
+          <div v-else-if="blacklist.length > 0">
             <div
               v-for="entry in blacklist"
               :key="entry.id"
-              class="card-base flex items-center gap-2 !py-3"
+              class="flex items-center gap-3 border-b border-subtle px-4 py-3 sm:px-5"
             >
               <UserAvatar :name="entry.username || '?'" size="md" />
               <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-medium">{{ entry.username || "未知用户" }}</p>
-                <p v-if="entry.reason" class="mt-0.5 truncate text-xs text-ink-soft">
+                <p class="truncate text-sm font-medium text-ink">
+                  {{ entry.username || "未知用户" }}
+                </p>
+                <p v-if="entry.reason" class="mt-0.5 truncate text-xs text-ink-muted">
                   原因：{{ entry.reason }}
                 </p>
               </div>
@@ -730,16 +737,20 @@ async function handleTransfer(): Promise<void> {
         </section>
 
         <!-- 设置：转让板块 -->
-        <section v-if="manageTab === 'settings'" class="space-y-3">
-          <div v-if="isOwner" class="card-base">
-            <h3 class="mb-2 text-sm font-semibold">转让板块</h3>
-            <p class="mb-2 text-xs text-ink-soft">从成员中选择新的板块长，转让后你将变为普通成员。</p>
-            <select v-model="transferTargetId" class="input-base mb-2">
-              <option value="" disabled>选择新板块长…</option>
-              <option v-for="m in transferCandidates" :key="m.userId" :value="m.userId">
-                {{ m.username }}
-              </option>
-            </select>
+        <section v-if="manageTab === 'settings'" class="px-4 py-4 sm:px-6">
+          <div v-if="isOwner" class="card-base space-y-3">
+            <div>
+              <h3 class="text-sm font-semibold text-ink">转让板块</h3>
+              <p class="mt-1 text-xs text-ink-muted">
+                从成员中选择新的板块长，转让后你将变为普通成员。
+              </p>
+            </div>
+            <AppSelect
+              v-model="transferTargetId"
+              :options="transferOptions"
+              placeholder="选择新板块长…"
+              aria-label="选择新板块长"
+            />
             <button
               type="button"
               class="btn-primary w-full !py-2 text-sm"
@@ -749,11 +760,16 @@ async function handleTransfer(): Promise<void> {
               确认转让
             </button>
           </div>
-          <p v-else class="px-1 text-xs text-ink-soft">仅板块长可转让板块。</p>
+          <EmptyState
+            v-else
+            icon="shield"
+            text="仅板块长可转让板块"
+            description="如需移交权限，请联系当前板块长操作。"
+          />
         </section>
       </template>
 
-      <!-- 权限编辑弹窗 -->
+      <!-- 权限编辑弹窗（AppDialog + AppSwitch） -->
       <PermissionEditor
         :visible="permEditorVisible"
         :username="permEditorTarget?.username ?? ''"
